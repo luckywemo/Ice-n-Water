@@ -12,7 +12,25 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Ice 'N' Water" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <title>Ice 'N' Water</title>
+    <title>Ice 'N' Water — the Nigerian chase game</title>
+    <meta
+      name="description"
+      content="The Nigerian childhood chase game, digitized. Ice &amp; Water and Police &amp; Thief rules, a 500-level road from Lagos to Maiduguri, online rooms, and a global leaderboard."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ice 'N' Water — the road north" />
+    <meta
+      property="og:description"
+      content="Run. Freeze. Break out. 500 levels across 50 Nigerian towns — the street chase you grew up with, now in your browser."
+    />
+    <meta property="og:image" content="og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ice 'N' Water — the road north" />
+    <meta
+      name="twitter:description"
+      content="The Nigerian childhood chase game, digitized. Ice &amp; Water · Police &amp; Thief · Lagos to Maiduguri."
+    />
+    <meta name="twitter:image" content="og.png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -78,6 +96,72 @@
           transform: rotate(-90deg);
         }
       }
+      @media (prefers-reduced-motion: reduce) {
+        #rotate-hint .phone {
+          animation: none;
+        }
+        #boot .bar {
+          animation: none;
+          opacity: 0.6;
+        }
+      }
+      /* boot splash — branded loading state under the canvas */
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        background: radial-gradient(120% 90% at 50% 30%, #12314f 0%, #0a1930 70%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        font-family: 'Fredoka', sans-serif;
+      }
+      #boot .mark {
+        width: 88px;
+        height: 88px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #b8ecff 0%, #4cc9f0 45%, #136a9c 100%);
+        box-shadow:
+          0 0 0 3px #0d5d8a,
+          0 18px 40px rgba(76, 201, 240, 0.25);
+        position: relative;
+      }
+      #boot .mark::after {
+        content: '';
+        position: absolute;
+        left: 12px;
+        bottom: -14px;
+        width: 64px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(76, 201, 240, 0.5);
+      }
+      #boot .word {
+        color: #eaf8ff;
+        font-weight: 700;
+        font-size: 22px;
+        letter-spacing: 3px;
+      }
+      #boot .bar {
+        width: 120px;
+        height: 4px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, #4cc9f0, transparent);
+        animation: bootshine 1.1s ease-in-out infinite;
+      }
+      @keyframes bootshine {
+        0%,
+        100% {
+          opacity: 0.25;
+          transform: scaleX(0.6);
+        }
+        50% {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+      }
       @media (orientation: portrait) and (pointer: coarse) {
         #rotate-hint {
           display: flex;
@@ -86,6 +170,11 @@
     </style>
   </head>
   <body>
+    <div id="boot" aria-hidden="true">
+      <div class="mark"></div>
+      <div class="word">ICE 'N' WATER</div>
+      <div class="bar"></div>
+    </div>
     <div id="rotate-hint">
       <span class="phone">📱</span>
       <div style="font-size: 20px; font-weight: 600">rotate your device</div>

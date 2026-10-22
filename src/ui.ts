@@ -4,6 +4,11 @@ import { CONFIG } from './config';
 export const DISPLAY_FONT = '"Bungee", sans-serif';
 export const UI_FONT = '"Fredoka", sans-serif';
 
+/** Honor prefers-reduced-motion — gate all decorative motion on this. */
+export const REDUCED_MOTION =
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
 export const UI = {
   bg: 0x0d1b2a,
   ice: 0x7fd8f0,
@@ -14,7 +19,7 @@ export const UI = {
   danger: 0xe84848,
 } as const;
 
-/** Elastic pop-in for text/sprites. */
+/** Elastic pop-in for text/sprites — a gentle fade under reduced motion. */
 export function popIn(
   scene: Phaser.Scene,
   target: Phaser.GameObjects.GameObject,
@@ -22,8 +27,12 @@ export function popIn(
 ) {
   const { delay = 0, from = 0.3, duration = 420 } = opts;
   const obj = target as unknown as { setScale: (v: number) => void; setAlpha: (v: number) => void };
-  obj.setScale(from);
   obj.setAlpha(0);
+  if (REDUCED_MOTION) {
+    scene.tweens.add({ targets: target, alpha: 1, delay, duration: 160 });
+    return;
+  }
+  obj.setScale(from);
   scene.tweens.add({
     targets: target,
     scale: 1,
@@ -32,6 +41,25 @@ export function popIn(
     duration,
     ease: 'Back.easeOut',
   });
+}
+
+/**
+ * Subtle hover lift for a zone + target — 140ms ease-out, transform only.
+ * No-op under reduced motion.
+ */
+export function hoverLift(
+  zone: Phaser.GameObjects.Zone,
+  target: Phaser.GameObjects.GameObject,
+  lift = 1.035,
+) {
+  if (REDUCED_MOTION) return;
+  const base = (target as { scaleX?: number }).scaleX ?? 1;
+  zone.on('pointerover', () =>
+    zone.scene.tweens.add({ targets: target, scale: base * lift, duration: 140 }),
+  );
+  zone.on('pointerout', () =>
+    zone.scene.tweens.add({ targets: target, scale: base, duration: 140 }),
+  );
 }
 
 /** Keyboard key-cap chip (rounded rect + letter). Returns container width for layout. */

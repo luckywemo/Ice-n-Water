@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION } from '../ui';
 import { LevelDef, levelDef, recordLevel, TOTAL_LEVELS } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Mode, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
@@ -667,6 +667,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private shake(ms = 120, amount = 0.006) {
+    if (REDUCED_MOTION) return;
     this.cameras.main.shake(ms, amount);
   }
 

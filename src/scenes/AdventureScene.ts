@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION } from '../ui';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -116,7 +116,7 @@ export class AdventureScene extends Phaser.Scene {
     this.zoneRefs = [];
     this.rowImgs = [];
     this.cameras.main.setBackgroundColor(UI.bg);
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0, 0, 0);
 
     this.pathW = Math.min(PATH_W, width - 60);
     this.pathX = (width - this.pathW) / 2;
@@ -336,8 +336,8 @@ export class AdventureScene extends Phaser.Scene {
     // ---- the journey-in: rise from START at the bottom up to your frontier ----
     const targetY = Phaser.Math.Clamp(fp.y - this.scale.height * 0.78, 0, this.worldH - this.scale.height);
     const startY = Phaser.Math.Clamp(this.worldH - this.scale.height, 0, this.worldH - this.scale.height);
-    cam.scrollY = startY;
-    if (Math.abs(targetY - startY) > 40) {
+    cam.scrollY = REDUCED_MOTION ? targetY : startY;
+    if (!REDUCED_MOTION && Math.abs(targetY - startY) > 40) {
       this.tweens.add({
         targets: cam,
         scrollY: targetY,

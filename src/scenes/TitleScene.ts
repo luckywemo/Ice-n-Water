@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, keyChip, panel } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, keyChip, panel, REDUCED_MOTION, hoverLift } from '../ui';
 import { loadStats, loadPicks, savePicks, DIFFS, Mode, Difficulty, JoyMode } from '../meta';
 import { TouchControls } from '../mobile';
 
@@ -39,10 +39,21 @@ export class TitleScene extends Phaser.Scene {
     this.diffChips = [];
     this.joyChips = [];
 
-    this.cameras.main.setBackgroundColor(UI.bg);
-    this.cameras.main.fadeIn(350, 0, 0, 0);
+    // first scene reached — the game is ready, drop the boot splash
+    document.getElementById('boot')?.remove();
 
-    // ambient floating drops
+    this.cameras.main.setBackgroundColor(UI.bg);
+    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 350, 0, 0, 0);
+    // Content needs ~750px of vertical room. On short screens (landscape
+    // phones) lay it out on the full virtual height and zoom the camera down —
+    // uniform shrink, no overlaps, tap zones stay aligned.
+    const vh = Math.max(height, 760);
+    if (height < vh) {
+      this.cameras.main.setZoom(height / vh);
+      this.cameras.main.centerOn(width / 2, vh / 2);
+    }
+
+    // ambient floating drops — static under reduced motion
     for (let i = 0; i < 14; i++) {
       const drop = this.add
         .sprite(Phaser.Math.Between(20, width - 20), Phaser.Math.Between(20, height - 20), 'dot')
@@ -50,18 +61,20 @@ export class TitleScene extends Phaser.Scene {
         .setAlpha(Phaser.Math.FloatBetween(0.06, 0.22))
         .setScale(Phaser.Math.FloatBetween(0.6, 1.8))
         .setDepth(0);
-      this.tweens.add({
-        targets: drop,
-        y: drop.y - Phaser.Math.Between(18, 46),
-        duration: Phaser.Math.Between(1600, 3200),
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
+      if (!REDUCED_MOTION) {
+        this.tweens.add({
+          targets: drop,
+          y: drop.y - Phaser.Math.Between(18, 46),
+          duration: Phaser.Math.Between(1600, 3200),
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
     }
 
     // ------- animated logo -------
-    const logoY = height * 0.17;
+    const logoY = vh * 0.17;
     const parts: { text: string; color: string; size: number }[] = [
       { text: 'ICE', color: '#7fd8f0', size: 72 },
       { text: "'N'", color: '#f5efe0', size: 40 },
@@ -90,27 +103,32 @@ export class TitleScene extends Phaser.Scene {
     letters.forEach((t, i) => {
       x += t.width * 0.46;
       const homeX = x;
-      t.setPosition(homeX, logoY - 120).setAlpha(0).setAngle(Phaser.Math.Between(-14, 14));
-      this.tweens.add({
-        targets: t,
-        y: logoY,
-        alpha: 1,
-        angle: 0,
-        delay: 120 + i * 50,
-        duration: 500,
-        ease: 'Back.easeOut',
-        onComplete: () => {
-          this.tweens.add({
-            targets: t,
-            y: logoY - 6,
-            duration: 900,
-            delay: i * 70,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-          });
-        },
-      });
+      if (REDUCED_MOTION) {
+        t.setPosition(homeX, logoY).setAlpha(0);
+        this.tweens.add({ targets: t, alpha: 1, delay: 60 + i * 30, duration: 180 });
+      } else {
+        t.setPosition(homeX, logoY - 120).setAlpha(0).setAngle(Phaser.Math.Between(-14, 14));
+        this.tweens.add({
+          targets: t,
+          y: logoY,
+          alpha: 1,
+          angle: 0,
+          delay: 120 + i * 50,
+          duration: 500,
+          ease: 'Back.easeOut',
+          onComplete: () => {
+            this.tweens.add({
+              targets: t,
+              y: logoY - 6,
+              duration: 900,
+              delay: i * 70,
+              yoyo: true,
+              repeat: -1,
+              ease: 'Sine.easeInOut',
+            });
+          },
+        });
+      }
       x += t.width * 0.46 + 2;
     });
 
@@ -124,8 +142,9 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     // leaderboard shortcut — opens the board straight from the road map
+    const isTouch = TouchControls.isTouchDevice();
     const board = this.add
-      .text(width - 16, 16, 'LEADERBOARD', {
+      .text(width - 16, 16, isTouch ? 'LEADERBOARD' : 'LEADERBOARD  (L)', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#ffd54a',
@@ -146,7 +165,7 @@ export class TitleScene extends Phaser.Scene {
     const cardW = 330;
     const cardH = 104;
     const gap = 36;
-    const cardY = height * 0.4;
+    const cardY = vh * 0.4;
     MODES.forEach((m, i) => {
       const cx = width / 2 + (i - 0.5) * (cardW + gap);
       panel(this, cx - cardW / 2, cardY, cardW, cardH, { alpha: 0.55, depth: 4 });
@@ -173,7 +192,7 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(5);
 
-      this.add
+      const zone = this.add
         .zone(cx - cardW / 2, cardY, cardW, cardH)
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
@@ -181,6 +200,13 @@ export class TitleScene extends Phaser.Scene {
           this.mode = m.id;
           this.refreshPicks();
         });
+      // hover: faint border on unselected cards so interactivity reads
+      zone.on('pointerover', () => {
+        if (this.mode === m.id || REDUCED_MOTION) return;
+        border.setVisible(true);
+        border.setAlpha(0.35);
+      });
+      zone.on('pointerout', () => this.refreshPicks());
     });
 
     // ------- difficulty chips -------
@@ -194,13 +220,14 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
     const chipY = cardY + cardH + 44;
     const chipW = 120;
+    const chipH = isTouch ? 44 : 34; // ≥44px touch targets
     DIFF_ORDER.forEach((d, i) => {
       const cx = width / 2 + (i - 1) * (chipW + 14);
       const g = this.add.graphics();
       g.fillStyle(0x12293f, 0.8);
-      g.fillRoundedRect(0, 0, chipW, 34, 17);
+      g.fillRoundedRect(0, 0, chipW, chipH, chipH / 2);
       const txt = this.add
-        .text(chipW / 2, 17, DIFFS[d].label, {
+        .text(chipW / 2, chipH / 2, DIFFS[d].label, {
           fontFamily: UI_FONT,
           fontSize: '15px',
           fontStyle: '600',
@@ -209,24 +236,26 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5);
       const c = this.add.container(cx - chipW / 2, chipY, [g, txt]).setDepth(5);
       this.diffChips.push(c);
-      this.add
-        .zone(cx - chipW / 2, chipY, chipW, 34)
+      const z = this.add
+        .zone(cx - chipW / 2, chipY, chipW, chipH)
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => {
           this.diff = d;
           this.refreshPicks();
         });
+      hoverLift(z, c);
     });
 
     // ------- big actions: adventure journey + online -------
-    const onlineY = chipY + 52;
+    const onlineY = chipY + chipH + 18;
     const bw = 250;
     const bgap = 14;
     const makeBigBtn = (
       x: number,
       label: string,
       sub: string,
+      key: string,
       fill: number,
       edge: number,
       go: () => void,
@@ -236,6 +265,9 @@ export class TitleScene extends Phaser.Scene {
       g.fillRoundedRect(x, onlineY, bw, 46, 12);
       g.lineStyle(2, edge, 0.7);
       g.strokeRoundedRect(x + 1, onlineY + 1, bw - 2, 44, 12);
+      const hl = this.add.graphics().setDepth(6).setVisible(false);
+      hl.fillStyle(0xffffff, 0.09);
+      hl.fillRoundedRect(x, onlineY, bw, 46, 12);
       this.add
         .text(x + bw / 2, onlineY + 16, label, {
           fontFamily: DISPLAY_FONT,
@@ -245,7 +277,7 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(5);
       this.add
-        .text(x + bw / 2, onlineY + 34, sub, {
+        .text(x + bw / 2, onlineY + 34, isTouch ? sub : `${sub}  ·  press ${key}`, {
           fontFamily: UI_FONT,
           fontSize: '11px',
           color: '#b7c8d4',
@@ -256,25 +288,29 @@ export class TitleScene extends Phaser.Scene {
         .zone(x, onlineY, bw, 46)
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
-        .on('pointerdown', go);
+        .on('pointerdown', go)
+        .on('pointerover', () => hl.setVisible(true))
+        .on('pointerout', () => hl.setVisible(false));
     };
     const bx = width / 2 - bw - bgap / 2;
-    makeBigBtn(bx, 'ADVENTURE', 'the road north — 500 levels', 0x2a5c3f, 0x4ecb71, () => {
+    const toAdventure = () => {
       sfx.ensure();
       sfx.pickup();
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.start('adventure'),
       );
-    });
-    makeBigBtn(bx + bw + bgap, 'PLAY ONLINE', 'up to 10 friends', 0x1d4a66, 0x4dd0e1, () => {
+    };
+    const toOnline = () => {
       sfx.ensure();
       sfx.pickup();
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.start('lobby'),
       );
-    });
+    };
+    makeBigBtn(bx, 'ADVENTURE', 'the road north — 500 levels', 'A', 0x2a5c3f, 0x4ecb71, toAdventure);
+    makeBigBtn(bx + bw + bgap, 'PLAY ONLINE', 'up to 10 friends', 'P', 0x1d4a66, 0x4dd0e1, toOnline);
 
     // ------- stats line -------
     const s = loadStats();
@@ -290,9 +326,8 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     // ------- press to play + controls -------
-    const isTouch = TouchControls.isTouchDevice();
     const press = this.add
-      .text(width / 2, height * 0.79, isTouch ? 'TAP TO PLAY' : 'PRESS SPACE TO PLAY', {
+      .text(width / 2, vh * 0.79, isTouch ? 'TAP TO PLAY' : 'PRESS SPACE TO PLAY', {
         fontFamily: DISPLAY_FONT,
         fontSize: '26px',
         color: '#f5efe0',
@@ -301,17 +336,19 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(5);
-    this.tweens.add({
-      targets: press,
-      scale: 1.07,
-      alpha: 0.6,
-      duration: 620,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    if (!REDUCED_MOTION) {
+      this.tweens.add({
+        targets: press,
+        scale: 1.07,
+        alpha: 0.6,
+        duration: 620,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
 
-    const chipY2 = height * 0.87;
+    const chipY2 = vh * 0.87;
     if (isTouch) {
       // thumbstick style — floating spawns under your thumb, sticky stays put
       this.add
@@ -324,28 +361,30 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(1, 0.5);
       JOY_ORDER.forEach((j, i) => {
         const cw = 116;
+        const ch = 44; // touch target ≥44px
         const cx = width / 2 - 60 + i * (cw + 12);
         const g = this.add.graphics();
         g.fillStyle(0x12293f, 0.8);
-        g.fillRoundedRect(0, 0, cw, 30, 15);
+        g.fillRoundedRect(0, 0, cw, ch, ch / 2);
         const txt = this.add
-          .text(cw / 2, 15, JOY_LABEL[j], {
+          .text(cw / 2, ch / 2, JOY_LABEL[j], {
             fontFamily: UI_FONT,
             fontSize: '14px',
             fontStyle: '600',
             color: '#9db4c4',
           })
           .setOrigin(0.5);
-        const c = this.add.container(cx, chipY2 - 13, [g, txt]).setDepth(5);
+        const c = this.add.container(cx, chipY2 - 20, [g, txt]).setDepth(5);
         this.joyChips.push(c);
-        this.add
-          .zone(cx, chipY2 - 13, cw, 30)
+        const z = this.add
+          .zone(cx, chipY2 - 20, cw, ch)
           .setOrigin(0, 0)
           .setInteractive({ useHandCursor: true })
           .on('pointerdown', () => {
             this.joy = j;
             this.refreshPicks();
           });
+        hoverLift(z, c);
       });
       this.add
         .text(
@@ -400,6 +439,14 @@ export class TitleScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-UP', () => this.cycleDiff(-1));
     this.input.keyboard!.on('keydown-DOWN', () => this.cycleDiff(1));
     this.input.keyboard!.on('keydown-ENTER', start);
+    // keyboard-complete: every on-screen action reachable without a mouse
+    this.input.keyboard!.on('keydown-A', toAdventure);
+    this.input.keyboard!.on('keydown-P', toOnline);
+    this.input.keyboard!.on('keydown-L', () => {
+      sfx.ensure();
+      sfx.pickup();
+      this.scene.start('adventure', { board: true });
+    });
     press.setInteractive({ useHandCursor: true }).on('pointerdown', start);
   }
 
