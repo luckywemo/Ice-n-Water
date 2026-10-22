@@ -154,25 +154,37 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // leaderboard shortcut — opens the board straight from the road map
+    // leaderboard — a gold pill in the center column. Corner-anchored links
+    // clip on devices where the canvas outgrows the visible window.
     const isTouch = TouchControls.isTouchDevice();
-    const board = this.add
-      .text(vw - 16, 16, isTouch ? 'LEADERBOARD' : 'LEADERBOARD  (L)', {
+    const openBoard = () => {
+      sfx.ensure();
+      sfx.pickup();
+      this.scene.start('adventure', { board: true });
+    };
+    const lbW = 250;
+    const lbH = 38;
+    const lbY = logoY + 98;
+    const lbG = this.add.graphics().setDepth(4);
+    lbG.fillStyle(0x2a2314, 0.85);
+    lbG.fillRoundedRect(vw / 2 - lbW / 2, lbY, lbW, lbH, lbH / 2);
+    lbG.lineStyle(2, 0xffd54a, 0.75);
+    lbG.strokeRoundedRect(vw / 2 - lbW / 2 + 1, lbY + 1, lbW - 2, lbH - 2, lbH / 2 - 1);
+    const lbTxt = this.add
+      .text(vw / 2, lbY + lbH / 2, isTouch ? '★ LEADERBOARD' : '★ LEADERBOARD  (L)', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#ffd54a',
       })
-      .setOrigin(1, 0)
-      .setDepth(6)
+      .setOrigin(0.5)
+      .setDepth(5);
+    const lbZone = this.add
+      .zone(vw / 2 - lbW / 2, lbY, lbW, lbH)
+      .setOrigin(0, 0)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        sfx.ensure();
-        sfx.pickup();
-        this.scene.start('adventure', { board: true });
-      });
-    board
-      .on('pointerover', () => board.setColor('#f5efe0'))
-      .on('pointerout', () => board.setColor('#ffd54a'));
+      .on('pointerdown', openBoard)
+      .on('pointerover', () => lbTxt.setColor('#f5efe0'))
+      .on('pointerout', () => lbTxt.setColor('#ffd54a'));
 
     // ------- mode cards -------
     const cardW = 330;
@@ -455,11 +467,7 @@ export class TitleScene extends Phaser.Scene {
     // keyboard-complete: every on-screen action reachable without a mouse
     this.input.keyboard!.on('keydown-A', toAdventure);
     this.input.keyboard!.on('keydown-P', toOnline);
-    this.input.keyboard!.on('keydown-L', () => {
-      sfx.ensure();
-      sfx.pickup();
-      this.scene.start('adventure', { board: true });
-    });
+    this.input.keyboard!.on('keydown-L', openBoard);
     press.setInteractive({ useHandCursor: true }).on('pointerdown', start);
   }
 
