@@ -90,6 +90,10 @@ export class AdventureScene extends Phaser.Scene {
   private camStartY = 0;
   private boardLayer: Phaser.GameObjects.Container | null = null;
   private cardLayer: Phaser.GameObjects.Container | null = null; // level preview card
+  // screen-space tap rects for overlay buttons — container-children input is
+  // unreliable under the camera scroll, so taps are checked manually
+  private cardHit: { x: number; y: number; w: number; h: number; fn: () => void }[] = [];
+  private boardHit: { x: number; y: number; w: number; h: number; fn: () => void }[] = [];
   private revealIdx = -1; // row whose fog burns off this visit
   private revealLabel: Phaser.GameObjects.Text | null = null;
   private marching = false; // frontier marker is mid-march to the next stop
@@ -122,6 +126,8 @@ export class AdventureScene extends Phaser.Scene {
     this.prog = adventureProgress(this.campaign);
     this.boardLayer = null; // scene instance persists across restarts
     this.cardLayer = null;
+    this.cardHit = [];
+    this.boardHit = [];
     this.marching = false;
     this.frontierWarps = [];
     this.warps = [];
@@ -342,6 +348,8 @@ export class AdventureScene extends Phaser.Scene {
       );
     });
     this.input.on('pointerup', () => (this.dragY = null));
+    this.input.on('pointerdown', this.onOverlayTap, this);
+    this.events.once('shutdown', () => this.input.off('pointerdown', this.onOverlayTap, this));
     this.input.keyboard!.on('keydown-ESC', () => {
       if (this.boardLayer) this.closeBoard();
       else if (this.cardLayer) this.closeCard();
@@ -848,8 +856,7 @@ export class AdventureScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setPadding(8)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.closeBoard());
+      .setInteractive({ useHandCursor: true });
     close.on('pointerover', () => close.setColor('#f5efe0')).on('pointerout', () => close.setColor('#9db4c4'));
 
     // name row — tap SET to name your runner (shares the online lobby name)
@@ -862,6 +869,14 @@ export class AdventureScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setName('boardName');
+    const doSet = () => {
+      const n = window.prompt('runner name (shows on the board)', playerName());
+      if (n === null) return;
+      setPlayerName(n);
+      nameLbl.setText(`NAME: ${playerName() || '—'}`);
+      submitAdventureScore(true);
+      this.time.delayedCall(700, () => this.renderBoard()); // let the post land
+    };
     const setBtn = this.add
       .text(px + pw - 30, py + ph - 96, 'SET', {
         fontFamily: DISPLAY_FONT,
@@ -870,16 +885,13 @@ export class AdventureScene extends Phaser.Scene {
       })
       .setOrigin(1, 0.5)
       .setPadding(10, 8, 10, 8)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        const n = window.prompt('runner name (shows on the board)', playerName());
-        if (n === null) return;
-        setPlayerName(n);
-        nameLbl.setText(`NAME: ${playerName() || '—'}`);
-        submitAdventureScore(true);
-        this.time.delayedCall(700, () => this.renderBoard()); // let the post land
-      });
+      .setInteractive({ useHandCursor: true });
     setBtn.on('pointerover', () => setBtn.setColor('#f5efe0')).on('pointerout', () => setBtn.setColor('#4dd0e1'));
+    // screen-space tap rects — board sits in an sf0 container, children miss input
+    this.boardHit = [
+      { x: px + pw - 58, y: py + 4, w: 56, h: 44, fn: () => this.closeBoard() },
+      { x: px + pw - 76, y: py + ph - 118, w: 72, h: 44, fn: doSet },
+    ];
 
     layer.add([dim, pnl, title, sub, rows, me, hint, close, nameLbl, setBtn]);
 
@@ -916,11 +928,24 @@ export class AdventureScene extends Phaser.Scene {
   private closeBoard() {
     this.boardLayer?.destroy();
     this.boardLayer = null;
+    this.boardHit = [];
   }
 
   private closeCard() {
     this.cardLayer?.destroy();
     this.cardLayer = null;
+    this.cardHit = [];
+  }
+
+  /** manual overlay hit test — board zones win over card zones */
+  private onOverlayTap(p: Phaser.Input.Pointer) {
+    if (this.marching) return;
+    for (const z of [...this.boardHit, ...this.cardHit]) {
+      if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) {
+        z.fn();
+        return;
+      }
+    }
   }
 
   /** bottom sheet — the level's name, chapter, objective, stars, PLAY */
@@ -939,6 +964,11 @@ export class AdventureScene extends Phaser.Scene {
     g.lineStyle(2, pal.accent, 0.85).strokeRoundedRect(x + 1, y + 1, W - 2, H - 2, 12);
 
     const stars = this.prog.stars[n] ?? 0;
+    // screen-space tap rects — the real input path (container children miss)
+    this.cardHit = [
+      { x: x + W - 118, y: y + H - 54, w: 110, h: 48, fn: () => this.playLevel(n) },
+      { x: x + W - 58, y: y + 4, w: 54, h: 44, fn: () => this.closeCard() },
+    ];
     const playBtn = this.add
       .text(x + W - 20, y + H - 30, 'PLAY ▶', {
         fontFamily: DISPLAY_FONT,
@@ -947,7 +977,6 @@ export class AdventureScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.playLevel(n))
       .on('pointerover', () => playBtn.setColor('#f5efe0'))
       .on('pointerout', () => playBtn.setColor(pal.accentCss));
     const kids = [
@@ -989,9 +1018,7 @@ export class AdventureScene extends Phaser.Scene {
           color: '#7d93a5',
         })
         .setOrigin(1, 0)
-        .setPadding(8)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', () => this.closeCard()),
+        .setPadding(8),
     ];
 
     const c = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(50);

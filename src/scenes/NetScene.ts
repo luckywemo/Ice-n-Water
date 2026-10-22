@@ -76,6 +76,9 @@ export class NetScene extends Phaser.Scene {
   private lastRound = 0;
   private endedShown = false;
   private endLayer: Phaser.GameObjects.Container | null = null;
+  // screen-space tap rects for the end screen — pinned-container children
+  // miss input under the camera scroll, so taps are checked manually
+  private endHit: { x: number; y: number; w: number; h: number; fn: () => void }[] = [];
   private net = new Client(SERVER_URL);
   private reconnToken = '';
   private leaving = false;
@@ -205,6 +208,8 @@ export class NetScene extends Phaser.Scene {
     this.relayout();
     this.scale.on('resize', this.relayout, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
+    this.input.on('pointerdown', this.onEndTap, this);
+    this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
 
     sfx.ensure();
     sfx.whistle();
@@ -405,12 +410,15 @@ export class NetScene extends Phaser.Scene {
     // ── match end / rematch reset ────────────────────────────
     if (s.phase === 'ended' && !this.endedShown) {
       this.endedShown = true;
+      this.touch?.setActive(false); // pads off — the end screen owns the taps
       this.showEnd();
     } else if (s.phase === 'playing' && this.endedShown) {
       if (this.endLayer) this.unpin(this.endLayer);
       this.endLayer?.destroy();
       this.endLayer = null;
+      this.endHit = [];
       this.endedShown = false;
+      this.touch?.setActive(true);
     }
   }
 
@@ -487,7 +495,6 @@ export class NetScene extends Phaser.Scene {
     layer.add(again);
     if (isHost) {
       again.setPadding(14, 10, 14, 10);
-      again.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.room.send('restart'));
       this.input.keyboard!.on('keydown-SPACE', () => {
         if (this.room.state.phase === 'ended') this.room.send('restart');
       });
@@ -499,11 +506,27 @@ export class NetScene extends Phaser.Scene {
         color: '#9db4c4',
       })
       .setOrigin(0.5)
-      .setPadding(14, 10, 14, 10)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.leave());
+      .setPadding(14, 10, 14, 10);
     layer.add(leaveBtn);
+    // screen-space tap rects — container children miss input under camera scroll
+    this.endHit = [
+      ...(isHost
+        ? [{ x: width / 2 - 110, y: height / 2 + 30, w: 220, h: 46, fn: () => this.room.send('restart') }]
+        : []),
+      { x: width / 2 - 90, y: height / 2 + 82, w: 180, h: 44, fn: () => this.leave() },
+    ];
     this.relayout();
+  }
+
+  /** manual hit test for the end screen buttons */
+  private onEndTap(p: Phaser.Input.Pointer) {
+    if (!this.endHit.length) return;
+    for (const z of this.endHit) {
+      if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) {
+        z.fn();
+        return;
+      }
+    }
   }
 
   /** Register onAdd/onRemove on the live room's player collection. */
