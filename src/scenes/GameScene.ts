@@ -1754,11 +1754,12 @@ export class GameScene extends Phaser.Scene {
         go: () => this.transitionTo('game', true),
       });
     }
+    // always offer the road — classic players should funnel into the campaign
     acts.push({
-      label: L ? 'THE ROAD' : 'TITLE',
+      label: 'THE ROAD',
       fill: 0x1d4a66,
       edge: 0x4dd0e1,
-      go: () => this.transitionTo(L ? 'adventure' : 'title'),
+      go: () => this.transitionTo('adventure'),
     });
     acts.push({ label: 'SHARE', fill: 0x233447, edge: 0x7d93a5, go: () => this.shareScore(false) });
 

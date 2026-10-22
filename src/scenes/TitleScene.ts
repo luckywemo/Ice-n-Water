@@ -326,6 +326,15 @@ export class TitleScene extends Phaser.Scene {
         this.scene.start('adventure'),
       );
     };
+    const startClassic = () => {
+      sfx.ensure();
+      sfx.shortWhistle();
+      savePicks(this.mode, this.diff, this.joy);
+      this.cameras.main.fadeOut(220, 0, 0, 0);
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
+        this.scene.start('game', { mode: this.mode, difficulty: this.diff }),
+      );
+    };
     const toOnline = () => {
       sfx.ensure();
       sfx.pickup();
@@ -334,7 +343,7 @@ export class TitleScene extends Phaser.Scene {
         this.scene.start('lobby'),
       );
     };
-    makeBigBtn(bx, 'ADVENTURE', 'the road north — 500 levels', 'A', 0x2a5c3f, 0x4ecb71, toAdventure);
+    makeBigBtn(bx, 'QUICK MATCH', 'one classic round', 'Q', 0x2a5c3f, 0x4ecb71, startClassic);
     makeBigBtn(bx + bw + bgap, 'PLAY ONLINE', 'up to 10 friends', 'P', 0x1d4a66, 0x4dd0e1, toOnline);
 
     // ------- stats line -------
@@ -443,16 +452,9 @@ export class TitleScene extends Phaser.Scene {
     this.refreshPicks();
 
     // ------- input -------
-    const start = () => {
-      sfx.ensure();
-      sfx.shortWhistle();
-      savePicks(this.mode, this.diff, this.joy);
-      this.cameras.main.fadeOut(220, 0, 0, 0);
-      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('game', { mode: this.mode, difficulty: this.diff }),
-      );
-    };
-    this.input.keyboard!.on('keydown-SPACE', start);
+    // TAP TO PLAY is the road north — the campaign IS the game. Classic
+    // one-off rounds live on the QUICK MATCH button (Q).
+    this.input.keyboard!.on('keydown-SPACE', toAdventure);
     this.input.keyboard!.on('keydown-LEFT', () => {
       this.mode = 'ice';
       this.refreshPicks();
@@ -463,12 +465,13 @@ export class TitleScene extends Phaser.Scene {
     });
     this.input.keyboard!.on('keydown-UP', () => this.cycleDiff(-1));
     this.input.keyboard!.on('keydown-DOWN', () => this.cycleDiff(1));
-    this.input.keyboard!.on('keydown-ENTER', start);
+    this.input.keyboard!.on('keydown-ENTER', toAdventure);
     // keyboard-complete: every on-screen action reachable without a mouse
     this.input.keyboard!.on('keydown-A', toAdventure);
+    this.input.keyboard!.on('keydown-Q', startClassic);
     this.input.keyboard!.on('keydown-P', toOnline);
     this.input.keyboard!.on('keydown-L', openBoard);
-    press.setInteractive({ useHandCursor: true }).on('pointerdown', start);
+    press.setInteractive({ useHandCursor: true }).on('pointerdown', toAdventure);
   }
 
   private cycleDiff(step: number) {
