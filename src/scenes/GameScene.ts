@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION } from '../ui';
-import { LevelDef, levelDef, recordLevel, TOTAL_LEVELS } from '../adventure';
+import { LevelDef, levelDef, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Mode, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
@@ -44,6 +44,9 @@ interface ChaserState {
   desired: Phaser.Math.Vector2;
   nextBarkAt: number;
   shadow: Phaser.GameObjects.Sprite;
+  speedMult: number; // boss chasers run hot
+  tint?: number; // boss body color (warn flash overrides it temporarily)
+  tag?: Phaser.GameObjects.Text; // floating boss name
 }
 
 type ItemType = 'slippers' | 'charm' | 'water' | 'key';
@@ -117,8 +120,13 @@ export class GameScene extends Phaser.Scene {
   private playerRescues = 0;
   private lastResult: { won: boolean; survived: number } | null = null;
 
+  // adventure objectives — collect tokens / rescue mates beyond raw survival
+  private objGot = 0;
+  private collectGroup!: Phaser.Physics.Arcade.Group;
+
   private timeText!: Phaser.GameObjects.Text;
   private infoText!: Phaser.GameObjects.Text;
+  private objText!: Phaser.GameObjects.Text;
   private itemText!: Phaser.GameObjects.Text;
   private bannerText!: Phaser.GameObjects.Text;
   private subBannerText!: Phaser.GameObjects.Text;
@@ -156,6 +164,7 @@ export class GameScene extends Phaser.Scene {
     this.lastShownSec = -1;
     this.playerFreezes = 0;
     this.playerRescues = 0;
+    this.objGot = 0;
     this.lastResult = null;
     this.phase = 'countdown';
     this.countdownLeft = CONFIG.round.countdownSec;
@@ -204,6 +213,7 @@ export class GameScene extends Phaser.Scene {
     this.itemGroup = this.physics.add.group({ allowGravity: false, immovable: true });
     this.spawnEntities();
     this.spawnInitialItems();
+    if (this.level?.objective.kind === 'collect') this.spawnCollectTokens();
 
     // camera lives on the player — the world is bigger than the screen now
     this.cameras.main
@@ -371,7 +381,25 @@ export class GameScene extends Phaser.Scene {
       const chaser = this.physics.add.sprite(arena.wall + 40, y, 'chaser');
       (chaser.body as Body).setCircle(CONFIG.chaser.radius + 2);
       this.chasers.push(chaser);
-      this.cState.set(chaser, this.freshChaser(chaser));
+      const cst = this.freshChaser(chaser);
+      // milestone levels are boss fights — the named champion is bigger,
+      // hotter, and wears their title over their head
+      if (this.level?.boss && i === 0) {
+        chaser.setScale(1.45);
+        cst.speedMult = 1.15;
+        cst.tint = 0xff8080;
+        cst.tag = this.add
+          .text(chaser.x, chaser.y - 44, this.level.boss, {
+            fontFamily: DISPLAY_FONT,
+            fontSize: '13px',
+            color: '#ffb0b0',
+            stroke: '#2b0e0e',
+            strokeThickness: 4,
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(8);
+      }
+      this.cState.set(chaser, cst);
     }
 
     for (const r of this.runners) this.collideWithWorld(r);
@@ -436,6 +464,7 @@ export class GameScene extends Phaser.Scene {
       desired: new Phaser.Math.Vector2(0, 0),
       nextBarkAt: this.time.now + Phaser.Math.Between(2500, 5000),
       shadow,
+      speedMult: 1,
     };
   }
 
@@ -481,6 +510,48 @@ export class GameScene extends Phaser.Scene {
     else spawn('key', items.key.count);
   }
 
+  /** collect-objective levels — scattered drops (ice) / evidence (police) */
+  private spawnCollectTokens() {
+    const need = this.level!.objective.count;
+    // two spare pickups so nothing can soft-lock behind a bad spawn
+    const total = need + 2;
+    if (!this.textures.exists('lvltoken')) {
+      const g = this.add.graphics();
+      const c = this.mode === 'police' ? 0xf0a13a : 0x7fd8f0;
+      g.fillStyle(c, 1).fillCircle(12, 12, 10);
+      g.fillStyle(0xffffff, 0.35).fillCircle(9, 8, 4);
+      g.lineStyle(2, 0x081420, 0.7).strokeCircle(12, 12, 9);
+      g.generateTexture('lvltoken', 24, 24);
+      g.destroy();
+    }
+    this.collectGroup = this.physics.add.group({ allowGravity: false, immovable: true });
+    for (let i = 0; i < total; i++) {
+      const p = this.randomFreePos();
+      const s = this.lit(this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite).setDepth(1.6);
+      if (!REDUCED_MOTION) {
+        this.tweens.add({
+          targets: s,
+          y: s.y - 5,
+          duration: 650 + Math.random() * 350,
+          yoyo: true,
+          repeat: -1,
+        });
+      }
+    }
+    this.physics.add.overlap(this.player, this.collectGroup, (_p, t) =>
+      this.collectToken(t as Sprite),
+    );
+  }
+
+  private collectToken(t: Sprite) {
+    if (this.phase !== 'play') return;
+    this.burst(t.x, t.y, this.mode === 'police' ? 0xf0a13a : 0x7fd8f0, 12, 160);
+    this.floatText(t.x, t.y, this.mode === 'police' ? 'EVIDENCE!' : 'WATER DROP!');
+    sfx.pickup();
+    t.destroy();
+    this.objGot++;
+  }
+
   // ---------- HUD ----------
 
   private pin<T extends HudItem['obj']>(obj: T, ax: number, ay: number, ox = 0, oy = 0): T {
@@ -500,7 +571,7 @@ export class GameScene extends Phaser.Scene {
   private buildHud() {
     const style = { fontFamily: UI_FONT, fontSize: '19px', fontStyle: '600', color: '#f5efe0' };
 
-    this.pin(panel(this, 14, 8, 240, 62), 0, 0);
+    this.pin(panel(this, 14, 8, this.level ? 340 : 240, this.level ? 78 : 62), 0, 0);
     this.timeText = this.pin(
       this.add.text(0, 0, '', { ...style, fontFamily: DISPLAY_FONT, fontSize: '17px' }).setDepth(10),
       0, 0, 28, 14,
@@ -514,6 +585,11 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(1, 0)
         .setDepth(10),
       1, 0, -16, 14,
+    );
+    // adventure objective line — landmark name + what the level wants
+    this.objText = this.pin(
+      this.add.text(0, 0, '', { ...style, fontSize: '12px', fontStyle: '500', color: '#ffd54a' }).setDepth(10),
+      0, 0, 28, 60,
     );
 
     // team status dots — one per runner
@@ -877,7 +953,7 @@ export class GameScene extends Phaser.Scene {
           const L = this.level;
           this.showBanner(
             L.milestone ? `MILESTONE ${L.milestone} — ${L.town.toUpperCase()}` : `LEVEL ${L.n}`,
-            `${this.chasers.length} militia · ${L.seconds}s`,
+            `${L.boss ? L.boss + ' — ' : ''}${L.name}\n${objectiveText(L)} · ${this.chasers.length} militia · ${L.seconds}s`,
           );
         }
         this.tweens.add({
@@ -943,6 +1019,15 @@ export class GameScene extends Phaser.Scene {
     this.updatePresentation(delta);
     this.checkWin();
 
+    // adventure objectives can end the round early — done ≠ merely surviving
+    if (this.level) {
+      const o = this.level.objective;
+      const done =
+        (o.kind === 'collect' && this.objGot >= o.count) ||
+        (o.kind === 'rescue' && this.playerRescues >= o.count);
+      if (done) return this.endGame(false);
+    }
+
     if (Phaser.Input.Keyboard.JustDown(this.keys.R)) this.transitionTo('game', true);
     if (Phaser.Input.Keyboard.JustDown(this.keys.T) || Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       this.transitionTo(this.level ? 'adventure' : 'title');
@@ -956,14 +1041,14 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       if (restart) this.scene.restart();
-      else this.scene.start(key);
+      else this.scene.start(key, key === 'adventure' && this.level ? { track: this.level.track } : undefined);
     });
   }
 
   private transitionToNextLevel() {
     if (this.transitioning || !this.level) return;
     this.transitioning = true;
-    const next = levelDef(Math.min(this.level.n + 1, TOTAL_LEVELS));
+    const next = levelDef(this.level.track, Math.min(this.level.n + 1, TOTAL_LEVELS));
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
       this.scene.start('game', { adventure: next }),
@@ -1127,8 +1212,9 @@ export class GameScene extends Phaser.Scene {
       st.nextBarkAt = this.time.now + Phaser.Math.Between(5000, 9000);
       if (Math.random() < 0.55) this.bark(c, 'hunt');
     }
-    c.setTintFill(st.warnUntil > 0 ? 0xffc46b : 0xffffff);
-    if (st.warnUntil === 0) c.clearTint();
+    c.setTintFill(st.warnUntil > 0 ? 0xffc46b : (st.tint ?? 0xffffff));
+    if (st.warnUntil === 0 && st.tint === undefined) c.clearTint();
+    st.tag?.setPosition(c.x, c.y - CONFIG.chaser.radius - 30);
 
     // stuck detection
     st.checkIn -= delta;
@@ -1156,7 +1242,8 @@ export class GameScene extends Phaser.Scene {
           : lead;
         const steered = this.steer(c, dir);
         const speed =
-          this.time.now < st.dashUntil ? this.chaserSpeed * dash.mult : this.chaserSpeed;
+          (this.time.now < st.dashUntil ? this.chaserSpeed * dash.mult : this.chaserSpeed) *
+          st.speedMult;
         st.desired.set(steered.x * speed, steered.y * speed);
       } else {
         st.desired.set(0, 0);
@@ -1576,7 +1663,7 @@ export class GameScene extends Phaser.Scene {
       if (this.level) {
         // ★ survive · ★★ at most one freeze/jail · ★★★ untouched
         stars = this.playerFreezes === 0 ? 3 : this.playerFreezes === 1 ? 2 : 1;
-        recordLevel(this.level.n, stars as 1 | 2 | 3);
+        recordLevel(this.level.track, this.level.n, stars as 1 | 2 | 3);
         submitAdventureScore();
       }
       const finalLevel = this.level?.n === TOTAL_LEVELS;
@@ -1649,6 +1736,15 @@ export class GameScene extends Phaser.Scene {
         ? `${lvl}CREW ${this.runners.length - frozenCount} free · ${frozenCount} jailed`
         : `${lvl}CREW ${this.runners.length - frozenCount} free`,
     );
+
+    if (this.level) {
+      const o = this.level.objective;
+      const prog =
+        o.kind === 'collect' ? ` · ${this.objGot}/${o.count}` : o.kind === 'rescue' ? ` · ${this.playerRescues}/${o.count}` : '';
+      this.objText.setText(
+        `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}`,
+      );
+    }
 
     this.teamDots.forEach((dot, i) => {
       const r = this.runners[i];

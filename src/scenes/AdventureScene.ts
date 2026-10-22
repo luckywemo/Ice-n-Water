@@ -7,7 +7,10 @@ import {
   LEVELS_PER_MILESTONE,
   TOTAL_MILESTONES,
   MILESTONE_TOWNS,
+  Track,
+  TRACK_META,
   levelDef,
+  objectiveText,
   adventureProgress,
   totalStars,
   AdventureProgress,
@@ -34,7 +37,8 @@ type WarpObj =
  * interaction is invisible zones. Drag / wheel / arrows to travel.
  */
 export class AdventureScene extends Phaser.Scene {
-  private prog: AdventureProgress = adventureProgress();
+  private campaign: Track = 'ice'; // which campaign skin is on the road
+  private prog: AdventureProgress = adventureProgress('ice');
   private worldH = 0;
   private pathW = PATH_W;
   private pathX = 0;
@@ -85,6 +89,7 @@ export class AdventureScene extends Phaser.Scene {
   private dragY: number | null = null;
   private camStartY = 0;
   private boardLayer: Phaser.GameObjects.Container | null = null;
+  private cardLayer: Phaser.GameObjects.Container | null = null; // level preview card
   private revealIdx = -1; // row whose fog burns off this visit
   private revealLabel: Phaser.GameObjects.Text | null = null;
 
@@ -107,11 +112,14 @@ export class AdventureScene extends Phaser.Scene {
     return { x, y };
   }
 
-  create(data?: { board?: boolean }) {
+  create(data?: { board?: boolean; track?: Track }) {
     const { width } = this.scale;
     makeTextures(this);
-    this.prog = adventureProgress();
+    this.campaign = data?.track ?? this.campaign ?? 'ice';
+    const pal = TRACK_META[this.campaign];
+    this.prog = adventureProgress(this.campaign);
     this.boardLayer = null; // scene instance persists across restarts
+    this.cardLayer = null;
     this.warps = [];
     this.zoneRefs = [];
     this.rowImgs = [];
@@ -124,7 +132,7 @@ export class AdventureScene extends Phaser.Scene {
     this.worldH = TOP_PAD + (TOTAL_MILESTONES - 1) * ROW_H + 220;
 
     // did we just push the frontier into a new row? that fog burns off on entry
-    const SEEN_KEY = 'icenwater_adv_seen';
+    const SEEN_KEY = `icenwater_adv_seen_${this.campaign}`;
     const seen = Number(localStorage.getItem(SEEN_KEY) ?? 0);
     this.revealIdx = -1;
     this.revealLabel = null;
@@ -216,12 +224,12 @@ export class AdventureScene extends Phaser.Scene {
 
     // ---- fixed HUD ----
     const done = Object.keys(this.prog.stars).length;
-    panel(this, 12, 10, 430, 58).setScrollFactor(0).setDepth(40);
+    panel(this, 12, 10, Math.min(430, width - 24), 58).setScrollFactor(0).setDepth(40);
     this.add
-      .text(26, 16, 'ADVENTURE — the road north', {
+      .text(26, 16, pal.title, {
         fontFamily: DISPLAY_FONT,
         fontSize: '17px',
-        color: '#f5efe0',
+        color: pal.accentCss,
       })
       .setScrollFactor(0)
       .setDepth(41);
@@ -235,8 +243,44 @@ export class AdventureScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(41);
 
+    // ---- campaign chips — one road, two campaigns ----
+    (['ice', 'police'] as const).forEach((tk, i) => {
+      const meta = TRACK_META[tk];
+      const on = tk === this.campaign;
+      const cw = 150;
+      const cx = 14 + i * (cw + 10);
+      const cy = 76;
+      const g = this.add.graphics().setScrollFactor(0).setDepth(40);
+      g.fillStyle(on ? meta.accent : 0x12293f, on ? 0.95 : 0.85);
+      g.fillRoundedRect(cx, cy, cw, 28, 14);
+      g.lineStyle(2, on ? 0xffffff : meta.accent, on ? 0.8 : 0.4);
+      g.strokeRoundedRect(cx + 1, cy + 1, cw - 2, 26, 13);
+      this.add
+        .text(cx + cw / 2, cy + 14, meta.title, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '11px',
+          color: on ? '#0d1b2a' : '#9db4c4',
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(41);
+      this.add
+        .zone(cx, cy, cw, 28)
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(42)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+          if (on) return;
+          sfx.pickup();
+          this.scene.restart({ track: tk });
+        });
+    });
+
+    // on narrow screens the nav row tucks under the chips instead of clipping the panel
+    const navY = width < 560 ? 112 : 18;
     const back = this.add
-      .text(this.scale.width - 16, 18, '← TITLE', {
+      .text(this.scale.width - 16, navY, '← TITLE', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#9db4c4',
@@ -249,7 +293,7 @@ export class AdventureScene extends Phaser.Scene {
     back.on('pointerover', () => back.setColor('#f5efe0')).on('pointerout', () => back.setColor('#9db4c4'));
 
     const board = this.add
-      .text(this.scale.width - 96, 18, 'BOARD', {
+      .text(this.scale.width - 96, navY, 'BOARD', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#ffd54a',
@@ -266,12 +310,12 @@ export class AdventureScene extends Phaser.Scene {
 
     // ---- scroll controls — drag with momentum, wheel, keys ----
     this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
-      if (this.boardLayer) return;
+      if (this.boardLayer || this.cardLayer) return;
       this.velY = 0;
       cam.scrollY = Phaser.Math.Clamp(cam.scrollY + dy * 0.9, 0, this.worldH - this.scale.height);
     });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer) return;
+      if (this.boardLayer || this.cardLayer) return;
       this.dragY = p.y;
       this.camStartY = cam.scrollY;
       this.velY = 0;
@@ -279,7 +323,7 @@ export class AdventureScene extends Phaser.Scene {
       this.lastMoveT = this.time.now;
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer) return;
+      if (this.boardLayer || this.cardLayer) return;
       if (this.dragY === null || !p.isDown) return;
       const dt = Math.max(1, this.time.now - this.lastMoveT);
       this.velY = (-(p.y - this.lastMoveY) / dt) * 1000; // px per second
@@ -294,6 +338,7 @@ export class AdventureScene extends Phaser.Scene {
     this.input.on('pointerup', () => (this.dragY = null));
     this.input.keyboard!.on('keydown-ESC', () => {
       if (this.boardLayer) this.closeBoard();
+      else if (this.cardLayer) this.closeCard();
       else this.toTitle();
     });
     this.input.keyboard!.on('keydown-ENTER', () => this.playLevel(this.prog.unlocked));
@@ -491,6 +536,7 @@ export class AdventureScene extends Phaser.Scene {
   /** bake a milestone row's nodes+numbers into one canvas texture;
    *  rows beyond "one town ahead" are swallowed by cloud — ghosts only */
   private bakeRow(r: number) {
+    const pal = TRACK_META[this.campaign];
     const { width } = this.scale;
     const rowTop = this.rowTop(r);
     const canvasH = this.rowBand(r) + ROW_H + 44; // ROW_H of bleed below = room for the connector
@@ -515,7 +561,7 @@ export class AdventureScene extends Phaser.Scene {
       ctx.moveTo(a.x, ly(a.y));
       ctx.lineTo(b.x, ly(b.y));
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(127,216,240,0.45)';
+      ctx.strokeStyle = pal.roadCss;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(a.x, ly(a.y));
@@ -549,7 +595,7 @@ export class AdventureScene extends Phaser.Scene {
       // node body — locked nodes still read as stops on the road
       ctx.beginPath();
       ctx.arc(p.x, py, rad, 0, Math.PI * 2);
-      ctx.fillStyle = done ? '#f0c04a' : open ? '#4dd0e1' : '#23405a';
+      ctx.fillStyle = done ? '#f0c04a' : open ? pal.accentCss : '#23405a';
       ctx.fill();
       ctx.lineWidth = isMilestone ? 4 : 3;
       ctx.strokeStyle = n === this.prog.unlocked ? '#ffffff' : done ? '#8a6d3a' : '#4a7a9f';
@@ -643,7 +689,7 @@ export class AdventureScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: n2 <= this.prog.unlocked })
         .on('pointerdown', () => {
-          if (n2 <= this.prog.unlocked) this.playLevel(n2);
+          if (n2 <= this.prog.unlocked) this.showLevelCard(n2);
         });
       this.zoneRefs.push({ z, r, px: p2.x, py: p2.y, zr: 21 });
     }
@@ -780,12 +826,96 @@ export class AdventureScene extends Phaser.Scene {
     this.boardLayer = null;
   }
 
+  private closeCard() {
+    this.cardLayer?.destroy();
+    this.cardLayer = null;
+  }
+
+  /** bottom sheet — the level's name, chapter, objective, stars, PLAY */
+  private showLevelCard(n: number) {
+    this.closeCard();
+    const def = levelDef(this.campaign, Math.min(n, TOTAL_LEVELS));
+    const pal = TRACK_META[this.campaign];
+    const { width, height } = this.scale;
+    const W = Math.min(440, width - 36);
+    const H = 128;
+    const x = width / 2 - W / 2;
+    const y = height - H - 16;
+
+    const g = this.add.graphics();
+    g.fillStyle(UI.panel, 0.96).fillRoundedRect(x, y, W, H, 12);
+    g.lineStyle(2, pal.accent, 0.85).strokeRoundedRect(x + 1, y + 1, W - 2, H - 2, 12);
+
+    const stars = this.prog.stars[n] ?? 0;
+    const playBtn = this.add
+      .text(x + W - 20, y + H - 30, 'PLAY ▶', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '17px',
+        color: pal.accentCss,
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.playLevel(n))
+      .on('pointerover', () => playBtn.setColor('#f5efe0'))
+      .on('pointerout', () => playBtn.setColor(pal.accentCss));
+    const kids = [
+      g,
+      this.add.text(x + 16, y + 12, `LEVEL ${n} — ${def.name}`, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '15px',
+        color: '#f5efe0',
+      }),
+      this.add
+        .text(x + W - 44, y + 14, stars ? '★'.repeat(stars) : '—', {
+          fontFamily: UI_FONT,
+          fontSize: '15px',
+          color: '#f0c04a',
+        })
+        .setOrigin(1, 0),
+      this.add.text(x + 16, y + 38, `${def.chapter}${def.town ? '  ·  ' + def.town.toUpperCase() : ''}`, {
+        fontFamily: UI_FONT,
+        fontSize: '12px',
+        fontStyle: '600',
+        color: '#9db4c4',
+      }),
+      this.add.text(x + 16, y + 60, `◆ ${objectiveText(def)}${def.boss ? '  ·  BOSS FIGHT' : ''}`, {
+        fontFamily: UI_FONT,
+        fontSize: '13px',
+        color: pal.accentCss,
+      }),
+      this.add.text(x + 16, y + 82, `${def.chasers} militia · ${def.seconds}s · crew of ${def.crew}`, {
+        fontFamily: UI_FONT,
+        fontSize: '12px',
+        color: '#7d93a5',
+      }),
+      playBtn,
+      this.add
+        .text(x + W - 16, y + 12, '✕', {
+          fontFamily: UI_FONT,
+          fontSize: '17px',
+          fontStyle: '600',
+          color: '#7d93a5',
+        })
+        .setOrigin(1, 0)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.closeCard()),
+    ];
+
+    const c = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(50);
+    if (!REDUCED_MOTION) {
+      c.y = 60;
+      c.alpha = 0;
+      this.tweens.add({ targets: c, y: 0, alpha: 1, duration: 220, ease: 'Cubic.easeOut' });
+    }
+    this.cardLayer = c;
+  }
+
   private playLevel(n: number) {
     sfx.ensure();
     sfx.shortWhistle();
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('game', { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) }),
+      this.scene.start('game', { adventure: levelDef(this.campaign, Math.min(n, TOTAL_LEVELS)) }),
     );
   }
 

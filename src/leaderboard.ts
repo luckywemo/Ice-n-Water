@@ -79,8 +79,12 @@ let lastScore = -1;
 
 /** fire-and-forget — call after a level is cleared; only posts on a new best unless forced */
 export function submitAdventureScore(force = false) {
-  const p = adventureProgress();
-  const score = pack(p.unlocked, totalStars(p));
+  // the board counts both campaigns — 1000 levels of road
+  const ice = adventureProgress('ice');
+  const cop = adventureProgress('police');
+  const level = (ice.unlocked - 1) + (cop.unlocked - 1);
+  const stars = totalStars(ice) + totalStars(cop);
+  const score = pack(level, stars);
   const now = Date.now();
   if (!force && (now - lastSubmit < 2500 || score <= lastScore)) return;
   lastSubmit = now;
@@ -99,7 +103,7 @@ export function submitAdventureScore(force = false) {
     fetch(`${REST_API}${USE_WORKER ? '/score' : '/api/score'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, level: p.unlocked, stars: totalStars(p) }),
+      body: JSON.stringify({ id, name, level, stars }),
       signal: AbortSignal.timeout(6000),
     }).catch(() => {
       /* scores are flavor, never block the game */

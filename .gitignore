@@ -30,3 +30,6 @@ npm-debug.log*
 # OS junk
 .DS_Store
 Thumbs.db
+
+# design-audit screenshots
+shots/
