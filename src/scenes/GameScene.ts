@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION } from '../ui';
-import { LevelDef, levelDef, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
+import { LevelDef, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Mode, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
@@ -232,7 +232,14 @@ export class GameScene extends Phaser.Scene {
       this,
       {
         onWater: () => this.useItem(this.player),
-        onRestart: () => this.transitionTo('game', true),
+        onRestart: () => {
+          // after an adventure win, ↻ means "on to the next stop" — same as SPACE
+          if (this.phase === 'over' && this.lastResult?.won && this.level && this.level.n < TOTAL_LEVELS) {
+            this.transitionToNextLevel();
+          } else {
+            this.transitionTo('game', true);
+          }
+        },
       },
       loadPicks().joy,
     );
@@ -1048,10 +1055,13 @@ export class GameScene extends Phaser.Scene {
   private transitionToNextLevel() {
     if (this.transitioning || !this.level) return;
     this.transitioning = true;
-    const next = levelDef(this.level.track, Math.min(this.level.n + 1, TOTAL_LEVELS));
+    // back to the road first — the map marches the marker to the next stop,
+    // and the player taps the next node (PLAY) to actually enter the level
+    const track = this.level.track;
+    const cleared = this.level.n;
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('game', { adventure: next }),
+      this.scene.start('adventure', { track, advance: cleared }),
     );
   }
 
@@ -1674,7 +1684,7 @@ export class GameScene extends Phaser.Scene {
             ? `LEVEL ${this.level.n} CLEAR ${'★'.repeat(stars)}`
             : 'RUNNERS WIN!',
         this.level
-          ? `${stats}\n${finalLevel ? 'you ran the whole of Nigeria — legend' : 'SPACE — next level'}   T — the road`
+          ? `${stats}\n${finalLevel ? 'you ran the whole of Nigeria — legend' : 'SPACE — on to the next stop'}   T — the road`
           : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s\nR / SPACE — play again   T — title   S — share`,
       );
       for (let i = 0; i < 3; i++) {

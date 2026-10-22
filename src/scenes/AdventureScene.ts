@@ -92,6 +92,8 @@ export class AdventureScene extends Phaser.Scene {
   private cardLayer: Phaser.GameObjects.Container | null = null; // level preview card
   private revealIdx = -1; // row whose fog burns off this visit
   private revealLabel: Phaser.GameObjects.Text | null = null;
+  private marching = false; // frontier marker is mid-march to the next stop
+  private frontierWarps: { o: WarpObj; wx: number; wy: number; bs: number }[] = [];
 
   constructor() {
     super('adventure');
@@ -112,7 +114,7 @@ export class AdventureScene extends Phaser.Scene {
     return { x, y };
   }
 
-  create(data?: { board?: boolean; track?: Track }) {
+  create(data?: { board?: boolean; track?: Track; advance?: number }) {
     const { width } = this.scale;
     makeTextures(this);
     this.campaign = data?.track ?? this.campaign ?? 'ice';
@@ -120,6 +122,8 @@ export class AdventureScene extends Phaser.Scene {
     this.prog = adventureProgress(this.campaign);
     this.boardLayer = null; // scene instance persists across restarts
     this.cardLayer = null;
+    this.marching = false;
+    this.frontierWarps = [];
     this.warps = [];
     this.zoneRefs = [];
     this.rowImgs = [];
@@ -310,12 +314,12 @@ export class AdventureScene extends Phaser.Scene {
 
     // ---- scroll controls — drag with momentum, wheel, keys ----
     this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
-      if (this.boardLayer || this.cardLayer) return;
+      if (this.boardLayer || this.cardLayer || this.marching) return;
       this.velY = 0;
       cam.scrollY = Phaser.Math.Clamp(cam.scrollY + dy * 0.9, 0, this.worldH - this.scale.height);
     });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer || this.cardLayer) return;
+      if (this.boardLayer || this.cardLayer || this.marching) return;
       this.dragY = p.y;
       this.camStartY = cam.scrollY;
       this.velY = 0;
@@ -323,7 +327,7 @@ export class AdventureScene extends Phaser.Scene {
       this.lastMoveT = this.time.now;
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer || this.cardLayer) return;
+      if (this.boardLayer || this.cardLayer || this.marching) return;
       if (this.dragY === null || !p.isDown) return;
       const dt = Math.max(1, this.time.now - this.lastMoveT);
       this.velY = (-(p.y - this.lastMoveY) / dt) * 1000; // px per second
@@ -341,7 +345,9 @@ export class AdventureScene extends Phaser.Scene {
       else if (this.cardLayer) this.closeCard();
       else this.toTitle();
     });
-    this.input.keyboard!.on('keydown-ENTER', () => this.playLevel(this.prog.unlocked));
+    this.input.keyboard!.on('keydown-ENTER', () => {
+      if (!this.marching) this.playLevel(this.prog.unlocked);
+    });
     this.keys = this.input.keyboard!.addKeys('UP,DOWN,W,S') as Record<string, Phaser.Input.Keyboard.Key>;
 
     // ---- frontier marker — you are here ----
@@ -377,12 +383,28 @@ export class AdventureScene extends Phaser.Scene {
       fp.x,
       fp.y - 52,
     );
+    // the march animation drives these three — last tracked = ring, walker, YOU
+    this.frontierWarps = this.warps.slice(-3);
+
+    // `advance` = the level number just cleared (only honored at the true frontier)
+    const advance =
+      data?.advance !== undefined &&
+      data.advance === this.prog.unlocked - 1 &&
+      data.advance < TOTAL_LEVELS
+        ? data.advance
+        : null;
 
     // ---- the journey-in: rise from START at the bottom up to your frontier ----
-    const targetY = Phaser.Math.Clamp(fp.y - this.scale.height * 0.78, 0, this.worldH - this.scale.height);
+    // after a clear we open right on the frontier instead — the march needs it
+    const anchorY = advance !== null ? this.nodePos(advance - 1).y : fp.y;
+    const targetY = Phaser.Math.Clamp(
+      anchorY - this.scale.height * 0.62,
+      0,
+      this.worldH - this.scale.height,
+    );
     const startY = Phaser.Math.Clamp(this.worldH - this.scale.height, 0, this.worldH - this.scale.height);
-    cam.scrollY = REDUCED_MOTION ? targetY : startY;
-    if (!REDUCED_MOTION && Math.abs(targetY - startY) > 40) {
+    cam.scrollY = REDUCED_MOTION || advance !== null ? targetY : startY;
+    if (!REDUCED_MOTION && advance === null && Math.abs(targetY - startY) > 40) {
       this.tweens.add({
         targets: cam,
         scrollY: targetY,
@@ -405,6 +427,72 @@ export class AdventureScene extends Phaser.Scene {
       this.playReveal();
     }
     this.applyWarp(); // seat everything before the first frame
+
+    // fresh off a win — walk YOU from the cleared node to the next stop,
+    // then open that level's card so the player clicks PLAY to enter
+    if (advance !== null && !data?.board) {
+      this.time.delayedCall(REDUCED_MOTION ? 150 : 550, () => this.playAdvance(advance));
+    }
+  }
+
+  /** walk the frontier marker node `a` → node `a+1` along the road, then
+   *  open the next level's card — the player clicks PLAY to enter it */
+  private playAdvance(a: number) {
+    const from = this.nodePos(a - 1);
+    const to = this.nodePos(a);
+    this.marching = true;
+
+    // each marker keeps its own vertical offset (ring 0, walker -34, YOU -52)
+    const offs = this.frontierWarps.map((w) => w.wy - to.y);
+    if (REDUCED_MOTION) {
+      this.frontierWarps.forEach((w, i) => {
+        w.wx = to.x;
+        w.wy = to.y + offs[i];
+      });
+      this.marching = false;
+      this.applyWarp();
+      this.showLevelCard(Math.min(a + 1, TOTAL_LEVELS));
+      return;
+    }
+
+    // stage the marker back on the node just cleared
+    this.frontierWarps.forEach((w, i) => {
+      w.wx = from.x;
+      w.wy = from.y + offs[i];
+    });
+
+    // same-row hop = small arc; the serpentine wrap = U-turn bow at the edge
+    const sameRow = Math.floor((a - 1) / COLS) === Math.floor(a / COLS);
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2;
+    const ctrl = sameRow
+      ? new Phaser.Math.Vector2(midX, midY - 44)
+      : new Phaser.Math.Vector2(midX + (from.x > this.pathX + this.pathW / 2 ? 95 : -95), midY);
+    const curve = new Phaser.Curves.QuadraticBezier(
+      new Phaser.Math.Vector2(from.x, from.y),
+      ctrl,
+      new Phaser.Math.Vector2(to.x, to.y),
+    );
+
+    const t = { v: 0 };
+    this.tweens.add({
+      targets: t,
+      v: 1,
+      duration: sameRow ? 800 : 1150,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        const p = curve.getPoint(t.v);
+        this.frontierWarps.forEach((w, i) => {
+          w.wx = p.x;
+          w.wy = p.y + offs[i];
+        });
+      },
+      onComplete: () => {
+        this.marching = false;
+        sfx.pickup();
+        this.showLevelCard(Math.min(a + 1, TOTAL_LEVELS));
+      },
+    });
   }
 
   /** fog overlay over the freshly-opened row burns away; the town name arrives */
@@ -689,7 +777,7 @@ export class AdventureScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: n2 <= this.prog.unlocked })
         .on('pointerdown', () => {
-          if (n2 <= this.prog.unlocked) this.showLevelCard(n2);
+          if (!this.marching && n2 <= this.prog.unlocked) this.showLevelCard(n2);
         });
       this.zoneRefs.push({ z, r, px: p2.x, py: p2.y, zr: 21 });
     }

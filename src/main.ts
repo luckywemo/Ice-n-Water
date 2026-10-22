@@ -49,9 +49,12 @@ const boot = () =>
 
 const go = () => {
   const game = boot();
-  // dev shortcut — #adventure / #adventure:police / #lobby jumps straight to a scene
-  const [jump, arg] = location.hash.slice(1).split(':');
-  if (jump === 'adventure') game.scene.start('adventure', { track: arg === 'police' ? 'police' : 'ice' });
+  // dev shortcut — #adventure / #adventure:police / #advance:ice:5 / #lobby
+  const [jump, arg, arg2] = location.hash.slice(1).split(':');
+  const track = arg === 'police' ? 'police' : 'ice';
+  if (jump === 'adventure') game.scene.start('adventure', { track });
+  else if (jump === 'advance')
+    game.scene.start('adventure', { track, advance: Number(arg2) || undefined });
   else if (jump) game.scene.start(jump);
 };
 
