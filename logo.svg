@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200">
+  <defs>
+    <linearGradient id="cubeTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8ecff"/>
+      <stop offset="1" stop-color="#4cc9f0"/>
+    </linearGradient>
+    <linearGradient id="cubeLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4cc9f0"/>
+      <stop offset="1" stop-color="#1d8fc9"/>
+    </linearGradient>
+    <linearGradient id="cubeRight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ea8dd"/>
+      <stop offset="1" stop-color="#136a9c"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4cc9f0"/>
+      <stop offset="1" stop-color="#1d6fb8"/>
+    </linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#eaf8ff"/>
+      <stop offset="1" stop-color="#4cc9f0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ICON: melting ice cube -->
+  <g transform="translate(18 14)">
+    <!-- water puddle under the cube -->
+    <ellipse cx="64" cy="128" rx="62" ry="16" fill="url(#water)" opacity="0.9"/>
+    <ellipse cx="64" cy="128" rx="40" ry="9" fill="#8fdcf8" opacity="0.55"/>
+    <!-- drips -->
+    <path d="M104 96 q6 12 0 20 q-6 -8 0 -20 z" fill="#4cc9f0"/>
+    <path d="M30 92 q5 10 0 17 q-5 -7 0 -17 z" fill="#4cc9f0" opacity="0.85"/>
+
+    <!-- cube, slightly tilted, bottom-right corner melting away -->
+    <g transform="rotate(-7 64 60)">
+      <path d="M20 38 L64 20 L112 38 L112 84 Q96 100 84 98 Q70 96 64 104 L20 84 Z"
+            fill="url(#cubeLeft)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M20 38 L64 20 L112 38 L64 56 Z" fill="url(#cubeTop)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M64 56 L112 38 L112 84 Q96 100 84 98 Q70 96 64 104 Z" fill="url(#cubeRight)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <!-- facet glints -->
+      <path d="M34 42 L58 31" stroke="#eaf8ff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+      <path d="M72 62 L104 48" stroke="#b8ecff" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+      <path d="M30 52 L30 74 M40 56 L40 78" stroke="#8fdcf8" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+      <!-- crack -->
+      <path d="M64 56 L58 68 L66 78" fill="none" stroke="#0d5d8a" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    </g>
+    <!-- gold star accent -->
+    <path d="M118 22 l3.5 8.5 9.2 1 -6.8 6.2 1.8 9 -7.7 -4.6 -7.7 4.6 1.8 -9 -6.8 -6.2 9.2 -1 z"
+          fill="#ffd60a" stroke="#8a6500" stroke-width="1.5"/>
+  </g>
+
+  <!-- WORDMARK -->
+  <g font-family="Arial Black, Arial, sans-serif" font-weight="900" font-style="italic">
+    <text x="158" y="98" font-size="64" fill="url(#word)" letter-spacing="2">ICE</text>
+    <text x="308" y="98" font-size="34" fill="#ffd60a" transform="rotate(-4 320 80)">'N'</text>
+    <text x="158" y="160" font-size="64" fill="url(#word)" letter-spacing="2">WATER</text>
+  </g>
+  <text x="162" y="188" font-family="Arial, sans-serif" font-weight="700" font-size="15"
+        fill="#7fb3d5" letter-spacing="6">THE ROAD NORTH</text>
+</svg>

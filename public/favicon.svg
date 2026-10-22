@@ -1,5 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22" fill="#0d1b2a"/>
-  <path d="M50 14C50 14 22 46 22 64a28 28 0 0 0 56 0C78 46 50 14 50 14Z" fill="#4dd0e1"/>
-  <ellipse cx="40" cy="58" rx="7" ry="10" fill="#bff0fb" opacity="0.8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="icTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8ecff"/>
+      <stop offset="1" stop-color="#4cc9f0"/>
+    </linearGradient>
+    <linearGradient id="icLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4cc9f0"/>
+      <stop offset="1" stop-color="#1d8fc9"/>
+    </linearGradient>
+    <linearGradient id="icRight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2ea8dd"/>
+      <stop offset="1" stop-color="#136a9c"/>
+    </linearGradient>
+    <linearGradient id="icWater" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4cc9f0"/>
+      <stop offset="1" stop-color="#1d6fb8"/>
+    </linearGradient>
+    <radialGradient id="icBg" cx="0.5" cy="0.4" r="0.75">
+      <stop offset="0" stop-color="#12314f"/>
+      <stop offset="1" stop-color="#0a1930"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#icBg)"/>
+  <g transform="translate(6 2) scale(0.92)">
+    <ellipse cx="64" cy="104" rx="44" ry="12" fill="url(#icWater)" opacity="0.9"/>
+    <ellipse cx="64" cy="104" rx="28" ry="7" fill="#8fdcf8" opacity="0.5"/>
+    <path d="M100 74 q6 12 0 20 q-6 -8 0 -20 z" fill="#4cc9f0"/>
+    <path d="M30 72 q5 10 0 17 q-5 -7 0 -17 z" fill="#4cc9f0" opacity="0.85"/>
+    <g transform="rotate(-7 62 52)">
+      <path d="M22 32 L62 15 L104 32 L104 72 Q90 86 79 85 Q66 84 62 92 L22 74 Z"
+            fill="url(#icLeft)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M22 32 L62 15 L104 32 L62 50 Z" fill="url(#icTop)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M62 50 L104 32 L104 72 Q90 86 79 85 Q66 84 62 92 Z" fill="url(#icRight)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M32 35 L54 26" stroke="#eaf8ff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+      <path d="M70 55 L98 43" stroke="#b8ecff" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+      <path d="M62 50 L56 62 L64 71" fill="none" stroke="#0d5d8a" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    </g>
+    <path d="M110 14 l3.2 7.7 8.3 0.9 -6.2 5.6 1.6 8.1 -6.9 -4.1 -6.9 4.1 1.6 -8.1 -6.2 -5.6 8.3 -0.9 z"
+          fill="#ffd60a" stroke="#8a6500" stroke-width="1.4"/>
+  </g>
 </svg>
