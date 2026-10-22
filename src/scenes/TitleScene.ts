@@ -163,7 +163,7 @@ export class TitleScene extends Phaser.Scene {
       this.scene.start('adventure', { board: true });
     };
     const lbW = 250;
-    const lbH = 38;
+    const lbH = 44;
     const lbY = logoY + 98;
     const lbG = this.add.graphics().setDepth(4);
     lbG.fillStyle(0x2a2314, 0.85);

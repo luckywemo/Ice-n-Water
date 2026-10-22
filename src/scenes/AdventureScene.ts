@@ -290,6 +290,7 @@ export class AdventureScene extends Phaser.Scene {
         color: '#9db4c4',
       })
       .setOrigin(1, 0)
+      .setPadding(10, 10, 10, 10)
       .setScrollFactor(0)
       .setDepth(41)
       .setInteractive({ useHandCursor: true })
@@ -303,6 +304,7 @@ export class AdventureScene extends Phaser.Scene {
         color: '#ffd54a',
       })
       .setOrigin(1, 0)
+      .setPadding(10, 10, 10, 10)
       .setScrollFactor(0)
       .setDepth(41)
       .setInteractive({ useHandCursor: true })
@@ -845,6 +847,7 @@ export class AdventureScene extends Phaser.Scene {
         color: '#9db4c4',
       })
       .setOrigin(1, 0)
+      .setPadding(8)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.closeBoard());
     close.on('pointerover', () => close.setColor('#f5efe0')).on('pointerout', () => close.setColor('#9db4c4'));
@@ -866,6 +869,7 @@ export class AdventureScene extends Phaser.Scene {
         color: '#4dd0e1',
       })
       .setOrigin(1, 0.5)
+      .setPadding(10, 8, 10, 8)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => {
         const n = window.prompt('runner name (shows on the board)', playerName());
@@ -985,6 +989,7 @@ export class AdventureScene extends Phaser.Scene {
           color: '#7d93a5',
         })
         .setOrigin(1, 0)
+        .setPadding(8)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this.closeCard()),
     ];

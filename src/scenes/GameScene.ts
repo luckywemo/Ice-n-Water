@@ -119,6 +119,7 @@ export class GameScene extends Phaser.Scene {
   private playerFreezes = 0;
   private playerRescues = 0;
   private lastResult: { won: boolean; survived: number } | null = null;
+  private endButtons: Phaser.GameObjects.Container[] = []; // result dashboard
 
   // adventure objectives — collect tokens / rescue mates beyond raw survival
   private objGot = 0;
@@ -166,6 +167,7 @@ export class GameScene extends Phaser.Scene {
     this.playerRescues = 0;
     this.objGot = 0;
     this.lastResult = null;
+    this.endButtons = [];
     this.phase = 'countdown';
     this.countdownLeft = CONFIG.round.countdownSec;
     this.countdownShown = 0;
@@ -1649,6 +1651,8 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = { won: !militiaWon, survived };
     const caught = this.mode === 'police' ? 'Jailed' : 'Frozen';
     const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
+    // touch devices get tappable buttons instead of key hints in the sub-line
+    const isTouch = TouchControls.isTouchDevice();
 
     // dim the field so the result reads clean — screen space
     const { width, height } = this.scale;
@@ -1663,8 +1667,8 @@ export class GameScene extends Phaser.Scene {
       this.showBanner(
         this.level ? `LEVEL ${this.level.n} — CAUGHT` : 'MILITIA WINS',
         this.level
-          ? `${stats}\nR — retry   T — the road`
-          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s\nR / SPACE — run it back   T — title   S — share`,
+          ? `${stats}${isTouch ? '' : '\nR — retry   T — the road'}`
+          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — run it back   T — title   S — share'}`,
       );
       this.shake(250, 0.01);
     } else {
@@ -1677,15 +1681,18 @@ export class GameScene extends Phaser.Scene {
         submitAdventureScore();
       }
       const finalLevel = this.level?.n === TOTAL_LEVELS;
+      const sub = this.level
+        ? `${stats}${finalLevel ? '\nyou ran the whole of Nigeria — legend' : ''}${
+            isTouch ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
+          }`
+        : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — play again   T — title   S — share'}`;
       this.showBanner(
         finalLevel
           ? 'JOURNEY COMPLETE!'
           : this.level
             ? `LEVEL ${this.level.n} CLEAR ${'★'.repeat(stars)}`
             : 'RUNNERS WIN!',
-        this.level
-          ? `${stats}\n${finalLevel ? 'you ran the whole of Nigeria — legend' : 'SPACE — on to the next stop'}   T — the road`
-          : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s\nR / SPACE — play again   T — title   S — share`,
+        sub,
       );
       for (let i = 0; i < 3; i++) {
         this.time.delayedCall(i * 180, () =>
@@ -1699,6 +1706,61 @@ export class GameScene extends Phaser.Scene {
         );
       }
     }
+    this.showEndButtons(!militiaWon);
+  }
+
+  /** touch-first result dashboard — big tappable pills under the banner */
+  private showEndButtons(won: boolean) {
+    this.hudItems = this.hudItems.filter((it) => !this.endButtons.includes(it.obj as Phaser.GameObjects.Container));
+    for (const c of this.endButtons) c.destroy();
+    this.endButtons = [];
+    const L = this.level;
+    const canNext = !!L && won && L.n < TOTAL_LEVELS;
+    const acts: { label: string; fill: number; edge: number; go: () => void }[] = [];
+    if (canNext) {
+      acts.push({ label: 'NEXT STOP ▶', fill: 0x2a5c3f, edge: 0x4ecb71, go: () => this.transitionToNextLevel() });
+    } else {
+      acts.push({
+        label: won ? 'PLAY AGAIN' : 'RETRY',
+        fill: won ? 0x2a5c3f : 0x6e2f2f,
+        edge: won ? 0x4ecb71 : 0xe08a80,
+        go: () => this.transitionTo('game', true),
+      });
+    }
+    acts.push({
+      label: L ? 'THE ROAD' : 'TITLE',
+      fill: 0x1d4a66,
+      edge: 0x4dd0e1,
+      go: () => this.transitionTo(L ? 'adventure' : 'title'),
+    });
+    acts.push({ label: 'SHARE', fill: 0x233447, edge: 0x7d93a5, go: () => this.shareScore(false) });
+
+    // fit the row inside the viewport; shrink pills before they'd clip
+    const gap = 12;
+    const bw = Phaser.Math.Clamp((this.scale.width - 60 - gap * (acts.length - 1)) / acts.length, 104, 190);
+    const bh = 50;
+    const total = acts.length * bw + gap * (acts.length - 1);
+    acts.forEach((b, i) => {
+      const c = this.add.container(0, 0).setDepth(21).setAlpha(0);
+      const g = this.add.graphics();
+      g.fillStyle(b.fill, 0.96).fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 14);
+      g.lineStyle(2, b.edge, 0.85).strokeRoundedRect(-bw / 2 + 1, -bh / 2 + 1, bw - 2, bh - 2, 13);
+      const t = this.add
+        .text(0, 0, b.label, { fontFamily: DISPLAY_FONT, fontSize: bw < 140 ? '13px' : '15px', color: '#f5efe0' })
+        .setOrigin(0.5);
+      const z = this.add
+        .zone(-bw / 2, -bh / 2, bw, bh)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', b.go)
+        .on('pointerover', () => t.setAlpha(0.7))
+        .on('pointerout', () => t.setAlpha(1));
+      c.add([g, t, z]);
+      this.pin(c, 0.5, 0.5, -total / 2 + i * (bw + gap) + bw / 2, 128);
+      this.endButtons.push(c);
+      this.tweens.add({ targets: c, alpha: 1, duration: 350, delay: 320 + i * 90 });
+    });
+    this.relayout(); // pinned post-create — place them now, not on next resize
   }
 
   /** S = share on X (or native share sheet on mobile), M = WhatsApp */

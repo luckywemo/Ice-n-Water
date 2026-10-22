@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
+import { levelDef } from './adventure';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -49,12 +50,15 @@ const boot = () =>
 
 const go = () => {
   const game = boot();
-  // dev shortcut — #adventure / #adventure:police / #advance:ice:5 / #lobby
+  (window as unknown as { __game: Phaser.Game }).__game = game; // e2e/CDP hook
+  // dev shortcut — #adventure / #adventure:police / #advance:ice:5 / #gamelevel:ice:3 / #lobby
   const [jump, arg, arg2] = location.hash.slice(1).split(':');
   const track = arg === 'police' ? 'police' : 'ice';
   if (jump === 'adventure') game.scene.start('adventure', { track });
   else if (jump === 'advance')
     game.scene.start('adventure', { track, advance: Number(arg2) || undefined });
+  else if (jump === 'gamelevel')
+    game.scene.start('game', { adventure: levelDef(track, Number(arg2) || 1) });
   else if (jump) game.scene.start(jump);
 };
 

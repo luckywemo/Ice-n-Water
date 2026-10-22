@@ -486,6 +486,7 @@ export class NetScene extends Phaser.Scene {
       .setOrigin(0.5);
     layer.add(again);
     if (isHost) {
+      again.setPadding(14, 10, 14, 10);
       again.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.room.send('restart'));
       this.input.keyboard!.on('keydown-SPACE', () => {
         if (this.room.state.phase === 'ended') this.room.send('restart');
@@ -498,6 +499,7 @@ export class NetScene extends Phaser.Scene {
         color: '#9db4c4',
       })
       .setOrigin(0.5)
+      .setPadding(14, 10, 14, 10)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.leave());
     layer.add(leaveBtn);
