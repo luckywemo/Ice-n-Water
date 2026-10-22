@@ -26,7 +26,7 @@ const LINES = [
   ['voice-one-down', 'ONE DOWN! ONE DOWN! ONE DOWN!', MILITIA],
   ['voice-dem-don-catch', 'Dem don catch you o!', MILITIA],
   ['voice-enter-cell', 'Enter cell! Enter cell!', MILITIA],
-  ['voice-gotcha', 'Gotcha! Gotcha! Gotcha!', MILITIA],
+  ['voice-gotcha', 'You sabi run abi, I don catch you!', MILITIA],
   ['voice-get-luck', 'You get luck today o!', MILITIA],
   ['voice-who-open-cell', 'WHO OPEN THE CELL?! WHO?!', MILITIA],
   ['voice-dem-don-free', 'Dem don free them o! Dem don free them!', MILITIA],
@@ -38,7 +38,7 @@ const LINES = [
   ['voice-ez-arrgh', 'Arrgh! Arrgh! Arrgh! Arrgh!', ANNOUNCER],
   ['voice-ez-danfo', 'DANFO! DANFO! DANFO!', ANNOUNCER],
   ['voice-ez-nepa', 'NEPA DON TAKE LIGHT! NEPA!', ANNOUNCER],
-  ['voice-ez-up-nepa', 'UP NEPA! UP NEPA! UP NEPA! UP NEPA O!', ANNOUNCER],
+  ['voice-ez-up-nepa', 'UP NEPAA! UP NEPAA! UP NEPAA!', ANNOUNCER],
   ['voice-ez-rain', 'RAIN! Watch your footing!', ANNOUNCER],
   ['voice-ez-jailbreak', 'JAILBREAK! JAILBREAK! JAILBREAK!', ANNOUNCER],
 ];
