@@ -1,0 +1,8 @@
+name = "icenwater-board"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# Set the real secrets once (kept out of the repo):
+#   npx wrangler secret put UPSTASH_REST_URL
+#   npx wrangler secret put UPSTASH_REST_TOKEN

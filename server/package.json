@@ -1,0 +1,21 @@
+{
+  "name": "icenwater-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node build/index.js"
+  },
+  "dependencies": {
+    "colyseus": "^0.16.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "~5.9.0"
+  }
+}

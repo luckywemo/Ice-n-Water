@@ -1,0 +1,21 @@
+{
+  "name": "ice-n-water",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "server": "npm --prefix server run dev",
+    "zip": "powershell -NoProfile -Command \"Compress-Archive -Path 'dist\\\\*' -DestinationPath 'icenwater-itch.zip' -Force\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "colyseus.js": "^0.16.22",
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.0",
+    "vite": "^7.1.0"
+  }
+}

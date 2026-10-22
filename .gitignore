@@ -1,0 +1,32 @@
+# secrets — never commit these
+.env
+.env.local
+.env.*.local
+
+# dependencies
+node_modules/
+server/node_modules/
+
+# build output
+dist/
+server/dist/
+
+# deployment state
+.vercel/
+worker/.wrangler/
+worker/.dev.vars
+
+# leaderboard local data
+leaderboard.json
+server/leaderboard.json
+
+# archives
+*.zip
+
+# logs
+*.log
+npm-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db

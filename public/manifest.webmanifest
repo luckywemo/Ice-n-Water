@@ -1,0 +1,19 @@
+{
+  "name": "Ice 'N' Water",
+  "short_name": "Ice N Water",
+  "description": "The playground chase game — freeze, rescue, survive. Ice & Water / Police & Thief.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d1b2a",
+  "theme_color": "#0d1b2a",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

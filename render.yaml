@@ -1,0 +1,10 @@
+# Render Blueprint — one-click deploy for the Colyseus server.
+# Dashboard → New → Blueprint → point at this repo. Free plan works.
+services:
+  - type: web
+    name: icenwater-server
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
