@@ -120,6 +120,7 @@ export class GameScene extends Phaser.Scene {
   private playerRescues = 0;
   private lastResult: { won: boolean; survived: number } | null = null;
   private endButtons: Phaser.GameObjects.Container[] = []; // result dashboard
+  private endHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
 
   // adventure objectives — collect tokens / rescue mates beyond raw survival
   private objGot = 0;
@@ -168,6 +169,7 @@ export class GameScene extends Phaser.Scene {
     this.objGot = 0;
     this.lastResult = null;
     this.endButtons = [];
+    this.endHitZones = [];
     this.phase = 'countdown';
     this.countdownLeft = CONFIG.round.countdownSec;
     this.countdownShown = 0;
@@ -273,6 +275,8 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.scale.on('resize', this.relayout, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
+    this.input.on('pointerdown', this.onEndTap, this);
+    this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
 
     this.cameras.main.fadeIn(280, 0, 0, 0);
 
@@ -1706,7 +1710,23 @@ export class GameScene extends Phaser.Scene {
         );
       }
     }
+    this.touch?.setActive(false); // pads off — the dashboard owns the taps now
     this.showEndButtons(!militiaWon);
+  }
+
+  /** screen-space hit test for dashboard pills — reliable on real touch hardware */
+  private onEndTap(p: Phaser.Input.Pointer) {
+    if (this.phase !== 'over') return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    for (const b of this.endHitZones) {
+      const sx = b.ax * w + b.ox;
+      const sy = b.ay * h + b.oy;
+      if (Math.abs(p.x - sx) <= b.bw / 2 + 8 && Math.abs(p.y - sy) <= b.bh / 2 + 8) {
+        b.go();
+        return;
+      }
+    }
   }
 
   /** touch-first result dashboard — big tappable pills under the banner */
@@ -1714,11 +1734,18 @@ export class GameScene extends Phaser.Scene {
     this.hudItems = this.hudItems.filter((it) => !this.endButtons.includes(it.obj as Phaser.GameObjects.Container));
     for (const c of this.endButtons) c.destroy();
     this.endButtons = [];
+    this.endHitZones = [];
     const L = this.level;
     const canNext = !!L && won && L.n < TOTAL_LEVELS;
-    const acts: { label: string; fill: number; edge: number; go: () => void }[] = [];
+    const acts: { label: string; short?: string; fill: number; edge: number; go: () => void }[] = [];
     if (canNext) {
-      acts.push({ label: 'NEXT STOP ▶', fill: 0x2a5c3f, edge: 0x4ecb71, go: () => this.transitionToNextLevel() });
+      acts.push({
+        label: 'NEXT MISSION ▶',
+        short: 'NEXT ▶',
+        fill: 0x2a5c3f,
+        edge: 0x4ecb71,
+        go: () => this.transitionToNextLevel(),
+      });
     } else {
       acts.push({
         label: won ? 'PLAY AGAIN' : 'RETRY',
@@ -1741,23 +1768,22 @@ export class GameScene extends Phaser.Scene {
     const bh = 50;
     const total = acts.length * bw + gap * (acts.length - 1);
     acts.forEach((b, i) => {
+      const ox = -total / 2 + i * (bw + gap) + bw / 2;
       const c = this.add.container(0, 0).setDepth(21).setAlpha(0);
       const g = this.add.graphics();
       g.fillStyle(b.fill, 0.96).fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 14);
       g.lineStyle(2, b.edge, 0.85).strokeRoundedRect(-bw / 2 + 1, -bh / 2 + 1, bw - 2, bh - 2, 13);
       const t = this.add
-        .text(0, 0, b.label, { fontFamily: DISPLAY_FONT, fontSize: bw < 140 ? '13px' : '15px', color: '#f5efe0' })
+        .text(0, 0, bw < 150 && b.short ? b.short : b.label, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: bw < 150 ? '13px' : '15px',
+          color: '#f5efe0',
+        })
         .setOrigin(0.5);
-      const z = this.add
-        .zone(-bw / 2, -bh / 2, bw, bh)
-        .setOrigin(0, 0)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', b.go)
-        .on('pointerover', () => t.setAlpha(0.7))
-        .on('pointerout', () => t.setAlpha(1));
-      c.add([g, t, z]);
-      this.pin(c, 0.5, 0.5, -total / 2 + i * (bw + gap) + bw / 2, 128);
+      c.add([g, t]);
+      this.pin(c, 0.5, 0.5, ox, 128);
       this.endButtons.push(c);
+      this.endHitZones.push({ ax: 0.5, ay: 0.5, ox, oy: 128, bw, bh, go: b.go });
       this.tweens.add({ targets: c, alpha: 1, duration: 350, delay: 320 + i * 90 });
     });
     this.relayout(); // pinned post-create — place them now, not on next resize

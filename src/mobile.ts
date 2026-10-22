@@ -17,6 +17,7 @@ export class TouchControls {
   sprint = false;
 
   private scene: Phaser.Scene;
+  private active = true; // false during the result screen — dash owns the taps
   private joyPointerId = -1;
   private sprintPointerId = -1;
   private joyCenter = new Phaser.Math.Vector2(); // SCREEN coords
@@ -88,6 +89,7 @@ export class TouchControls {
     }
 
     scene.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (!this.active) return;
       const w = scene.scale.width;
       const h = scene.scale.height;
       // floating: stick spawns where the thumb lands on the left side;
@@ -120,7 +122,7 @@ export class TouchControls {
     });
 
     scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (p.id !== this.joyPointerId || !p.isDown) return;
+      if (!this.active || p.id !== this.joyPointerId || !p.isDown) return;
       const v = new Phaser.Math.Vector2(p.x - this.joyCenter.x, p.y - this.joyCenter.y);
       const max = 62;
       if (v.length() > max) v.setLength(max);
@@ -146,6 +148,21 @@ export class TouchControls {
     };
     scene.input.on('pointerup', release);
     scene.input.on('pointerupoutside', release);
+  }
+
+  /** freeze every pad + hide the buttons — e.g. when the result dashboard is up */
+  setActive(on: boolean) {
+    this.active = on;
+    if (!this.enabled) return;
+    this.joyPointerId = -1;
+    this.sprintPointerId = -1;
+    this.dir.set(0, 0);
+    this.sprint = false;
+    this.base.setVisible(on && this.sticky);
+    this.thumb.setVisible(on && this.sticky);
+    this.sprintBtn.setVisible(on);
+    this.waterBtn.setVisible(on);
+    this.restartBtn.setVisible(on);
   }
 
   private pin<T extends HudItem['obj']>(obj: T, ax: number, ay: number, ox: number, oy: number): T {
