@@ -44,19 +44,32 @@ export class TitleScene extends Phaser.Scene {
 
     this.cameras.main.setBackgroundColor(UI.bg);
     this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 350, 0, 0, 0);
-    // Content needs ~750px of vertical room. On short screens (landscape
-    // phones) lay it out on the full virtual height and zoom the camera down —
-    // uniform shrink, no overlaps, tap zones stay aligned.
+    // Content needs ~760px of vertical room and ~720px of horizontal room.
+    // On short or narrow screens lay it out on a virtual stage and zoom the
+    // camera down — uniform shrink on BOTH axes, no overlaps, no clipping,
+    // tap zones stay aligned.
+    const vw = Math.max(width, 720);
     const vh = Math.max(height, 760);
-    if (height < vh) {
-      this.cameras.main.setZoom(height / vh);
-      this.cameras.main.centerOn(width / 2, vh / 2);
+    const stageZoom = Math.min(width / vw, height / vh);
+    if (stageZoom < 1) {
+      this.cameras.main.setZoom(stageZoom);
+      this.cameras.main.centerOn(vw / 2, vh / 2);
     }
+    // rotating the phone mid-visit — rebuild the layout for the new size
+    let lastW = width;
+    let lastH = height;
+    this.scale.on('resize', (sz: Phaser.Structs.Size) => {
+      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
+        lastW = sz.width;
+        lastH = sz.height;
+        this.scene.restart();
+      }
+    });
 
     // ambient floating drops — static under reduced motion
     for (let i = 0; i < 14; i++) {
       const drop = this.add
-        .sprite(Phaser.Math.Between(20, width - 20), Phaser.Math.Between(20, height - 20), 'dot')
+        .sprite(Phaser.Math.Between(20, vw - 20), Phaser.Math.Between(20, height - 20), 'dot')
         .setTint(i % 3 === 0 ? UI.ice : UI.water)
         .setAlpha(Phaser.Math.FloatBetween(0.06, 0.22))
         .setScale(Phaser.Math.FloatBetween(0.6, 1.8))
@@ -99,7 +112,7 @@ export class TitleScene extends Phaser.Scene {
       }
       cursor += part.size * 0.45;
     }
-    let x = (width - cursor) / 2;
+    let x = (vw - cursor) / 2;
     letters.forEach((t, i) => {
       x += t.width * 0.46;
       const homeX = x;
@@ -133,7 +146,7 @@ export class TitleScene extends Phaser.Scene {
     });
 
     this.add
-      .text(width / 2, logoY + 66, 'the playground chase game', {
+      .text(vw / 2, logoY + 66, 'the playground chase game', {
         fontFamily: UI_FONT,
         fontSize: '17px',
         fontStyle: '500',
@@ -144,7 +157,7 @@ export class TitleScene extends Phaser.Scene {
     // leaderboard shortcut — opens the board straight from the road map
     const isTouch = TouchControls.isTouchDevice();
     const board = this.add
-      .text(width - 16, 16, isTouch ? 'LEADERBOARD' : 'LEADERBOARD  (L)', {
+      .text(vw - 16, 16, isTouch ? 'LEADERBOARD' : 'LEADERBOARD  (L)', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#ffd54a',
@@ -167,7 +180,7 @@ export class TitleScene extends Phaser.Scene {
     const gap = 36;
     const cardY = vh * 0.4;
     MODES.forEach((m, i) => {
-      const cx = width / 2 + (i - 0.5) * (cardW + gap);
+      const cx = vw / 2 + (i - 0.5) * (cardW + gap);
       panel(this, cx - cardW / 2, cardY, cardW, cardH, { alpha: 0.55, depth: 4 });
       const border = this.add.graphics().setDepth(6);
       border.lineStyle(3, UI.ice, 1);
@@ -211,7 +224,7 @@ export class TitleScene extends Phaser.Scene {
 
     // ------- difficulty chips -------
     this.add
-      .text(width / 2, cardY + cardH + 26, 'DIFFICULTY', {
+      .text(vw / 2, cardY + cardH + 26, 'DIFFICULTY', {
         fontFamily: UI_FONT,
         fontSize: '13px',
         fontStyle: '600',
@@ -222,7 +235,7 @@ export class TitleScene extends Phaser.Scene {
     const chipW = 120;
     const chipH = isTouch ? 44 : 34; // ≥44px touch targets
     DIFF_ORDER.forEach((d, i) => {
-      const cx = width / 2 + (i - 1) * (chipW + 14);
+      const cx = vw / 2 + (i - 1) * (chipW + 14);
       const g = this.add.graphics();
       g.fillStyle(0x12293f, 0.8);
       g.fillRoundedRect(0, 0, chipW, chipH, chipH / 2);
@@ -292,7 +305,7 @@ export class TitleScene extends Phaser.Scene {
         .on('pointerover', () => hl.setVisible(true))
         .on('pointerout', () => hl.setVisible(false));
     };
-    const bx = width / 2 - bw - bgap / 2;
+    const bx = vw / 2 - bw - bgap / 2;
     const toAdventure = () => {
       sfx.ensure();
       sfx.pickup();
@@ -316,7 +329,7 @@ export class TitleScene extends Phaser.Scene {
     const s = loadStats();
     this.add
       .text(
-        width / 2,
+        vw / 2,
         chipY + 116,
         s.games > 0
           ? `WINS ${s.wins}   ·   BEST ${s.bestSurvived}s   ·   STREAK ${s.streak}`
@@ -327,7 +340,7 @@ export class TitleScene extends Phaser.Scene {
 
     // ------- press to play + controls -------
     const press = this.add
-      .text(width / 2, vh * 0.79, isTouch ? 'TAP TO PLAY' : 'PRESS SPACE TO PLAY', {
+      .text(vw / 2, vh * 0.79, isTouch ? 'TAP TO PLAY' : 'PRESS SPACE TO PLAY', {
         fontFamily: DISPLAY_FONT,
         fontSize: '26px',
         color: '#f5efe0',
@@ -352,7 +365,7 @@ export class TitleScene extends Phaser.Scene {
     if (isTouch) {
       // thumbstick style — floating spawns under your thumb, sticky stays put
       this.add
-        .text(width / 2 - 80, chipY2 + 2, 'THUMBSTICK', {
+        .text(vw / 2 - 80, chipY2 + 2, 'THUMBSTICK', {
           fontFamily: UI_FONT,
           fontSize: '13px',
           fontStyle: '600',
@@ -362,7 +375,7 @@ export class TitleScene extends Phaser.Scene {
       JOY_ORDER.forEach((j, i) => {
         const cw = 116;
         const ch = 44; // touch target ≥44px
-        const cx = width / 2 - 60 + i * (cw + 12);
+        const cx = vw / 2 - 60 + i * (cw + 12);
         const g = this.add.graphics();
         g.fillStyle(0x12293f, 0.8);
         g.fillRoundedRect(0, 0, cw, ch, ch / 2);
@@ -388,7 +401,7 @@ export class TitleScene extends Phaser.Scene {
       });
       this.add
         .text(
-          width / 2,
+          vw / 2,
           chipY2 + 36,
           'left thumb — move  ·  RUN — sprint  ·  H₂O — use item',
           { fontFamily: UI_FONT, fontSize: '14px', color: '#7d93a5' },
@@ -401,7 +414,7 @@ export class TitleScene extends Phaser.Scene {
         { chip: 'E', label: 'pure water' },
       ];
       const chipObjs = chips.map((c) => keyChip(this, 0, 0, c.chip));
-      let cx2 = width / 2 - (chipObjs.reduce((a, c) => a + c.width + 96, 0) - 96 + 16) / 2;
+      let cx2 = vw / 2 - (chipObjs.reduce((a, c) => a + c.width + 96, 0) - 96 + 16) / 2;
       chips.forEach((c, i) => {
         chipObjs[i].container.setPosition(cx2, chipY2);
         this.add
