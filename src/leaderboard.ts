@@ -10,7 +10,7 @@ import { SERVER_URL } from './net';
 const BOARD_URL = (import.meta.env.VITE_BOARD_URL as string | undefined) ?? '';
 const UP_URL = (import.meta.env.VITE_UPSTASH_REST_URL as string | undefined) ?? '';
 const UP_TOKEN = (import.meta.env.VITE_UPSTASH_REST_TOKEN as string | undefined) ?? '';
-const USE_WORKER = BOARD_URL.startsWith('https://');
+const USE_WORKER = BOARD_URL.startsWith('https://') || BOARD_URL.startsWith('/');
 const USE_UPSTASH = !USE_WORKER && UP_URL.startsWith('https://') && UP_TOKEN.length > 10;
 
 const SERVER_API = (() => {
