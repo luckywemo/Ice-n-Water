@@ -5,44 +5,50 @@
   <style>
     * { margin: 0; box-sizing: border-box; }
     body { width: 630px; height: 500px; overflow: hidden; font-family: 'Bungee', sans-serif;
-           background: linear-gradient(160deg, #0d1b2a 0%, #12293f 55%, #0d1b2a 100%); position: relative; }
+           background: radial-gradient(120% 100% at 50% 0%, #16395c 0%, #0d2038 55%, #081426 100%);
+           position: relative; }
     /* chalk pitch lines */
-    .line { position: absolute; border: 3px solid rgba(245,239,224,.14); border-radius: 4px; }
-    .mid { left: 50%; top: 20px; bottom: 20px; width: 0; border-left: 3px dashed rgba(245,239,224,.14); border-right: none; }
-    .circle { left: 50%; top: 50%; width: 150px; height: 150px; border-radius: 50%; transform: translate(-50%,-50%); }
+    .line { position: absolute; border: 3px solid rgba(245,239,224,.13); border-radius: 4px; }
+    .mid { left: 50%; top: 18px; bottom: 18px; width: 0;
+           border-left: 3px dashed rgba(245,239,224,.13); border-right: none; }
+    .circle { left: 50%; top: 50%; width: 170px; height: 170px; border-radius: 50%;
+              transform: translate(-50%,-50%); border-style: dashed; }
+    .box { left: 12px; right: 12px; top: 12px; bottom: 12px; }
     /* characters */
     .kid { position: absolute; border-radius: 50%; }
-    .logo { position: absolute; top: 92px; width: 100%; text-align: center; line-height: .95; }
-    .ice { color: #9adcf0; font-size: 84px; letter-spacing: 2px;
-           text-shadow: 0 4px 0 #0a3a4a, 0 0 34px rgba(127,216,240,.35); }
-    .n { color: #f5efe0; font-size: 40px; vertical-align: 22px; margin: 0 8px;
-         text-shadow: 0 3px 0 #081420; }
-    .water { color: #4dd0e1; font-size: 84px; letter-spacing: 2px;
-             text-shadow: 0 4px 0 #0a3a4a, 0 0 34px rgba(77,208,225,.35); }
-    .tag { position: absolute; bottom: 120px; width: 100%; text-align: center;
-           font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 21px; color: #f5efe0; opacity: .92; }
-    .sub { position: absolute; bottom: 84px; width: 100%; text-align: center;
-           font-family: 'Fredoka', sans-serif; font-weight: 500; font-size: 15px; color: #7fd8f0; opacity: .8; }
+    .kid::after { content:''; position: absolute; inset: 3px; border-radius: 50%;
+                  background: rgba(255,255,255,.18); }
+    .logo { position: absolute; top: 96px; width: 100%; text-align: center; }
+    .logo img { width: 520px; filter: drop-shadow(0 10px 26px rgba(0,0,0,.45)); }
+    .tag { position: absolute; bottom: 118px; width: 100%; text-align: center;
+           font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px; color: #f5efe0; opacity: .92; }
+    .sub { position: absolute; bottom: 82px; width: 100%; text-align: center;
+           font-family: 'Fredoka', sans-serif; font-weight: 500; font-size: 14.5px; color: #7fd8f0; opacity: .8; }
+    .goldbar { position: absolute; bottom: 138px; left: 50%; transform: translateX(-50%);
+               width: 120px; height: 4px; border-radius: 2px;
+               background: linear-gradient(90deg, transparent, #f0a13a, transparent); }
     .drop { position: absolute; background: rgba(154,220,240,.5); border-radius: 50% 50% 60% 60%; }
   </style>
 </head>
 <body>
+  <div class="line box"></div>
   <div class="line mid"></div>
   <div class="line circle"></div>
 
-  <!-- militia chasing a runner across the middle -->
-  <div class="kid" style="left:96px;top:236px;width:34px;height:34px;background:#3ecf6e;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
-  <div class="kid" style="left:52px;top:230px;width:44px;height:44px;background:#e84848;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
-  <div class="kid" style="left:492px;top:236px;width:34px;height:34px;background:#3ecf6e;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
-  <div class="kid" style="left:538px;top:230px;width:44px;height:44px;background:#e84848;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
+  <!-- militia chasing runners across the middle -->
+  <div class="kid" style="left:88px;top:244px;width:34px;height:34px;background:#3ecf6e;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
+  <div class="kid" style="left:44px;top:238px;width:44px;height:44px;background:#e84848;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
+  <div class="kid" style="left:508px;top:244px;width:34px;height:34px;background:#3ecf6e;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
+  <div class="kid" style="left:552px;top:238px;width:44px;height:44px;background:#e84848;box-shadow:0 3px 0 rgba(0,0,0,.3)"></div>
 
-  <div class="logo"><span class="ice">ICE</span><span class="n">'N'</span><span class="water">WATER</span></div>
-  <div class="tag">the Nigerian street chase — now in your browser</div>
+  <div class="logo"><img src="logo.svg" alt="ICE '₦' WATER"></div>
+  <div class="goldbar"></div>
+  <div class="tag">the Nigerian street chase — 500 stops on the road north</div>
   <div class="sub">freeze tag · jailbreaks · danfo · NEPA · online with your crew</div>
 
   <!-- floating water drops -->
   <div class="drop" style="left:70px;top:60px;width:14px;height:18px"></div>
   <div class="drop" style="left:540px;top:70px;width:10px;height:13px"></div>
-  <div class="drop" style="left:300px;top:40px;width:8px;height:10px"></div>
+  <div class="drop" style="left:300px;top:38px;width:8px;height:10px"></div>
 </body>
 </html>

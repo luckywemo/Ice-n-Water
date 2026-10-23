@@ -1,60 +1,119 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 240" width="820" height="240">
   <defs>
-    <linearGradient id="cubeTop" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b8ecff"/>
-      <stop offset="1" stop-color="#4cc9f0"/>
+    <linearGradient id="lgIce" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4fcff"/>
+      <stop offset="0.55" stop-color="#b9e7f7"/>
+      <stop offset="1" stop-color="#6ccbe8"/>
     </linearGradient>
-    <linearGradient id="cubeLeft" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4cc9f0"/>
+    <linearGradient id="lgWater" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6fe3f2"/>
+      <stop offset="1" stop-color="#1d6fb8"/>
+    </linearGradient>
+    <linearGradient id="lgGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe98a"/>
+      <stop offset="1" stop-color="#f0a13a"/>
+    </linearGradient>
+    <linearGradient id="lgCubeTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8f4ff"/>
+      <stop offset="1" stop-color="#5ccbec"/>
+    </linearGradient>
+    <linearGradient id="lgCubeLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ccbec"/>
       <stop offset="1" stop-color="#1d8fc9"/>
     </linearGradient>
-    <linearGradient id="cubeRight" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="lgCubeRight" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#2ea8dd"/>
-      <stop offset="1" stop-color="#136a9c"/>
+      <stop offset="1" stop-color="#0f5f8e"/>
     </linearGradient>
-    <linearGradient id="water" x1="0" y1="0" x2="1" y2="0">
+    <linearGradient id="lgPuddle" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#4cc9f0"/>
       <stop offset="1" stop-color="#1d6fb8"/>
     </linearGradient>
-    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#eaf8ff"/>
-      <stop offset="1" stop-color="#4cc9f0"/>
-    </linearGradient>
   </defs>
 
-  <!-- ICON: melting ice cube -->
-  <g transform="translate(18 14)">
-    <!-- water puddle under the cube -->
-    <ellipse cx="64" cy="128" rx="62" ry="16" fill="url(#water)" opacity="0.9"/>
-    <ellipse cx="64" cy="128" rx="40" ry="9" fill="#8fdcf8" opacity="0.55"/>
-    <!-- drips -->
-    <path d="M104 96 q6 12 0 20 q-6 -8 0 -20 z" fill="#4cc9f0"/>
-    <path d="M30 92 q5 10 0 17 q-5 -7 0 -17 z" fill="#4cc9f0" opacity="0.85"/>
+  <!-- ============ MARK: melting cube over the chalk pitch circle ============ -->
+  <g>
+    <!-- playground chalk mid-circle -->
+    <circle cx="100" cy="104" r="68" fill="none" stroke="#f5efe0" stroke-width="3"
+            stroke-dasharray="12 9" opacity="0.3" stroke-linecap="round"/>
 
-    <!-- cube, slightly tilted, bottom-right corner melting away -->
-    <g transform="rotate(-7 64 60)">
-      <path d="M20 38 L64 20 L112 38 L112 84 Q96 100 84 98 Q70 96 64 104 L20 84 Z"
-            fill="url(#cubeLeft)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
-      <path d="M20 38 L64 20 L112 38 L64 56 Z" fill="url(#cubeTop)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
-      <path d="M64 56 L112 38 L112 84 Q96 100 84 98 Q70 96 64 104 Z" fill="url(#cubeRight)" stroke="#0d5d8a" stroke-width="3" stroke-linejoin="round"/>
-      <!-- facet glints -->
-      <path d="M34 42 L58 31" stroke="#eaf8ff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
-      <path d="M72 62 L104 48" stroke="#b8ecff" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
-      <path d="M30 52 L30 74 M40 56 L40 78" stroke="#8fdcf8" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
-      <!-- crack -->
-      <path d="M64 56 L58 68 L66 78" fill="none" stroke="#0d5d8a" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <!-- chase speed lines -->
+    <path d="M14 72 H46" stroke="#4dd0e1" stroke-width="6" stroke-linecap="round" opacity="0.75"/>
+    <path d="M24 88 H44" stroke="#4dd0e1" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+
+    <!-- melt puddle -->
+    <ellipse cx="104" cy="152" rx="44" ry="11" fill="url(#lgPuddle)" opacity="0.9"/>
+    <ellipse cx="104" cy="152" rx="27" ry="6.5" fill="#a5e7fa" opacity="0.5"/>
+
+    <!-- falling droplet, mid-air between cube and puddle -->
+    <path d="M119 110 q8 19 0 27 q-8 -8 0 -27 z" fill="#4cc9f0"/>
+    <path d="M119 116 q4 10 0 16" stroke="#d8f4ff" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.8"/>
+
+    <!-- ice cube, tilted, lower edge melting away -->
+    <g transform="rotate(-8 102 78)" stroke="#08263f" stroke-width="3.5" stroke-linejoin="round">
+      <path d="M68 52 L104 34 L140 52 L104 70 Z" fill="url(#lgCubeTop)"/>
+      <path d="M68 52 L104 70 L104 108 Q93 116 85 114 Q75 112 68 102 Z" fill="url(#lgCubeLeft)"/>
+      <path d="M104 70 L140 52 L140 88 Q134 99 124 99 Q112 99 104 108 Z" fill="url(#lgCubeRight)"/>
     </g>
-    <!-- gold star accent -->
-    <path d="M118 22 l3.5 8.5 9.2 1 -6.8 6.2 1.8 9 -7.7 -4.6 -7.7 4.6 1.8 -9 -6.8 -6.2 9.2 -1 z"
-          fill="#ffd60a" stroke="#8a6500" stroke-width="1.5"/>
+    <!-- facet glints + crack (unstroked overlay) -->
+    <g transform="rotate(-8 102 78)" stroke-linecap="round" fill="none">
+      <path d="M79 56 L99 44" stroke="#f4fcff" stroke-width="4.5" opacity="0.95"/>
+      <path d="M111 78 L133 65" stroke="#b8ecff" stroke-width="3.5" opacity="0.75"/>
+      <path d="M77 64 L77 86 M87 68 L87 92" stroke="#a5e7fa" stroke-width="3.5" opacity="0.55"/>
+      <path d="M104 70 L98 82 L106 92" stroke="#0d5d8a" stroke-width="2.5" opacity="0.85"/>
+    </g>
+
+    <!-- splash crown where the drop will land -->
+    <path d="M96 146 l5 -8 5 8 M110 148 l4 -6 4 6" stroke="#8fdcf8" stroke-width="3"
+          fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+    <!-- gold four-point sparkle -->
+    <path d="M152 30 L155.5 39.5 L165 43 L155.5 46.5 L152 56 L148.5 46.5 L139 43 L148.5 39.5 Z"
+          fill="url(#lgGold)" stroke="#8a6500" stroke-width="1.6" stroke-linejoin="round"/>
   </g>
 
-  <!-- WORDMARK -->
-  <g font-family="Arial Black, Arial, sans-serif" font-weight="900" font-style="italic">
-    <text x="158" y="98" font-size="64" fill="url(#word)" letter-spacing="2">ICE</text>
-    <text x="308" y="98" font-size="34" fill="#ffd60a" transform="rotate(-4 320 80)">'N'</text>
-    <text x="158" y="160" font-size="64" fill="url(#word)" letter-spacing="2">WATER</text>
+  <!-- ============ WORDMARK: ICE '₦' WATER (hand-drawn letterforms) ============ -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- navy sticker outline, one pass under everything -->
+    <g stroke="#07192e" stroke-width="27">
+      <path d="M208 68 H240 M224 68 V138 M208 138 H240"/>
+      <path d="M313 85 A30 30 0 1 0 313 121"/>
+      <path d="M331 68 V138 M331 68 H373 M331 103 H367 M331 138 H375"/>
+      <path d="M415 68 V138 M481 68 V138 M415 68 L481 138 M407 88 H489 M407 118 H489"/>
+      <path d="M515 68 L529 138 L543 96 L557 138 L571 68"/>
+      <path d="M587 138 L605 68 L623 138 M595 112 H615"/>
+      <path d="M635 68 H679 M657 68 V138"/>
+      <path d="M695 68 V138 M695 68 H737 M695 103 H731 M695 138 H739"/>
+      <path d="M755 68 V138 M755 68 H779 A15 15 0 0 1 779 98 H755 M767 98 L787 138"/>
+    </g>
+    <!-- ICE — pale frost -->
+    <g stroke="url(#lgIce)" stroke-width="17">
+      <path d="M208 68 H240 M224 68 V138 M208 138 H240"/>
+      <path d="M313 85 A30 30 0 1 0 313 121"/>
+      <path d="M331 68 V138 M331 68 H373 M331 103 H367 M331 138 H375"/>
+    </g>
+    <!-- '₦ — the naira N, in gold -->
+    <g stroke="url(#lgGold)" stroke-width="17">
+      <path d="M415 68 V138 M481 68 V138 M415 68 L481 138 M407 88 H489 M407 118 H489"/>
+    </g>
+    <!-- WATER — deep water -->
+    <g stroke="url(#lgWater)" stroke-width="17">
+      <path d="M515 68 L529 138 L543 96 L557 138 L571 68"/>
+      <path d="M587 138 L605 68 L623 138 M595 112 H615"/>
+      <path d="M635 68 H679 M657 68 V138"/>
+      <path d="M695 68 V138 M695 68 H737 M695 103 H731 M695 138 H739"/>
+      <path d="M755 68 V138 M755 68 H779 A15 15 0 0 1 779 98 H755 M767 98 L787 138"/>
+    </g>
   </g>
-  <text x="162" y="188" font-family="Arial, sans-serif" font-weight="700" font-size="15"
-        fill="#7fb3d5" letter-spacing="6">THE ROAD NORTH</text>
+
+  <!-- apostrophe teardrop before the ₦ -->
+  <path d="M397 50 q7 11 3 20 q-10 -4 -3 -20 z" fill="url(#lgGold)" stroke="#08263f" stroke-width="2"/>
+
+  <!-- melt drips hanging off WATER -->
+  <path d="M529 140 q5 13 0 21 q-5 -8 0 -21 z" fill="#2ea8dd" stroke="#08263f" stroke-width="2"/>
+  <path d="M726 140 q5 13 0 21 q-5 -8 0 -21 z" fill="#2ea8dd" stroke="#08263f" stroke-width="2"/>
+
+  <!-- tagline -->
+  <text x="494" y="182" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-weight="700" font-size="19" letter-spacing="7" fill="#f5efe0" opacity="0.85">THE NIGERIAN STREET CHASE</text>
 </svg>
