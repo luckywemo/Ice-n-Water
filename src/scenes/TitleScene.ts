@@ -282,6 +282,7 @@ export class TitleScene extends Phaser.Scene {
         { icon: 'online', onDown: () => this.gate(toOnline) },
       ],
       { crown: s.wins, star: stars },
+      { y0: visT },
     );
 
     // pipelines registered once for every logo letter on this scene
@@ -399,7 +400,7 @@ export class TitleScene extends Phaser.Scene {
     });
 
     // --- settings card (gear toggles — modal over the stage) ---
-    this.buildSettingsCard(vw, vh, isTouch);
+    this.buildSettingsCard(vw, vh, isTouch, { l: visL, t: visT, r: visR, b: visB });
 
     // the loading screen — #boot hands off seamlessly (same yellow crown
     // look), then the splash auto-dismisses into the lobby
@@ -532,11 +533,18 @@ export class TitleScene extends Phaser.Scene {
     }
   }
 
-  private buildSettingsCard(vw: number, vh: number, isTouch: boolean) {
+  private buildSettingsCard(
+    vw: number,
+    vh: number,
+    isTouch: boolean,
+    vis: { l: number; t: number; r: number; b: number },
+  ) {
     const W = 560;
     const H = isTouch ? 430 : 510;
-    const cx = vw * 0.66;
-    const cy = vh * 0.5;
+    const visW = vis.r - vis.l;
+    const visH = vis.b - vis.t;
+    const cx = vis.l + visW * 0.66;
+    const cy = vis.t + visH * 0.5;
     const top = cy - H / 2;
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
 
@@ -558,17 +566,17 @@ export class TitleScene extends Phaser.Scene {
     field.fillStyle(0x9db2ef, 1).fillRect(-vw, -vh, vw * 3, vh * 3);
     // rings radiate from behind the card, not the cogs
     field.lineStyle(3, 0xffffff, 0.08);
-    for (let r = 70; r < vw * 1.1; r += 74) field.strokeCircle(cx, cy, r);
+    for (let r = 70; r < visW * 1.1; r += 74) field.strokeCircle(cx, cy, r);
     field.lineStyle(2, 0xffffff, 0.05);
-    for (let r = 80; r < vw * 0.9; r += 96)
-      field.strokeCircle(vw * 0.95, vh * 0.04, r);
+    for (let r = 80; r < visW * 0.9; r += 96)
+      field.strokeCircle(vis.l + visW * 0.95, vis.t + visH * 0.04, r);
     // SETTINGS header tab — their top-left chamfered label, white-rimmed
     const tabPts = [
-      { x: 0, y: 0 },
-      { x: 176, y: 0 },
-      { x: 176, y: 32 },
-      { x: 160, y: 48 },
-      { x: 0, y: 48 },
+      { x: vis.l, y: vis.t },
+      { x: vis.l + 176, y: vis.t },
+      { x: vis.l + 176, y: vis.t + 32 },
+      { x: vis.l + 160, y: vis.t + 48 },
+      { x: vis.l, y: vis.t + 48 },
     ];
     field.fillStyle(0x241a3a, 1).fillPoints(tabPts, true);
     field.lineStyle(2.5, 0xffffff, 0.9).strokePoints(tabPts, true);
@@ -604,11 +612,11 @@ export class TitleScene extends Phaser.Scene {
       card.add(this.add.image(gx, gy, key).setAlpha(0.92));
     };
     // diagonal cluster — small cog nests down-right of the big one
-    gear(vw * 0.16, vh * 0.36, Math.min(vw, vh) * 0.15, 9);
-    gear(vw * 0.28, vh * 0.58, Math.min(vw, vh) * 0.095, 8);
+    gear(vis.l + visW * 0.16, vis.t + visH * 0.36, Math.min(visW, visH) * 0.15, 9);
+    gear(vis.l + visW * 0.28, vis.t + visH * 0.58, Math.min(visW, visH) * 0.095, 8);
     card.add(
       this.add
-        .text(16, 23, 'SETTINGS', {
+        .text(vis.l + 16, vis.t + 23, 'SETTINGS', {
           fontFamily: FG_FONT,
           fontSize: '20px',
           color: '#ffffff',
@@ -618,7 +626,7 @@ export class TitleScene extends Phaser.Scene {
     // footer hints — their Select Ⓛ / Back Ⓑ row
     card.add(
       this.add
-        .text(vw - 18, vh - 16, '❮ ❯ — change   ·   esc — close', {
+        .text(vis.r - 18, vis.b - 16, '❮ ❯ — change   ·   esc — close', {
           fontFamily: FG_BODY,
           fontSize: '12px',
           fontStyle: '700',

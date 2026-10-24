@@ -42,8 +42,11 @@ export function fgRings(
   ring: number = FG.yellowRing,
 ) {
   const g = scene.add.graphics().setDepth(-10);
-  g.fillStyle(base, 1).fillRect(-vw * 0.4, -8, vw * 1.8, vh + 16); // overscan — fills letterbox margins
-  const maxR = Math.hypot(Math.max(cx, vw - cx), Math.max(cy, vh - cy)) + 80;
+  // symmetric overscan — the visible region outgrows the stage on both axes
+  // under a letterboxed zoom (and under camera zoom for scrollFactor(0))
+  g.fillStyle(base, 1).fillRect(-vw * 0.4, -vh * 0.5, vw * 1.8, vh * 2);
+  const z = scene.cameras.main.zoom || 1;
+  const maxR = (Math.hypot(Math.max(cx, vw - cx), Math.max(cy, vh - cy)) + 80) / z;
   for (let r = 58; r < maxR; r += 58) {
     g.lineStyle(34, ring, 0.28).strokeCircle(cx, cy, r);
     g.lineStyle(7, ring, 0.15).strokeCircle(cx, cy, r + 30);
@@ -294,7 +297,7 @@ export function fgTopBar(
   vw: number,
   items: { icon: FgIcon; active?: boolean; onDown: () => void }[],
   counters: { crown: number; star: number },
-  opts?: { label?: string; scrollLock?: boolean },
+  opts?: { label?: string; scrollLock?: boolean; y0?: number },
 ) {
   const ui: { setScrollFactor: (n: number) => unknown }[] = [];
   const H = 46;
@@ -416,6 +419,14 @@ export function fgTopBar(
 
   // scroll-locked chrome for scenes whose camera moves (the map's rail)
   if (opts?.scrollLock) ui.forEach((o) => o.setScrollFactor(0));
+  // y0 anchors the bar to a visible view edge — world-space bars under a
+  // letterboxed stage zoom otherwise drift inside the composition
+  if (opts?.y0)
+    scene.add.container(
+      0,
+      opts.y0,
+      ui as unknown as Phaser.GameObjects.GameObject[],
+    );
 
   return {
     /** pink = the active tab — their SEASONS screen shows the live section pink */
