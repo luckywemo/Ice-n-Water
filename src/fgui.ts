@@ -297,17 +297,21 @@ export function fgTopBar(
   vw: number,
   items: { icon: FgIcon; active?: boolean; onDown: () => void }[],
   counters: { crown: number; star: number },
-  opts?: { label?: string; scrollLock?: boolean; y0?: number },
+  opts?: { label?: string; scrollLock?: boolean; y0?: number; xL?: number; xR?: number },
 ) {
   const ui: { setScrollFactor: (n: number) => unknown }[] = [];
   const H = 46;
+  // edge anchors — letterboxed stages push stage edges inside the window;
+  // callers pass the visible left/right so the bar hugs the real frame
+  const exL = opts?.xL ?? 0;
+  const exR = opts?.xR ?? vw;
   const g = scene.add.graphics().setDepth(30);
-  g.fillStyle(FG.bar, 1).fillRect(-vw * 0.4, 0, vw * 1.8, H); // overscan — ultrawide margins stay black
-  g.lineStyle(2, 0x000000, 0.5).lineBetween(-vw * 0.4, H - 1, vw * 1.4, H - 1);
+  g.fillStyle(FG.bar, 1).fillRect(exL - vw * 0.4, 0, (exR - exL) + vw * 0.8, H); // overscan — ultrawide margins stay black
+  g.lineStyle(2, 0x000000, 0.5).lineBetween(exL - vw * 0.4, H - 1, exR + vw * 0.4, H - 1);
   ui.push(g);
   ui.push(
     scene.add
-      .text(18, H / 2 + 1, opts?.label ?? 'LOBBY', {
+      .text(exL + 18, H / 2 + 1, opts?.label ?? 'LOBBY', {
         fontFamily: FG_FONT,
         fontSize: '27px',
         fontStyle: 'italic',
@@ -408,7 +412,7 @@ export function fgTopBar(
     ig.fillStyle(0x8e3df5, 1).fillCircle(cx, cy, 10);
     ig.fillStyle(0xc07fff, 1).fillCircle(cx, cy, 6);
     ig.fillStyle(0xffffff, 0.7).fillCircle(cx - 2, cy - 2, 2.5);
-  }, vw - 14);
+  }, exR - 14);
   chip(0, counters.crown, (ig, cxx, cy) => {
     ig.fillStyle(FG.gold, 1);
     ig.fillTriangle(cxx - 8, cy + 4, cxx - 8, cy - 6, cxx - 3, cy - 1);

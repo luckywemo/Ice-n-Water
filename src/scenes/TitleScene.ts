@@ -282,7 +282,7 @@ export class TitleScene extends Phaser.Scene {
         { icon: 'online', onDown: () => this.gate(toOnline) },
       ],
       { crown: s.wins, star: stars },
-      { y0: visT },
+      { y0: visT, xL: visL, xR: visR },
     );
 
     // pipelines registered once for every logo letter on this scene
