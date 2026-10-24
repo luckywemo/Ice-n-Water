@@ -1,9 +1,9 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { Server } from 'colyseus';
+import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
-import { GameRoom } from './rooms/GameRoom';
+import { GameRoom } from './rooms/GameRoom.js';
 
 const port = Number(process.env.PORT || 2567);
 
@@ -12,8 +12,8 @@ const port = Number(process.env.PORT || 2567);
 interface LbEntry {
   id: string;
   name: string;
-  level: number; // highest level reached (1..500)
-  stars: number; // total stars earned
+  level: number; // levels cleared across both campaigns (1..1000)
+  stars: number; // total stars earned (max 3000)
   updated: number; // epoch ms — earlier wins ties
 }
 
@@ -66,7 +66,10 @@ function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 4096) req.destroy(); // don't get farmed
+      if (data.length > 4096) {
+        reject(new Error('payload too big')); // don't get farmed
+        req.destroy();
+      }
     });
     req.on('end', () => {
       try {
@@ -110,14 +113,23 @@ async function api(req: IncomingMessage, res: ServerResponse) {
     if (now - (lastPostAt.get(ip) ?? 0) < 1500) return json(res, 429, { error: 'slow down' });
     lastPostAt.set(ip, now);
     try {
-      const b = await readBody(req);
+      // the router's pre-read caps at 1MB, not our 4KB — enforce our own
+      // bound before accepting (chunked bodies still hit readBody's cap)
+      if (Number(req.headers['content-length'] ?? 0) > 4096)
+        return json(res, 400, { error: 'payload too big' });
+      // colyseus' router pre-reads bodies for requests with content-length —
+      // use req.body when populated, stream it ourselves otherwise
+      const b = ((req as IncomingMessage & { body?: unknown }).body ?? (await readBody(req))) as Record<
+        string,
+        unknown
+      >;
       const id = String(b.id ?? '');
       const name = String(b.name ?? 'runner').slice(0, 16).replace(/[^\w \-!'áéíóúñ]/gi, '') || 'runner';
       const level = Math.floor(Number(b.level));
       const stars = Math.floor(Number(b.stars));
       if (id.length < 8 || id.length > 64)
         return json(res, 400, { error: 'bad id' });
-      if (!(level >= 1 && level <= 500 && stars >= 0 && stars <= 1500))
+      if (!(level >= 1 && level <= 1000 && stars >= 0 && stars <= 3000))
         return json(res, 400, { error: 'bad score' });
 
       const prev = entries.get(id);
@@ -144,12 +156,14 @@ async function api(req: IncomingMessage, res: ServerResponse) {
 
 // ---------- colyseus on the same http server ----------
 
-const httpServer = createServer((req, res) => {
-  void api(req, res);
-});
+const httpServer = createServer();
 
 const gameServer = new Server({
   transport: new WebSocketTransport({ server: httpServer }),
+  // colyseus prepends its matchmake router to 'request' — a bare listener
+  // would race it and double-respond. Custom routes mount on its express
+  // fallback instead, which only sees requests the router didn't claim.
+  express: (app) => app.use((req: IncomingMessage, res: ServerResponse) => void api(req, res)),
 });
 
 gameServer.define('game', GameRoom);

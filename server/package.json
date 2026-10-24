@@ -12,7 +12,9 @@
     "start": "node build/index.js"
   },
   "dependencies": {
-    "colyseus": "^0.16.1"
+    "@colyseus/core": "^0.18.23",
+    "@colyseus/schema": "^5.0.42",
+    "@colyseus/ws-transport": "^0.18.4"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
