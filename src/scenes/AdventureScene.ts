@@ -387,13 +387,15 @@ export class AdventureScene extends Phaser.Scene {
     const cardCx = (c: number) => CARD_PAD + CARD_W / 2 + c * CARD_GAP;
     const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
 
-    // ---- the timeline behind the cards — white on claimed ground, dark ahead ----
+    // ---- the timeline behind the cards — thin, rides just below center,
+    //  white on claimed ground, dark ahead ----
+    const lineY = cardCy + 8;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(23,21,31,0.8)';
-    ctx.lineWidth = 7;
+    ctx.strokeStyle = 'rgba(23,21,31,0.85)';
+    ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.moveTo(0, cardCy);
-    ctx.lineTo(STRIP_W, cardCy);
+    ctx.moveTo(0, lineY);
+    ctx.lineTo(STRIP_W, lineY);
     ctx.stroke();
     let claimX = -1;
     for (let c = 0; c < COLS; c++) {
@@ -403,10 +405,10 @@ export class AdventureScene extends Phaser.Scene {
     }
     if (claimX > 0) {
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 7;
+      ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.moveTo(0, cardCy);
-      ctx.lineTo(Math.min(claimX, STRIP_W), cardCy);
+      ctx.moveTo(0, lineY);
+      ctx.lineTo(Math.min(claimX, STRIP_W), lineY);
       ctx.stroke();
     }
 
@@ -439,18 +441,20 @@ export class AdventureScene extends Phaser.Scene {
       ctx.beginPath();
       ctx.roundRect(left + 5, top0 + 6, CARD_W, CARD_H, 14);
       ctx.fill();
-      // rim — white like theirs; the frontier card wears gold instead
-      ctx.fillStyle = isFrontier ? '#ffc93c' : '#ffffff';
+      // rim — fat white like theirs; the frontier card wears fat gold instead
+      const rim = isFrontier ? '#ffc93c' : '#ffffff';
+      const rimW = isFrontier ? 5 : 4;
+      ctx.fillStyle = rim;
       ctx.beginPath();
-      ctx.roundRect(left - 3, top0 - 3, CARD_W + 6, CARD_H + 6, 17);
+      ctx.roundRect(left - rimW, top0 - rimW, CARD_W + rimW * 2, CARD_H + rimW * 2, 18);
       ctx.fill();
-      // face — content always on show, locked or not
-      ctx.fillStyle = done ? '#ffe9b8' : open ? '#fdf8ec' : '#eef3f7';
+      // face — uniform cyan like theirs; state lives in the content, not the card
+      ctx.fillStyle = '#5cc9ea';
       ctx.beginPath();
       ctx.roundRect(left, top0, CARD_W, CARD_H, 14);
       ctx.fill();
       // gloss sheen across the top
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
       ctx.beginPath();
       ctx.roundRect(left + 5, top0 + 4, CARD_W - 10, 22, 9);
       ctx.fill();
@@ -459,49 +463,98 @@ export class AdventureScene extends Phaser.Scene {
       const bx = cx;
       const by = top0 - 1;
       ctx.fillStyle = '#9c2160'; // deep-pink under-edge
-      hex(bx, by + 3, 19);
+      hex(bx, by + 3, 22);
       ctx.fill();
       ctx.fillStyle = '#e84393';
-      hex(bx, by, 19);
+      hex(bx, by, 22);
       ctx.fill();
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 3;
       ctx.strokeStyle = '#ffffff';
-      hex(bx, by, 19);
+      hex(bx, by, 22);
       ctx.stroke();
       ctx.fillStyle = '#ffffff';
-      ctx.font = `800 ${n >= 100 ? 13 : 17}px "Baloo 2", sans-serif`;
+      ctx.font = `800 ${n >= 100 ? 15 : 19}px "Baloo 2", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(n), bx, by + 1);
 
-      // face content — earned stars or ghost stars still up for grabs
+      // face content — big like their reward art: three star slots, earned
+      // stars filled gold, the rest ghosted; boss tiers get the gold crown
       const s = this.prog.stars[n] ?? 0;
-      ctx.font = '15px sans-serif';
-      if (s > 0) {
-        ctx.fillStyle = '#e8a40f';
-        ctx.fillText('★'.repeat(s), cx, cardCy + 8);
-      } else {
-        ctx.fillStyle = open ? 'rgba(201,138,0,0.4)' : 'rgba(90,105,120,0.55)';
-        ctx.fillText('★ ★ ★', cx, cardCy + 8);
+      const star5 = (sx: number, sy: number, sr: number) => {
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const a = -Math.PI / 2 + (k * Math.PI) / 5;
+          const rr = k % 2 === 0 ? sr : sr * 0.45;
+          const px = sx + Math.cos(a) * rr;
+          const py = sy + Math.cos(a) * 0 + Math.sin(a) * rr;
+          if (k === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+      };
+      for (let k = 0; k < 3; k++) {
+        const sx = cx - 26 + k * 26;
+        const sy = cardCy + 22;
+        star5(sx, sy, 12);
+        if (k < s) {
+          ctx.fillStyle = '#f7bd14';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#c98a00';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = open ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.45)';
+          ctx.stroke();
+        }
       }
       if (levelDef(n).boss) {
-        ctx.fillStyle = open || done ? '#e84393' : 'rgba(90,105,120,0.6)';
-        ctx.font = '800 10px "Baloo 2", sans-serif';
-        ctx.fillText('BOSS', cx, cardCy + 30);
+        // the gold crown — same glyph as their crown-reward card
+        const kx = cx;
+        const ky = cardCy - 16;
+        ctx.fillStyle = '#ffc93c';
+        ctx.beginPath();
+        ctx.moveTo(kx - 14, ky + 8);
+        ctx.lineTo(kx - 14, ky - 4);
+        ctx.lineTo(kx - 7, ky + 2);
+        ctx.lineTo(kx, ky - 7);
+        ctx.lineTo(kx + 7, ky + 2);
+        ctx.lineTo(kx + 14, ky - 4);
+        ctx.lineTo(kx + 14, ky + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillRect(kx - 14, ky + 9, 28, 4);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#c98a00';
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(10,8,18,0.55)';
+        ctx.font = '800 9px "Baloo 2", sans-serif';
+        ctx.fillText('BOSS', kx, ky + 22);
       }
 
-      // padlock — locked tiers badge it, never hide it
+      // padlock — big white lock straddling the top-right rim, like theirs
       if (!open) {
-        const lx = cx + CARD_W / 2 - 20;
-        const ly = top0 + 14;
-        ctx.strokeStyle = 'rgba(56,70,86,0.9)';
-        ctx.lineWidth = 3;
+        const lx = left + CARD_W - 14;
+        const ly = top0 + 4;
+        ctx.fillStyle = 'rgba(10,8,18,0.35)'; // soft offset shadow under the lock
         ctx.beginPath();
-        ctx.arc(lx, ly, 5.5, Math.PI, 0);
+        ctx.roundRect(lx - 8, ly + 7, 19, 15, 4);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.arc(lx + 1, ly + 6, 7, Math.PI, 0);
         ctx.stroke();
-        ctx.fillStyle = 'rgba(56,70,86,0.9)';
+        ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.roundRect(lx - 8, ly, 16, 13, 3);
+        ctx.roundRect(lx - 9, ly + 6, 19, 15, 4);
+        ctx.fill();
+        ctx.fillStyle = '#0f7fb8'; // keyhole
+        ctx.beginPath();
+        ctx.arc(lx, ly + 13, 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
 
