@@ -370,7 +370,9 @@ export class TitleScene extends Phaser.Scene {
         .image(podX, podTopY - 244, 'hero_live')
         .setOrigin(0.5)
         .setDepth(6)
-        .setAlpha(0);
+        .setAlpha(0)
+        .setInteractive({ useHandCursor: true });
+      this.heroImg.on('pointerdown', () => this.hero3d?.poke());
     } else {
       // no WebGL for three — fall back to the baked sprite
       const heroImg = this.add
@@ -876,6 +878,12 @@ export class TitleScene extends Phaser.Scene {
     for (const d of this.iceDecos) {
       if (d.img.scene) d.img.setAlpha(IceFxPipeline.cycle(this.time.now, d.born));
     }
+    const p = this.input.activePointer;
+    if (p)
+      this.hero3d?.setGaze(
+        (p.x - this.scale.width / 2) / (this.scale.width / 2),
+        (p.y - this.scale.height / 2) / (this.scale.height / 2),
+      );
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
       // same-task read after render — the webgl buffer is still valid

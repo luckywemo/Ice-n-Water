@@ -4,6 +4,7 @@
 // canvas that the scene wraps in a Phaser texture — a real display-list
 // object, so modals cover it and it dies with the scene.
 import * as THREE from 'three';
+import { REDUCED_MOTION } from './ui';
 
 const BODY = 0x26214e; // glossy deep navy costume
 const SPRINKLE = 0x2ec9e8; // cyan sprinkle dashes
@@ -16,7 +17,35 @@ export class Hero3D {
   private scene?: THREE.Scene;
   private camera?: THREE.PerspectiveCamera;
   private group?: THREE.Group;
+  private torso?: THREE.Mesh;
+  private armL?: THREE.Mesh;
+  private armR?: THREE.Mesh;
+  private eyeL?: THREE.Mesh;
+  private eyeR?: THREE.Mesh;
+  // --- animation state ---
+  private sq = 0; // jelly: + stretch, − squash
+  private sqVel = 0;
+  private hopY = 0;
+  private hopV = 0;
+  private gx = 0; // gaze −1..1
+  private gy = 0;
+  private blinkUntil = 0;
+  private nextBlink = 2400;
+  private nextHop = 5200;
+  private lastT = -1;
   ok = false;
+
+  /** cursor follow — normalized −1..1 from screen centre */
+  setGaze(x: number, y: number) {
+    this.gx = Math.max(-1, Math.min(1, x));
+    this.gy = Math.max(-1, Math.min(1, y));
+  }
+
+  /** poke reaction — deep squash + a little startle hop */
+  poke() {
+    this.sqVel -= 4.2;
+    if (this.hopY === 0) this.hopV = 1.5;
+  }
 
   get canvas(): HTMLCanvasElement | undefined {
     return this.renderer?.domElement;
@@ -67,28 +96,27 @@ export class Hero3D {
       Math.PI / 2 - 0.15;
 
     // the bean — one tall capsule body, wide and glossy
-    const torso = mesh(new THREE.CapsuleGeometry(0.62, 0.85, 10, 28), body, 0, 1.18, 0);
-    torso.scale.set(1, 1, 0.92);
+    this.torso = mesh(new THREE.CapsuleGeometry(0.62, 0.85, 10, 28), body, 0, 1.18, 0);
+    this.torso.scale.set(1, 1, 0.92);
 
     // stub arms — short capsules hanging at the sides, angled slightly out
-    const armL = mesh(new THREE.CapsuleGeometry(0.14, 0.5, 6, 14), body, -0.66, 1.05, 0.02);
-    armL.rotation.z = 0.16;
-    armL.rotation.x = -0.08;
-    const armR = mesh(new THREE.CapsuleGeometry(0.14, 0.5, 6, 14), body, 0.66, 1.05, 0.02);
-    armR.rotation.z = -0.16;
-    armR.rotation.x = -0.08;
+    this.armL = mesh(new THREE.CapsuleGeometry(0.14, 0.5, 6, 14), body, -0.66, 1.05, 0.02);
+    this.armL.rotation.z = 0.16;
+    this.armL.rotation.x = -0.08;
+    this.armR = mesh(new THREE.CapsuleGeometry(0.14, 0.5, 6, 14), body, 0.66, 1.05, 0.02);
+    this.armR.rotation.z = -0.16;
+    this.armR.rotation.x = -0.08;
 
     // face oval — sits lower so the gele has the crown; proud of the body so the seam is clean
     mesh(new THREE.SphereGeometry(0.44, 28, 22), skin, 0, 1.55, 0.47).scale.set(0.8, 1.0, 0.36);
     // eyes — two tall dark ovals on the face
-    const eye = (x: number) =>
-      mesh(new THREE.SphereGeometry(0.055, 12, 10), mat(0x12090a, 0.35), x, 1.55, 0.6).scale.set(
-        0.75,
-        1.35,
-        0.45,
-      );
-    eye(-0.15);
-    eye(0.15);
+    const eye = (x: number) => {
+      const m = mesh(new THREE.SphereGeometry(0.055, 12, 10), mat(0x12090a, 0.35), x, 1.55, 0.6);
+      m.scale.set(0.75, 1.35, 0.45);
+      return m;
+    };
+    this.eyeL = eye(-0.15);
+    this.eyeR = eye(0.15);
 
     // danfo gele — cap shell on the crown; rim lands as a brow line above the face
     mesh(
@@ -135,10 +163,62 @@ export class Hero3D {
 
   update(t: number) {
     if (!this.renderer || !this.scene || !this.camera || !this.group) return;
+    const dt = this.lastT < 0 ? 0.016 : Math.min(0.05, (t - this.lastT) / 1000);
+    this.lastT = t;
     const s = t / 1000;
-    this.group.position.y = Math.sin(s * 1.6) * 0.045;
-    this.group.rotation.y = Math.sin(s * 0.7) * 0.3;
-    this.group.rotation.z = Math.sin(s * 1.1) * 0.02;
+    const grp = this.group;
+    const idle = REDUCED_MOTION ? 0 : 1;
+
+    // jelly spring — squash(−)/stretch(+), roughly volume-preserving; the
+    // group's origin sits at the feet so the plant stays grounded
+    this.sqVel += (-170 * this.sq - 11 * this.sqVel) * dt;
+    this.sq = Math.max(-0.38, Math.min(0.5, this.sq + this.sqVel * dt));
+    grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
+    if (this.armL) this.armL.rotation.z = 0.16 - this.sq * 0.55;
+    if (this.armR) this.armR.rotation.z = -0.16 + this.sq * 0.55;
+
+    // scheduled hop — stretch at take-off, squash on landing
+    if (!REDUCED_MOTION && t > this.nextHop) {
+      this.nextHop = t + 5200 + Math.random() * 5200;
+      if (this.hopY === 0) {
+        this.hopV = 2.7;
+        this.sqVel += 2.2;
+      }
+    }
+    if (this.hopV !== 0 || this.hopY > 0) {
+      this.hopY += this.hopV * dt;
+      this.hopV -= 10 * dt;
+      if (this.hopY <= 0) {
+        this.hopY = 0;
+        this.sqVel += this.hopV * 0.85;
+        this.hopV = 0;
+      }
+    }
+
+    // blink — a fast lid dip every 2–5s
+    if (t > this.nextBlink) {
+      this.nextBlink = t + 2200 + Math.random() * 3400;
+      this.blinkUntil = t + 130;
+    }
+    const lids = t < this.blinkUntil ? 0.12 : 1.35;
+    if (this.eyeL) this.eyeL.scale.y = lids;
+    if (this.eyeR) this.eyeR.scale.y = lids;
+
+    // gaze — eyes drift, body leans toward the cursor
+    if (this.eyeL) {
+      this.eyeL.position.x = -0.15 + this.gx * 0.07;
+      this.eyeL.position.y = 1.55 + this.gy * 0.05;
+    }
+    if (this.eyeR) {
+      this.eyeR.position.x = 0.15 + this.gx * 0.07;
+      this.eyeR.position.y = 1.55 + this.gy * 0.05;
+    }
+
+    // idle — breathing bob, slow sway, gaze lean
+    grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY;
+    grp.rotation.y = Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
+    grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
+
     this.renderer.render(this.scene, this.camera);
   }
 
