@@ -15,7 +15,7 @@
     <title>Ice 'N' Water — the Nigerian chase game</title>
     <meta
       name="description"
-      content="The Nigerian childhood chase game, digitized. Ice &amp; Water and Police &amp; Thief rules, a 500-level road from Lagos to Maiduguri, online rooms, and a global leaderboard."
+      content="The Nigerian childhood chase game, digitized. Ice &amp; Water rules, a 500-level road from Lagos to Maiduguri, online rooms, and a global leaderboard."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Ice 'N' Water — the road north" />
@@ -28,7 +28,7 @@
     <meta name="twitter:title" content="Ice 'N' Water — the road north" />
     <meta
       name="twitter:description"
-      content="The Nigerian childhood chase game, digitized. Ice &amp; Water · Police &amp; Thief · Lagos to Maiduguri."
+      content="The Nigerian childhood chase game, digitized. Ice &amp; Water · Lagos to Maiduguri."
     />
     <meta name="twitter:image" content="og.png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -36,7 +36,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@400;500;600&family=Titan+One&family=Baloo+2:wght@700;800&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -105,61 +105,46 @@
           opacity: 0.6;
         }
       }
-      /* boot splash — branded loading state under the canvas */
+      /* boot splash — yellow crown splash, matches the in-game intro */
       #boot {
         position: fixed;
         inset: 0;
         z-index: 50;
-        background: radial-gradient(120% 90% at 50% 30%, #12314f 0%, #0a1930 70%);
+        background: #f7bd14
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cg fill='none' stroke='%23c98f00' stroke-opacity='.25' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M44 70 44 56 52 62 56 50 60 60 64 50 68 62 76 56 76 70Z'/%3E%3Cpath d='M164 60 164 46 172 52 176 40 180 50 184 40 188 52 196 46 196 60Z'/%3E%3Cpath d='M104 150 104 136 112 142 116 130 120 140 124 130 128 142 136 136 150Z'/%3E%3Cpath d='M24 210 24 196 32 202 36 190 40 200 44 190 48 202 56 196 56 210Z'/%3E%3Cpath d='M184 200 184 186 192 192 196 180 200 190 204 180 208 192 216 186 216 200Z'/%3E%3C/g%3E%3C/svg%3E");
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 18px;
+        gap: 20px;
         font-family: 'Fredoka', sans-serif;
       }
-      #boot .mark {
-        width: 88px;
-        height: 88px;
-        border-radius: 20px;
-        background: linear-gradient(135deg, #b8ecff 0%, #4cc9f0 45%, #136a9c 100%);
-        box-shadow:
-          0 0 0 3px #0d5d8a,
-          0 18px 40px rgba(76, 201, 240, 0.25);
-        position: relative;
-      }
-      #boot .mark::after {
-        content: '';
-        position: absolute;
-        left: 12px;
-        bottom: -14px;
-        width: 64px;
-        height: 12px;
-        border-radius: 50%;
-        background: rgba(76, 201, 240, 0.5);
-      }
       #boot .word {
-        color: #eaf8ff;
-        font-weight: 700;
-        font-size: 22px;
-        letter-spacing: 3px;
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        color: #ffffff;
+        font-size: 42px;
+        letter-spacing: 2px;
+        text-shadow:
+          0 4px 0 #0d3550,
+          0 10px 18px rgba(60, 40, 0, 0.25);
       }
       #boot .bar {
-        width: 120px;
-        height: 4px;
-        border-radius: 2px;
-        background: linear-gradient(90deg, transparent, #4cc9f0, transparent);
-        animation: bootshine 1.1s ease-in-out infinite;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow:
+          26px 0 0 #ffffff,
+          -26px 0 0 #ffffff;
+        animation: bootdots 1.1s ease-in-out infinite;
       }
-      @keyframes bootshine {
+      @keyframes bootdots {
         0%,
         100% {
-          opacity: 0.25;
-          transform: scaleX(0.6);
+          opacity: 0.35;
         }
         50% {
           opacity: 1;
-          transform: scaleX(1);
         }
       }
       @media (orientation: portrait) and (pointer: coarse), (max-width: 620px) and (orientation: portrait) {
@@ -171,7 +156,6 @@
   </head>
   <body>
     <div id="boot" aria-hidden="true">
-      <div class="mark"></div>
       <div class="word">ICE 'N' WATER</div>
       <div class="bar"></div>
     </div>

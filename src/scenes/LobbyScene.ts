@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
-import { Client, Room } from 'colyseus.js';
+import { Client, Room } from '@colyseus/sdk';
 import { CONFIG } from '../config';
 import { SERVER_URL } from '../net';
-import { DISPLAY_FONT, UI_FONT, UI, panel } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHandle } from '../ui';
+import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
 
@@ -31,8 +32,10 @@ export class LobbyScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private nameInput: HTMLInputElement | null = null;
   private codeInput: HTMLInputElement | null = null;
-  private readyBtn!: Phaser.GameObjects.Container;
-  private startBtn!: Phaser.GameObjects.Container;
+  private readyBtn!: PillHandle;
+  private startBtn!: PillHandle;
+  private menuGroup!: Phaser.GameObjects.Container;
+  private roomGroup!: Phaser.GameObjects.Container;
   private lobbyPhase: 'menu' | 'in-room' = 'menu';
 
   constructor() {
@@ -44,200 +47,217 @@ export class LobbyScene extends Phaser.Scene {
     makeTextures(this);
     this.room = null;
     this.lobbyPhase = 'menu';
-    this.cameras.main.setBackgroundColor(UI.bg);
-    this.cameras.main.fadeIn(300, 0, 0, 0);
+    this.cameras.main.fadeIn(300, 247, 189, 20); // from the lobby yellow — seamless
 
-    this.add
-      .text(width / 2, 60, 'ONLINE', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '54px',
-        color: '#7fd8f0',
-        stroke: '#081420',
-        strokeThickness: 8,
-      })
-      .setOrigin(0.5);
-    this.add
-      .text(width / 2, 110, 'up to 10 players · police vs thieves', {
-        fontFamily: UI_FONT,
-        fontSize: '16px',
-        fontStyle: '500',
-        color: '#9db4c4',
-      })
-      .setOrigin(0.5);
+    // one card, two states — menu swaps to the room view in place
+    const cw = 640;
+    const ch = 500;
+    const cx = width / 2;
+    // leave room for the BACK pill under the card on short screens
+    const cy0 = Math.min(height / 2 - ch / 2 + 10, height - ch - 74);
+    fgBackdrop(this, width, height, cx, cy0 + ch * 0.42);
+    panel(this, cx - cw / 2, cy0, cw, ch, { depth: 3 });
+    this.menuGroup = this.add.container(0, 0).setDepth(5);
+    this.roomGroup = this.add.container(0, 0).setDepth(5).setVisible(false);
 
-    // name + room code inputs (DOM elements over the canvas)
-    this.nameInput = this.makeInput(width / 2 - 140, 150, 'your name', 12);
-    this.codeInput = this.makeInput(width / 2 + 20, 150, '4-digit code', 4);
+    this.menuGroup.add(
+      this.add
+        .text(cx, cy0 + 62, 'ONLINE', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '44px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setShadow(0, 4, '#9c2160', 0, true, false),
+    );
+    this.menuGroup.add(
+      this.add
+        .text(cx, cy0 + 102, 'up to 10 players · ice freezes water', {
+          fontFamily: UI_FONT,
+          fontSize: '15px',
+          fontStyle: '600',
+          color: '#7a8a99',
+        })
+        .setOrigin(0.5),
+    );
+
+    // name + room code inputs (DOM elements over the canvas — not in the group)
+    this.nameInput = this.makeInput(cx - 160, cy0 + 142, 'your name', 12);
+    this.codeInput = this.makeInput(cx + 36, cy0 + 142, '4-digit code', 4);
     const savedName = localStorage.getItem('icenwater_name');
     if (savedName) this.nameInput.value = savedName;
 
     // mode picker (for room creation)
-    this.add
-      .text(width / 2, 215, 'RULESET', {
-        fontFamily: UI_FONT,
-        fontSize: '13px',
-        fontStyle: '600',
-        color: '#7d93a5',
-      })
-      .setOrigin(0.5);
-    const modes: { id: 'infection' | 'rounds'; label: string }[] = [
-      { id: 'infection', label: 'INFECTION — caught thieves join police' },
-      { id: 'rounds', label: 'ROUNDS — 5v5, caught all → swap sides' },
-    ];
-    modes.forEach((m, i) => {
-      const y = 236 + i * 34;
-      const lbl = this.add
-        .text(width / 2, y, m.label, {
+    this.menuGroup.add(
+      this.add
+        .text(cx, cy0 + 210, 'RULESET', {
           fontFamily: UI_FONT,
-          fontSize: '15px',
-          fontStyle: '600',
-          color: '#9db4c4',
+          fontSize: '12px',
+          fontStyle: '800',
+          color: '#7a8a99',
         })
-        .setOrigin(0.5)
+        .setOrigin(0.5),
+    );
+    const modes: { id: 'infection' | 'rounds'; label: string; sub: string }[] = [
+      { id: 'infection', label: 'INFECTION', sub: 'frozen runners join the ice' },
+      { id: 'rounds', label: 'ROUNDS', sub: 'best of 5 · swap sides each round' },
+    ];
+    const rowW = 430;
+    const rowH = 40;
+    const modeRedraws: ((sel: boolean) => void)[] = [];
+    modes.forEach((m, i) => {
+      const y = cy0 + 244 + i * 46;
+      const g = this.add.graphics();
+      const dotG = this.add.graphics();
+      const label = this.add
+        .text(-rowW / 2 + 44, -9, m.label, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '15px',
+          color: '#1c2a3a',
+        })
+        .setOrigin(0, 0.5);
+      const sub = this.add
+        .text(-rowW / 2 + 44, 10, m.sub, {
+          fontFamily: UI_FONT,
+          fontSize: '12px',
+          fontStyle: '600',
+          color: '#7a8a99',
+        })
+        .setOrigin(0, 0.5);
+      const draw = (sel: boolean) => {
+        g.clear();
+        if (sel) {
+          g.fillStyle(0x0b6a99, 1).fillRoundedRect(-rowW / 2 + 2, -rowH / 2 + 3, rowW, rowH, rowH / 2);
+          g.fillStyle(FG.cyan, 1).fillRoundedRect(-rowW / 2, -rowH / 2, rowW, rowH, rowH / 2);
+          g.lineStyle(2.5, 0xffffff, 1).strokeRoundedRect(-rowW / 2 + 1.5, -rowH / 2 + 1.5, rowW - 3, rowH - 3, rowH / 2);
+        } else {
+          g.fillStyle(0xe8eef4, 1).fillRoundedRect(-rowW / 2, -rowH / 2, rowW, rowH, rowH / 2);
+          g.lineStyle(2, 0xc7d3dc, 1).strokeRoundedRect(-rowW / 2 + 1, -rowH / 2 + 1, rowW - 2, rowH - 2, rowH / 2);
+        }
+        dotG.clear();
+        const dx = -rowW / 2 + 24;
+        dotG.lineStyle(2, sel ? 0xffffff : 0x9db4c4, 1).strokeCircle(dx, 0, 7);
+        if (sel) dotG.fillStyle(0xffffff, 1).fillCircle(dx, 0, 4);
+        label.setColor(sel ? '#ffffff' : '#1c2a3a');
+        sub.setColor(sel ? '#d6f4ff' : '#7a8a99');
+      };
+      draw(i === 0);
+      modeRedraws.push(draw);
+      const row = this.add.container(cx, y, [g, dotG, label, sub]);
+      this.menuGroup.add(row);
+      this.add
+        .zone(cx - rowW / 2, y - rowH / 2, rowW, rowH)
+        .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => {
           this.lobbyMode = m.id;
-          modes.forEach((mm, j) =>
-            (
-              this.children.getByName(`mode${j}`) as Phaser.GameObjects.Text
-            )?.setColor(mm.id === this.lobbyMode ? '#7fd8f0' : '#9db4c4'),
-          );
+          modeRedraws.forEach((redraw, j) => redraw(modes[j].id === m.id));
         });
-      lbl.setName(`mode${i}`);
     });
-    (this.children.getByName('mode0') as Phaser.GameObjects.Text)?.setColor('#7fd8f0');
 
-    // buttons
-    this.makeButton(width / 2 - 150, 320, 'CREATE ROOM', () => this.createRoom());
-    this.makeButton(width / 2 + 150, 320, 'JOIN ROOM', () => this.joinRoom());
-    this.makeButton(width / 2, 372, 'BACK', () => this.scene.start('title'), 0x2b3f55);
+    // buttons — create is the primary (danfo), join secondary (ice)
+    const createBtn = pillButton(this, cx - 120, cy0 + 362, 220, 'CREATE ROOM', {
+      fill: UI.danfo,
+      textColor: UI.ink,
+      fontSize: 15,
+      onDown: () => this.createRoom(),
+    });
+    const joinBtn = pillButton(this, cx + 120, cy0 + 362, 220, 'JOIN ROOM', {
+      fill: UI.water,
+      fontSize: 15,
+      onDown: () => this.joinRoom(),
+    });
+    this.menuGroup.add([createBtn.container, joinBtn.container]);
+    this.statusText = this.add
+      .text(cx, cy0 + 412, '', {
+        fontFamily: UI_FONT,
+        fontSize: '14px',
+        fontStyle: '600',
+        color: '#d63a4a',
+      })
+      .setOrigin(0.5);
+    this.menuGroup.add(this.statusText);
 
-    // in-room panel (hidden until joined)
-    panel(this, width / 2 - 300, 400, 600, 300, { alpha: 0.5, depth: 4 });
+    pillButton(this, cx, cy0 + ch + 42, 140, 'BACK', {
+      fill: UI.ink,
+      textColor: UI.paper,
+      fontSize: 14,
+      onDown: () => this.scene.start('title'),
+    });
+
+    // ---- room group (swaps in on join) ----
+    const codePlate = plate(this, cx - 160, cy0 + 48, 320, 48, UI.danfo);
+    this.roomGroup.add(codePlate);
     this.codeText = this.add
-      .text(width / 2, 420, '', {
+      .text(cx, cy0 + 74, '', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '26px',
-        color: '#7fd8f0',
+        fontSize: '22px',
+        color: '#ffc93c',
       })
       .setOrigin(0.5)
       .setDepth(6);
+    this.roomGroup.add(this.codeText);
     this.listText = this.add
-      .text(width / 2 - 260, 455, '', {
+      .text(cx - 250, cy0 + 128, '', {
         fontFamily: UI_FONT,
         fontSize: '16px',
-        fontStyle: '500',
-        color: '#d8e6ee',
+        fontStyle: '600',
+        color: '#33475a',
         lineSpacing: 7,
       })
       .setDepth(6);
+    this.roomGroup.add(this.listText);
     this.hintText = this.add
-      .text(width / 2, 694, '', {
+      .text(cx, cy0 + 406, '', {
         fontFamily: UI_FONT,
         fontSize: '14px',
-        color: '#9db4c4',
+        fontStyle: '600',
+        color: '#7a8a99',
       })
       .setOrigin(0.5)
       .setDepth(6);
+    this.roomGroup.add(this.hintText);
 
     // in-room action buttons — keyboard still works, these are for touch & clarity
-    this.readyBtn = this.actionButton(width / 2 - 115, 648, 'READY', () =>
-      this.room?.send('ready'),
-    );
-    this.startBtn = this.actionButton(
-      width / 2 + 115,
-      648,
-      'START',
-      () => this.room?.send('start'),
-      0x2e7d32,
-    );
-    this.readyBtn.setVisible(false);
-    this.startBtn.setVisible(false);
-
-    this.statusText = this.add
-      .text(width / 2, 715, '', {
-        fontFamily: UI_FONT,
-        fontSize: '14px',
-        color: '#ff8a80',
-      })
-      .setOrigin(0.5)
-      .setDepth(6);
+    this.readyBtn = pillButton(this, cx - 115, cy0 + 452, 200, 'READY', {
+      fill: UI.water,
+      fontSize: 15,
+      onDown: () => this.room?.send('ready'),
+    });
+    this.startBtn = pillButton(this, cx + 115, cy0 + 452, 200, 'START', {
+      fill: UI.leaf,
+      fontSize: 15,
+      onDown: () => this.room?.send('start'),
+    });
+    this.roomGroup.add([this.readyBtn.container, this.startBtn.container]);
 
     this.add
       .text(width / 2, height - 18, 'esc — back', {
         fontFamily: UI_FONT,
         fontSize: '13px',
-        color: '#5a7184',
+        fontStyle: '800',
+        color: '#ffffff',
       })
-      .setOrigin(0.5, 1);
+      .setOrigin(0.5, 1)
+      .setShadow(0, 2, '#a06e00', 0, true, false);
     this.input.keyboard!.on('keydown-ESC', () => this.leave());
+
+    // window resized — rebuild the layout (TitleScene does the same).
+    // Only while in the menu: mid-room a restart would drop the room.
+    let lastW = width;
+    let lastH = height;
+    const onResize = (sz: Phaser.Structs.Size) => {
+      const moved = Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24;
+      lastW = sz.width;
+      lastH = sz.height;
+      if (moved && this.lobbyPhase === 'menu') this.scene.restart();
+    };
+    this.scale.on('resize', onResize);
+    this.events.once('shutdown', () => this.scale.off('resize', onResize));
   }
 
   private makeInput(x: number, y: number, placeholder: string, maxLen: number): HTMLInputElement {
-    const el = document.createElement('input');
-    el.placeholder = placeholder;
-    el.maxLength = maxLen;
-    el.style.cssText = `width:110px;padding:8px 10px;border-radius:8px;border:2px solid #4dd0e1;
-      background:#12293f;color:#f5efe0;font-family:${UI_FONT};font-size:15px;outline:none;text-align:center;`;
-    this.add.dom(x, y, el).setOrigin(0, 0);
-    return el;
-  }
-
-  private makeButton(
-    cx: number,
-    y: number,
-    label: string,
-    onClick: () => void,
-    color = 0x1d4a66,
-  ) {
-    const w = 220;
-    const g = this.add.graphics();
-    g.fillStyle(color, 1);
-    g.fillRoundedRect(cx - w / 2, y, w, 40, 10);
-    g.lineStyle(2, 0x7fd8f0, 0.4);
-    g.strokeRoundedRect(cx - w / 2 + 1, y + 1, w - 2, 38, 10);
-    const t = this.add
-      .text(cx, y + 20, label, {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '16px',
-        color: '#f5efe0',
-      })
-      .setOrigin(0.5);
-    this.add
-      .zone(cx - w / 2, y, w, 40)
-      .setOrigin(0, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', onClick);
-    return { g, t };
-  }
-
-  /** Small tappable button used inside the in-room panel. */
-  private actionButton(
-    cx: number,
-    y: number,
-    label: string,
-    onClick: () => void,
-    color = 0x1d4a66,
-  ): Phaser.GameObjects.Container {
-    const w = 200;
-    const h = 38;
-    const g = this.add.graphics();
-    g.fillStyle(color, 1);
-    g.fillRoundedRect(0, 0, w, h, 10);
-    g.lineStyle(2, 0x7fd8f0, 0.4);
-    g.strokeRoundedRect(1, 1, w - 2, h - 2, 10);
-    const t = this.add
-      .text(w / 2, h / 2, label, {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '15px',
-        color: '#f5efe0',
-      })
-      .setOrigin(0.5);
-    const c = this.add.container(cx - w / 2, y, [g, t]).setDepth(7);
-    c.setSize(w, h);
-    c.setInteractive({ useHandCursor: true });
-    c.on('pointerdown', onClick);
-    return c;
+    return domInput(this, x, y, placeholder, maxLen, 128).el;
   }
 
   private myName(): string {
@@ -285,14 +305,18 @@ export class LobbyScene extends Phaser.Scene {
   private onJoined() {
     const room = this.room!;
     this.lobbyPhase = 'in-room';
-    this.statusText.setText('');
+    // swap the card's contents — menu out, room in
+    this.menuGroup.setVisible(false);
+    this.roomGroup.setVisible(true);
+    this.nameInput?.remove();
+    this.nameInput = null;
+    this.codeInput?.remove();
+    this.codeInput = null;
     this.codeText
       .setText(`CODE: ${room.roomId}   (tap to copy)`)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.copyCode(room.roomId));
     this.hintText.setText('share the code · everyone readies up · host starts');
-    this.codeInput?.remove();
-    this.codeInput = null;
     this.listText.setText('connecting…');
 
     // state.players is EMPTY until the first server patch lands —
@@ -302,8 +326,8 @@ export class LobbyScene extends Phaser.Scene {
       this.renderLobby();
       if (state.phase === 'playing') this.startNetGame();
     });
-    room.onLeave((code) => this.statusText.setText(`disconnected (${code})`));
-    room.onError((code, msg) => this.statusText.setText(`room error ${code} ${msg ?? ''}`));
+    room.onLeave((code) => this.hintText.setText(`disconnected (${code})`));
+    room.onError((code, msg) => this.hintText.setText(`room error ${code} ${msg ?? ''}`));
   }
 
   private copyCode(code: string) {
@@ -351,8 +375,8 @@ export class LobbyScene extends Phaser.Scene {
     this.listText.setText(rows.join('\n'));
 
     // footer buttons swap depending on role
-    this.readyBtn.setVisible(true);
-    this.startBtn.setVisible(isHost);
+    this.readyBtn.container.setVisible(true);
+    this.startBtn.container.setVisible(isHost);
     this.hintText.setText(
       isHost
         ? 'you are the host — tap START when everyone is in'

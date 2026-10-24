@@ -1,14 +1,15 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
+import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
+import { Hero3D } from '../hero3d';
+import { loadStats } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
   TOTAL_MILESTONES,
   MILESTONE_TOWNS,
-  Track,
-  TRACK_META,
   levelDef,
   objectiveText,
   adventureProgress,
@@ -19,382 +20,233 @@ import { fetchBoard, playerName, setPlayerName, submitAdventureScore } from '../
 
 const sfx = Sfx.inst;
 
-const ROW_H = 112; // vertical space per milestone row (at the start — shrinks with distance)
 const COLS = LEVELS_PER_MILESTONE;
-const PATH_W = 760; // serpentine path width (at the start — converges with distance)
-const TOP_PAD = 150; // room for the header
-const NODE_R = 17;
-const ROW_PAD = 34; // bleed room above/below a row's own band in its canvas
-type WarpObj =
-  | Phaser.GameObjects.Image
-  | Phaser.GameObjects.Text
-  | Phaser.GameObjects.Sprite
-  | Phaser.GameObjects.Arc;
+const CARD_W = 96; // tier card face — the seasons-screen rail
+const CARD_H = 110;
+const CARD_GAP = 118; // centre-to-centre spacing on the rail
+const CARD_PAD = 40; // strip margin so badges/rims don't clip the canvas
+const BADGE_H = 34; // hexagon overhang above each card
+const TOWN_H = 30; // town label below each strip's milestone card
+const STRIP_W = CARD_PAD * 2 + (COLS - 1) * CARD_GAP + CARD_W;
+const STRIP_H = BADGE_H + CARD_H + TOWN_H;
 
 /**
- * The journey map — 500 nodes snaking upward through 50 Nigerian towns.
- * Nodes are baked into per-row canvas textures (cheap: 50 images, not 500 objects);
- * interaction is invisible zones. Drag / wheel / arrows to travel.
+ * The journey map — 500 tier cards on a horizontal rail through 50 Nigerian
+ * towns, styled on the seasons/progress screen. Cards bake into per-town
+ * canvas strips (50 images, not 500 objects); taps are resolved by math.
+ * Drag / wheel / arrows to travel.
  */
 export class AdventureScene extends Phaser.Scene {
-  private campaign: Track = 'ice'; // which campaign skin is on the road
-  private prog: AdventureProgress = adventureProgress('ice');
-  private worldH = 0;
-  private pathW = PATH_W;
-  private pathX = 0;
-  // ---- live 3D-tilt state ----
-  private rowImgs: Phaser.GameObjects.Image[] = [];
-  private warps: { o: WarpObj; wx: number; wy: number; bs: number }[] = [];
-  private zoneRefs: { z: Phaser.GameObjects.Zone; r: number; px: number; py: number; zr: number }[] = [];
+  private prog: AdventureProgress = adventureProgress();
+  private worldW = 0;
+  private railY = 0;
+  private railX0 = 92; // first card's centre-x in world space
+  private stripImgs: Phaser.GameObjects.Image[] = [];
+  private selected = 0; // rail selection — 0-based level index
+  private selRing?: Phaser.GameObjects.Graphics;
+  private frontier!: Phaser.GameObjects.Container; // YOU marker group
+  private detailLayer: Phaser.GameObjects.Container | null = null;
 
-  /** everything on the map registers here — update() re-seats it in perspective */
-  private track(o: WarpObj, wx: number, wy: number, bs = 1) {
-    this.warps.push({ o, wx, wy, bs });
-    return o;
+  /** 0-based level index → card centre-x on the rail */
+  private cardX(i: number): number {
+    return this.railX0 + i * CARD_GAP;
   }
 
-  /** the tilt: screen t (0 top → 1 bottom) → scale & displayed world-y.
-   *  far rows crush toward the top, near rows grow past full size. */
-  private applyWarp() {
-    const cam = this.cameras.main;
-    const H = this.scale.height;
-    const cx = this.scale.width / 2;
-    for (const w of this.warps) {
-      if (!w.o.active) continue;
-      const t = Phaser.Math.Clamp((w.wy - cam.scrollY) / H, 0, 1.25);
-      const s = Phaser.Math.Clamp(1.45 * Math.sqrt(Math.max(t, 0.02)), 0.16, 1.35);
-      w.o.x = cx + (w.wx - cx) * s;
-      w.o.y = cam.scrollY + H * Math.pow(t, 1.5);
-      w.o.setScale(w.bs * s);
-    }
-    // tap zones sit exactly on their node's rendered position
-    for (const zm of this.zoneRefs) {
-      const img = this.rowImgs[zm.r];
-      if (!img) continue;
-      const s = img.scaleX;
-      const nx = img.x + (zm.px - this.scale.width / 2) * s;
-      const ny = img.y + (zm.py - this.rowTop(zm.r) + 10) * s;
-      zm.z.setPosition(nx - zm.zr, ny - zm.zr);
-    }
-  }
-
-  private rowTop(r: number): number {
-    // the road ascends — row 0 (Lagos) at the bottom, Maiduguri at the top
-    return TOP_PAD + (TOTAL_MILESTONES - 1 - r) * ROW_H;
-  }
-
-  private rowBand(_r: number): number {
-    return ROW_H;
-  }
-  private dragY: number | null = null;
-  private camStartY = 0;
   private boardLayer: Phaser.GameObjects.Container | null = null;
-  private cardLayer: Phaser.GameObjects.Container | null = null; // level preview card
+  private modalOpen = false; // DOM prompt owns input — mute global handlers
   // screen-space tap rects for overlay buttons — container-children input is
   // unreliable under the camera scroll, so taps are checked manually
   private cardHit: { x: number; y: number; w: number; h: number; fn: () => void }[] = [];
   private boardHit: { x: number; y: number; w: number; h: number; fn: () => void }[] = [];
-  private revealIdx = -1; // row whose fog burns off this visit
-  private revealLabel: Phaser.GameObjects.Text | null = null;
+  private revealIdx = -1; // town whose banner plays this visit
   private marching = false; // frontier marker is mid-march to the next stop
-  private frontierWarps: { o: WarpObj; wx: number; wy: number; bs: number }[] = [];
+  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private dragX: number | null = null;
+  private camStartX = 0;
+  private velX = 0;
+  private lastMoveX = 0;
+  private lastMoveT = 0;
+  private tapStart: { x: number; y: number } | null = null;
 
   constructor() {
     super('adventure');
   }
 
-  /** highest row index the player may see — frontier town + one ahead */
-  private clearThrough(): number {
+  /** strip index holding the frontier card — where the rail opens */
+  private frontierTown(): number {
     return Math.min(Math.ceil(this.prog.unlocked / COLS), TOTAL_MILESTONES - 1);
   }
 
-  private nodePos(i: number): { x: number; y: number } {
-    // level i (0-based) → row r, column c — serpentine: even rows L→R, odd R→L
-    const r = Math.floor(i / COLS);
-    const c = i % COLS;
-    const col = r % 2 === 0 ? c : COLS - 1 - c;
-    const x = this.pathX + 60 + (col * (this.pathW - 120)) / (COLS - 1);
-    const y = this.rowTop(r) + Math.sin(col * 1.1) * 10;
-    return { x, y };
+  /** strip index → world-x of its left edge on the rail */
+  private stripX(r: number): number {
+    return this.railX0 - CARD_PAD - CARD_W / 2 + r * COLS * CARD_GAP;
   }
 
-  create(data?: { board?: boolean; track?: Track; advance?: number }) {
-    const { width } = this.scale;
+  create(data?: { board?: boolean; advance?: number }) {
+    const { width, height } = this.scale;
     makeTextures(this);
-    this.campaign = data?.track ?? this.campaign ?? 'ice';
-    const pal = TRACK_META[this.campaign];
-    this.prog = adventureProgress(this.campaign);
+    this.prog = adventureProgress();
     this.boardLayer = null; // scene instance persists across restarts
-    this.cardLayer = null;
+    this.detailLayer = null;
     this.cardHit = [];
     this.boardHit = [];
     this.marching = false;
-    this.frontierWarps = [];
-    this.warps = [];
-    this.zoneRefs = [];
-    this.rowImgs = [];
-    this.cameras.main.setBackgroundColor(UI.bg);
-    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0, 0, 0);
+    this.stripImgs = [];
+    this.cameras.main.setBackgroundColor(FG.cyan);
+    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
+    // the seasons field — cyan rings radiating behind the podium. No crowns:
+    // crowns are the boot tile's flourish, gameplay screens get rings only.
+    fgRings(this, width, height, width * 0.62, height * 0.52, FG.cyan, 0x1fa9e8).setScrollFactor(0);
 
-    this.pathW = Math.min(PATH_W, width - 60);
-    this.pathX = (width - this.pathW) / 2;
+    this.railY = height * 0.8;
+    this.worldW = this.railX0 + (TOTAL_LEVELS - 1) * CARD_GAP + 140;
 
-    this.worldH = TOP_PAD + (TOTAL_MILESTONES - 1) * ROW_H + 220;
-
-    // did we just push the frontier into a new row? that fog burns off on entry
-    const SEEN_KEY = `icenwater_adv_seen_${this.campaign}`;
+    // did we just push the frontier into a new town? its name gets a banner
+    const SEEN_KEY = `icenwater_adv_seen`;
     const seen = Number(localStorage.getItem(SEEN_KEY) ?? 0);
     this.revealIdx = -1;
-    this.revealLabel = null;
-    const ct = this.clearThrough();
-    if (this.prog.unlocked > 1 && ct > seen) {
-      this.revealIdx = ct;
-      localStorage.setItem(SEEN_KEY, String(ct));
+    const ft = this.frontierTown();
+    if (this.prog.unlocked > 1 && ft > seen) {
+      this.revealIdx = ft;
+      localStorage.setItem(SEEN_KEY, String(ft));
     }
 
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, width, this.worldH);
+    cam.setBounds(0, 0, this.worldW, height);
+    cam.scrollY = 0;
 
-    // the road + nodes bake into each row's canvas so the whole path warps as one
+    // ---- seasons chrome: header block + podium bean, both screen-fixed ----
+    this.buildHeader(width, height);
+    this.buildPodium(width, height);
 
-    // ---- soft cloud texture for the drifting fog wall ----
-    if (!this.textures.exists('fogpuff')) {
-      const ft = this.textures.createCanvas('fogpuff', 160, 160);
-      const fc = ft?.getContext();
-      if (ft && fc) {
-        const g = fc.createRadialGradient(80, 80, 8, 80, 80, 80);
-        g.addColorStop(0, 'rgba(170,200,220,0.5)');
-        g.addColorStop(0.55, 'rgba(140,170,195,0.26)');
-        g.addColorStop(1, 'rgba(140,170,195,0)');
-        fc.fillStyle = g;
-        fc.fillRect(0, 0, 160, 160);
-        ft.refresh();
-      }
-    }
+    // ---- the rail: one baked strip per town — 10 tier cards + town label ----
+    for (let r = 0; r < TOTAL_MILESTONES; r++) this.bakeStrip(r);
 
-    // ---- nodes baked per-row + tap zones + milestone gates ----
-    for (let r = 0; r < TOTAL_MILESTONES; r++) this.bakeRow(r);
-
-    // ---- the cloud wall: where the known road vanishes into fog ----
-    const firstClouded = this.clearThrough() + 1;
-    if (firstClouded < TOTAL_MILESTONES && this.textures.exists('fogpuff')) {
-      const wallY = this.rowTop(firstClouded) + ROW_H * 0.55;
-      for (let i = 0; i < 11; i++) {
-        const sc = 1.8 + ((i * 13) % 10) / 7;
-        const px = (width / 10) * i + ((i * 37) % 40) - 20;
-        const py = wallY + ((i * 23) % 26) - 10;
-        const puff = this.track(
-          this.add.image(px, py, 'fogpuff').setScale(sc).setAlpha(0.85).setDepth(6),
-          px,
-          py,
-          sc,
-        );
-        this.tweens.add({
-          targets: puff,
-          alpha: 0.55,
-          duration: 3200 + i * 400,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut',
-        });
-      }
-    }
-
-    // ---- start point marker ----
-    const p0 = this.nodePos(0);
-    this.track(
-      this.add
-        .text(p0.x, p0.y + 32, 'START', {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '13px',
-          color: '#7fd8f0',
-        })
-        .setOrigin(0.5, 0)
-        .setDepth(3),
-      p0.x,
-      p0.y + 32,
-    );
-
-    // the finish — Maiduguri
-    const pEnd = this.nodePos(TOTAL_LEVELS - 1);
-    this.track(
-      this.add
-        .text(this.pathX + this.pathW / 2, pEnd.y - 74, 'MAIDUGURI — THE JOURNEY\'S END', {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '18px',
-          color: '#f5efe0',
-          stroke: '#081420',
-          strokeThickness: 5,
-        })
-        .setOrigin(0.5)
-        .setDepth(3),
-      this.pathX + this.pathW / 2,
-      pEnd.y - 74,
-    );
-
-    // ---- fixed HUD ----
-    const done = Object.keys(this.prog.stars).length;
-    panel(this, 12, 10, Math.min(430, width - 24), 58).setScrollFactor(0).setDepth(40);
-    this.add
-      .text(26, 16, pal.title, {
+    // ---- frontier marker — pulse ring + walker + YOU riding the live card ----
+    const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
+    const fRing = this.add
+      .circle(0, 0, CARD_W / 2 + 8)
+      .setStrokeStyle(4, 0xffffff, 0.95);
+    const fWalker = this.add.sprite(0, -CARD_H / 2 - 26, 'player').setScale(0.8);
+    const fYou = this.add
+      .text(0, -CARD_H / 2 - 50, 'YOU', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '17px',
-        color: pal.accentCss,
+        fontSize: '11px',
+        color: '#1c2a3a',
+        stroke: '#ffffff',
+        strokeThickness: 4,
       })
-      .setScrollFactor(0)
-      .setDepth(41);
-    this.add
-      .text(
-        26,
-        42,
-        `level ${Math.min(this.prog.unlocked, TOTAL_LEVELS)}/${TOTAL_LEVELS}  ·  ★ ${totalStars(this.prog)}  ·  ${done} towns conquered`,
-        { fontFamily: UI_FONT, fontSize: '13px', color: '#9db4c4' },
-      )
-      .setScrollFactor(0)
-      .setDepth(41);
-
-    // ---- campaign chips — one road, two campaigns ----
-    (['ice', 'police'] as const).forEach((tk, i) => {
-      const meta = TRACK_META[tk];
-      const on = tk === this.campaign;
-      const cw = 150;
-      const cx = 14 + i * (cw + 10);
-      const cy = 76;
-      const g = this.add.graphics().setScrollFactor(0).setDepth(40);
-      g.fillStyle(on ? meta.accent : 0x12293f, on ? 0.95 : 0.85);
-      g.fillRoundedRect(cx, cy, cw, 28, 14);
-      g.lineStyle(2, on ? 0xffffff : meta.accent, on ? 0.8 : 0.4);
-      g.strokeRoundedRect(cx + 1, cy + 1, cw - 2, 26, 13);
-      this.add
-        .text(cx + cw / 2, cy + 14, meta.title, {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '11px',
-          color: on ? '#0d1b2a' : '#9db4c4',
-        })
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(41);
-      this.add
-        .zone(cx, cy, cw, 28)
-        .setOrigin(0, 0)
-        .setScrollFactor(0)
-        .setDepth(42)
-        .setInteractive({ useHandCursor: true })
-        .on('pointerdown', () => {
-          if (on) return;
-          sfx.pickup();
-          this.scene.restart({ track: tk });
-        });
+      .setOrigin(0.5);
+    this.frontier = this.add
+      .container(this.cardX(frontierN - 1), this.railY, [fRing, fWalker, fYou])
+      .setDepth(6);
+    this.tweens.add({ targets: fRing, alpha: 0.2, duration: 750, yoyo: true, repeat: -1 });
+    this.tweens.add({
+      targets: fWalker,
+      alpha: 0.55,
+      duration: 420,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
     });
 
-    // on narrow screens the nav row tucks under the chips instead of clipping the panel
-    const navY = width < 560 ? 112 : 18;
-    const back = this.add
-      .text(this.scale.width - 16, navY, '← TITLE', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '15px',
-        color: '#9db4c4',
-      })
-      .setOrigin(1, 0)
-      .setPadding(10, 10, 10, 10)
-      .setScrollFactor(0)
-      .setDepth(41)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.toTitle());
-    back.on('pointerover', () => back.setColor('#f5efe0')).on('pointerout', () => back.setColor('#9db4c4'));
+    // ---- selection ring — the rail's cursor; the frontier keeps its gold rim ----
+    this.selRing = this.add.graphics().setDepth(5);
+    this.selRing
+      .lineStyle(7, 0x0f7fb8, 0.4)
+      .strokeRoundedRect(-CARD_W / 2 - 7, -CARD_H / 2 - 7, CARD_W + 14, CARD_H + 14, 17)
+      .lineStyle(3, 0xffffff, 0.95)
+      .strokeRoundedRect(-CARD_W / 2 - 5, -CARD_H / 2 - 5, CARD_W + 10, CARD_H + 10, 15);
+    this.selectLevel(frontierN, false);
 
-    const board = this.add
-      .text(this.scale.width - 96, navY, 'BOARD', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '15px',
-        color: '#ffd54a',
-      })
-      .setOrigin(1, 0)
-      .setPadding(10, 10, 10, 10)
-      .setScrollFactor(0)
-      .setDepth(41)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.showBoard());
-    board.on('pointerover', () => board.setColor('#f5efe0')).on('pointerout', () => board.setColor('#ffd54a'));
+    // ---- the seasons top bar — dark strip, icon row with the map tab pink,
+    // crown/star counters. scrollLock keeps it pinned while the rail moves.
+    fgTopBar(
+      this,
+      width,
+      [
+        { icon: 'back', onDown: () => this.gated(() => this.toTitle()) },
+        { icon: 'edit', onDown: () => this.gated(() => this.renameRunner()) },
+        {
+          icon: 'play',
+          active: true, // the pink active tab — you are on the journey screen
+          onDown: () => this.gated(() => this.focusFrontier()),
+        },
+        { icon: 'board', onDown: () => this.gated(() => this.showBoard()) },
+        { icon: 'online', onDown: () => this.gated(() => this.toLobby()) },
+      ],
+      { crown: loadStats().wins, star: totalStars(this.prog) },
+      { label: 'MAP', scrollLock: true },
+    );
 
     // keep the board warm — name changes & best runs post once per session
     submitAdventureScore();
 
-    // ---- scroll controls — drag with momentum, wheel, keys ----
-    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
-      if (this.boardLayer || this.cardLayer || this.marching) return;
-      this.velY = 0;
-      cam.scrollY = Phaser.Math.Clamp(cam.scrollY + dy * 0.9, 0, this.worldH - this.scale.height);
-    });
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer || this.cardLayer || this.marching) return;
-      this.dragY = p.y;
-      this.camStartY = cam.scrollY;
-      this.velY = 0;
-      this.lastMoveY = p.y;
-      this.lastMoveT = this.time.now;
-    });
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (this.boardLayer || this.cardLayer || this.marching) return;
-      if (this.dragY === null || !p.isDown) return;
-      const dt = Math.max(1, this.time.now - this.lastMoveT);
-      this.velY = (-(p.y - this.lastMoveY) / dt) * 1000; // px per second
-      this.lastMoveY = p.y;
-      this.lastMoveT = this.time.now;
-      cam.scrollY = Phaser.Math.Clamp(
-        this.camStartY - (p.y - this.dragY),
+    // ---- scroll controls — horizontal: drag with momentum, wheel, keys ----
+    this.input.on('wheel', (_p: unknown, _o: unknown, dx: number, dy: number) => {
+      if (this.boardLayer || this.marching) return;
+      this.velX = 0;
+      cam.scrollX = Phaser.Math.Clamp(
+        cam.scrollX + (dy || dx) * 0.9,
         0,
-        this.worldH - this.scale.height,
+        this.worldW - this.scale.width,
       );
     });
-    this.input.on('pointerup', () => (this.dragY = null));
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.boardLayer || this.marching) return;
+      this.dragX = p.x;
+      this.camStartX = cam.scrollX;
+      this.velX = 0;
+      this.lastMoveX = p.x;
+      this.lastMoveT = this.time.now;
+      this.tapStart = { x: p.x, y: p.y };
+    });
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (this.boardLayer || this.marching) return;
+      if (this.dragX === null || !p.isDown) return;
+      const dt = Math.max(1, this.time.now - this.lastMoveT);
+      this.velX = (-(p.x - this.lastMoveX) / dt) * 1000; // px per second
+      this.lastMoveX = p.x;
+      this.lastMoveT = this.time.now;
+      cam.scrollX = Phaser.Math.Clamp(
+        this.camStartX - (p.x - this.dragX),
+        0,
+        this.worldW - this.scale.width,
+      );
+    });
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      this.dragX = null;
+      // a tap that didn't travel = a rail selection, not a scroll
+      const t = this.tapStart;
+      this.tapStart = null;
+      if (!t || this.boardLayer || this.marching) return;
+      if (Math.abs(p.x - t.x) > 10 || Math.abs(p.y - t.y) > 10) return;
+      const wx = p.x + cam.scrollX;
+      const i = Math.round((wx - this.railX0) / CARD_GAP);
+      if (
+        i >= 0 &&
+        i < TOTAL_LEVELS &&
+        Math.abs(wx - this.cardX(i)) <= CARD_W / 2 + 8 &&
+        Math.abs(p.y - this.railY) <= CARD_H / 2 + 14
+      ) {
+        this.selectLevel(i + 1, true);
+      }
+    });
     this.input.on('pointerdown', this.onOverlayTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onOverlayTap, this));
     this.input.keyboard!.on('keydown-ESC', () => {
+      if (this.modalOpen) return;
       if (this.boardLayer) this.closeBoard();
-      else if (this.cardLayer) this.closeCard();
       else this.toTitle();
     });
     this.input.keyboard!.on('keydown-ENTER', () => {
-      if (!this.marching) this.playLevel(this.prog.unlocked);
+      if (this.boardLayer || this.marching || this.modalOpen) return;
+      const n = this.selected + 1;
+      if (n <= this.prog.unlocked) this.playLevel(n);
     });
-    this.keys = this.input.keyboard!.addKeys('UP,DOWN,W,S') as Record<string, Phaser.Input.Keyboard.Key>;
-
-    // ---- frontier marker — you are here ----
-    const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
-    const fp = this.nodePos(frontierN - 1);
-    const ring = this.track(
-      this.add
-        .circle(fp.x, fp.y, NODE_R + 7)
-        .setStrokeStyle(3, 0xffffff, 0.9)
-        .setDepth(4),
-      fp.x,
-      fp.y,
-    );
-    this.tweens.add({ targets: ring, alpha: 0.15, duration: 750, yoyo: true, repeat: -1 });
-    const walker = this.track(
-      this.add.sprite(fp.x, fp.y - 34, 'player').setDepth(5).setScale(0.85),
-      fp.x,
-      fp.y - 34,
-      0.85,
-    );
-    this.tweens.add({ targets: walker, alpha: 0.55, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    this.track(
-      this.add
-        .text(fp.x, fp.y - 52, 'YOU', {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '11px',
-          color: '#ffffff',
-          stroke: '#081420',
-          strokeThickness: 4,
-        })
-        .setOrigin(0.5)
-        .setDepth(5),
-      fp.x,
-      fp.y - 52,
-    );
-    // the march animation drives these three — last tracked = ring, walker, YOU
-    this.frontierWarps = this.warps.slice(-3);
+    this.keys = this.input.keyboard!.addKeys(
+      'LEFT,RIGHT,A,D',
+    ) as Record<string, Phaser.Input.Keyboard.Key>;
 
     // `advance` = the level number just cleared (only honored at the true frontier)
     const advance =
@@ -404,21 +256,18 @@ export class AdventureScene extends Phaser.Scene {
         ? data.advance
         : null;
 
-    // ---- the journey-in: rise from START at the bottom up to your frontier ----
-    // after a clear we open right on the frontier instead — the march needs it
-    const anchorY = advance !== null ? this.nodePos(advance - 1).y : fp.y;
-    const targetY = Phaser.Math.Clamp(
-      anchorY - this.scale.height * 0.62,
-      0,
-      this.worldH - this.scale.height,
-    );
-    const startY = Phaser.Math.Clamp(this.worldH - this.scale.height, 0, this.worldH - this.scale.height);
-    cam.scrollY = REDUCED_MOTION || advance !== null ? targetY : startY;
-    if (!REDUCED_MOTION && advance === null && Math.abs(targetY - startY) > 40) {
+    // ---- the journey-in: slide along the rail from START to your frontier ----
+    // after a clear we open right on the frontier instead — the march needs it.
+    // anchor keeps the focused card right of the detail card even on narrow screens
+    const anchorI = advance !== null ? advance : frontierN - 1;
+    const focusX = width * Math.min(0.7, Math.max(0.42, 414 / width));
+    const targetX = Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - width);
+    cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : 0;
+    if (!REDUCED_MOTION && advance === null && targetX > 60) {
       this.tweens.add({
         targets: cam,
-        scrollY: targetY,
-        duration: Math.min(700 + Math.abs(targetY - startY) * 0.35, 2600),
+        scrollX: targetX,
+        duration: Math.min(700 + targetX * 0.16, 2600),
         ease: 'Cubic.easeInOut',
       });
     }
@@ -426,167 +275,66 @@ export class AdventureScene extends Phaser.Scene {
     // title-screen LEADERBOARD link lands here — open the board over the map
     if (data?.board) this.time.delayedCall(350, () => this.showBoard());
 
-    // new ground was just opened — let the fog burn off with a little ceremony
-    if (this.revealIdx >= 0 && !data?.board) {
-      this.tweens.killTweensOf(cam); // stop the journey-in pan
-      cam.scrollY = Phaser.Math.Clamp(
-        this.rowTop(this.revealIdx) - this.scale.height * 0.35,
-        0,
-        this.worldH - this.scale.height,
-      );
-      this.playReveal();
-    }
-    this.applyWarp(); // seat everything before the first frame
+    // new ground was just opened — the new town gets a little ceremony
+    if (this.revealIdx >= 0 && !data?.board) this.playReveal();
 
-    // fresh off a win — walk YOU from the cleared node to the next stop,
-    // then open that level's card so the player clicks PLAY to enter
+    // fresh off a win — walk YOU from the cleared card to the next stop,
+    // then select it so the player clicks PLAY to enter
     if (advance !== null && !data?.board) {
       this.time.delayedCall(REDUCED_MOTION ? 150 : 550, () => this.playAdvance(advance));
     }
   }
 
-  /** walk the frontier marker node `a` → node `a+1` along the road, then
-   *  open the next level's card — the player clicks PLAY to enter it */
+  /** slide the frontier marker card `a` → `a+1` along the rail, panning the
+   *  camera with it, then land the selection on the newly-unlocked card */
   private playAdvance(a: number) {
-    const from = this.nodePos(a - 1);
-    const to = this.nodePos(a);
     this.marching = true;
-
-    // each marker keeps its own vertical offset (ring 0, walker -34, YOU -52)
-    const offs = this.frontierWarps.map((w) => w.wy - to.y);
-    if (REDUCED_MOTION) {
-      this.frontierWarps.forEach((w, i) => {
-        w.wx = to.x;
-        w.wy = to.y + offs[i];
-      });
+    const toX = this.cardX(a); // a+1's card is the new frontier
+    const cam = this.cameras.main;
+    const focusX = this.scale.width * Math.min(0.7, Math.max(0.42, 414 / this.scale.width));
+    const camX = Phaser.Math.Clamp(toX - focusX, 0, this.worldW - this.scale.width);
+    const done = () => {
       this.marching = false;
-      this.applyWarp();
-      this.showLevelCard(Math.min(a + 1, TOTAL_LEVELS));
+      sfx.pickup();
+      this.selectLevel(Math.min(a + 1, TOTAL_LEVELS), false);
+    };
+    if (REDUCED_MOTION) {
+      this.frontier.x = toX;
+      cam.scrollX = camX;
+      done();
       return;
     }
-
-    // stage the marker back on the node just cleared
-    this.frontierWarps.forEach((w, i) => {
-      w.wx = from.x;
-      w.wy = from.y + offs[i];
-    });
-
-    // same-row hop = small arc; the serpentine wrap = U-turn bow at the edge
-    const sameRow = Math.floor((a - 1) / COLS) === Math.floor(a / COLS);
-    const midX = (from.x + to.x) / 2;
-    const midY = (from.y + to.y) / 2;
-    const ctrl = sameRow
-      ? new Phaser.Math.Vector2(midX, midY - 44)
-      : new Phaser.Math.Vector2(midX + (from.x > this.pathX + this.pathW / 2 ? 95 : -95), midY);
-    const curve = new Phaser.Curves.QuadraticBezier(
-      new Phaser.Math.Vector2(from.x, from.y),
-      ctrl,
-      new Phaser.Math.Vector2(to.x, to.y),
-    );
-
-    const t = { v: 0 };
-    this.tweens.add({
-      targets: t,
-      v: 1,
-      duration: sameRow ? 800 : 1150,
-      ease: 'Sine.easeInOut',
-      onUpdate: () => {
-        const p = curve.getPoint(t.v);
-        this.frontierWarps.forEach((w, i) => {
-          w.wx = p.x;
-          w.wy = p.y + offs[i];
-        });
-      },
-      onComplete: () => {
-        this.marching = false;
-        sfx.pickup();
-        this.showLevelCard(Math.min(a + 1, TOTAL_LEVELS));
-      },
-    });
+    this.frontier.x = this.cardX(a - 1); // stage on the card just cleared
+    this.tweens.add({ targets: this.frontier, x: toX, duration: 650, ease: 'Sine.easeInOut' });
+    this.tweens.add({ targets: cam, scrollX: camX, duration: 650, ease: 'Sine.easeInOut' });
+    this.time.delayedCall(680, done);
   }
 
-  /** fog overlay over the freshly-opened row burns away; the town name arrives */
+  /** the new town's name lands with a little ceremony — no fog on this map,
+   *  locked content stays visible by design */
   private playReveal() {
     const r = this.revealIdx;
     const { width, height } = this.scale;
-    const band = this.rowBand(r) + ROW_H + 44;
-    if (this.textures.exists(`reveal${r}`)) this.textures.remove(`reveal${r}`);
-    const ft = this.textures.createCanvas(`reveal${r}`, width, band);
-    const fc = ft?.getContext();
-    if (ft && fc) {
-      fc.fillStyle = 'rgba(13,27,42,0.92)';
-      fc.fillRect(0, 0, width, band);
-      for (let k = 0; k < 6; k++) {
-        const px = (r * 97 + k * 211) % width;
-        const py = (r * 57 + k * 89) % band;
-        const rad = 42 + ((r * 31 + k * 17) % 34);
-        const g = fc.createRadialGradient(px, py, 4, px, py, rad);
-        g.addColorStop(0, 'rgba(120,150,175,0.32)');
-        g.addColorStop(1, 'rgba(120,150,175,0)');
-        fc.fillStyle = g;
-        fc.beginPath();
-        fc.arc(px, py, rad, 0, Math.PI * 2);
-        fc.fill();
-      }
-      ft.refresh();
-    }
-    const top = this.rowTop(r) - 10;
-    const fog = this.track(
-      this.add.image(width / 2, top, `reveal${r}`).setOrigin(0.5, 0).setDepth(7),
-      width / 2,
-      top,
-    ) as Phaser.GameObjects.Image;
-    this.time.delayedCall(500, () => sfx.pickup());
-    this.tweens.add({
-      targets: fog,
-      alpha: 0,
-      duration: 1600,
-      delay: 700,
-      ease: 'Sine.easeOut',
-      onComplete: () => {
-        this.warps = this.warps.filter((w) => w.o !== fog);
-        fog.destroy();
-        if (this.textures.exists(`reveal${r}`)) this.textures.remove(`reveal${r}`);
-      },
-    });
-    if (this.revealLabel) {
-      const lbl = this.revealLabel;
-      this.revealLabel = null;
-      this.tweens.add({
-        targets: lbl,
-        alpha: 1,
-        duration: 800,
-        delay: 1700,
-        onComplete: () =>
-          this.tweens.add({
-            targets: lbl,
-            alpha: 0.55,
-            duration: 1600,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-          }),
-      });
-    }
     const town = MILESTONE_TOWNS[r];
+    this.time.delayedCall(500, () => sfx.pickup());
     const ban = this.add
       .text(width / 2, height * 0.28, `NEW GROUND — ${town.toUpperCase()}`, {
         fontFamily: DISPLAY_FONT,
         fontSize: '30px',
-        color: '#f5efe0',
-        stroke: '#081420',
-        strokeThickness: 7,
+        color: '#e84393', // pink header + deep-pink shadow, like every card
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(50)
       .setAlpha(0)
-      .setScale(0.8);
+      .setScale(0.8)
+      .setShadow(0, 4, '#9c2160', 0, true, false);
     const sub = this.add
       .text(width / 2, height * 0.28 + 40, 'the road opens', {
         fontFamily: UI_FONT,
         fontSize: '15px',
-        color: '#7fd8f0',
+        fontStyle: '600',
+        color: '#ffffff',
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
@@ -603,194 +351,189 @@ export class AdventureScene extends Phaser.Scene {
     this.tweens.add({ targets: [ban, sub], alpha: 0, duration: 600, delay: 3200 });
   }
 
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private velY = 0;
-  private lastMoveY = 0;
-  private lastMoveT = 0;
-
   update(_t: number, delta: number) {
     const cam = this.cameras.main;
-    this.applyWarp();
     const k = this.keys;
     const v = (delta / 1000) * 620;
-    if (k?.UP?.isDown || k?.W?.isDown)
-      cam.scrollY = Phaser.Math.Clamp(cam.scrollY - v, 0, this.worldH - this.scale.height);
-    if (k?.DOWN?.isDown || k?.S?.isDown)
-      cam.scrollY = Phaser.Math.Clamp(cam.scrollY + v, 0, this.worldH - this.scale.height);
+    if (k?.LEFT?.isDown || k?.A?.isDown)
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX - v, 0, this.worldW - this.scale.width);
+    if (k?.RIGHT?.isDown || k?.D?.isDown)
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX + v, 0, this.worldW - this.scale.width);
 
     // fling momentum — decays like a real scroll
-    if (this.dragY === null && Math.abs(this.velY) > 20) {
-      cam.scrollY = Phaser.Math.Clamp(
-        cam.scrollY + this.velY * (delta / 1000),
+    if (this.dragX === null && Math.abs(this.velX) > 20) {
+      cam.scrollX = Phaser.Math.Clamp(
+        cam.scrollX + this.velX * (delta / 1000),
         0,
-        this.worldH - this.scale.height,
+        this.worldW - this.scale.width,
       );
-      this.velY *= Math.pow(0.92, delta / 16.7); // frame-rate independent decay
-    } else if (this.dragY === null) {
-      this.velY = 0;
+      this.velX *= Math.pow(0.92, delta / 16.7); // frame-rate independent decay
+    } else if (this.dragX === null) {
+      this.velX = 0;
     }
   }
 
-  /** bake a milestone row's nodes+numbers into one canvas texture;
-   *  rows beyond "one town ahead" are swallowed by cloud — ghosts only */
-  private bakeRow(r: number) {
-    const pal = TRACK_META[this.campaign];
-    const { width } = this.scale;
-    const rowTop = this.rowTop(r);
-    const canvasH = this.rowBand(r) + ROW_H + 44; // ROW_H of bleed below = room for the connector
-    const clouded = r > this.clearThrough();
-    const revealing = r === this.revealIdx;
-    // re-entry: keys persist across scene restarts — drop the stale row first
-    if (this.textures.exists(`advrow${r}`)) this.textures.remove(`advrow${r}`);
-    const tex = this.textures.createCanvas(`advrow${r}`, width, canvasH);
+  /** bake one town's rail segment into a single canvas — the whole 500-card
+   *  rail is 50 images, not 500 sprites. Locked tiers keep their content
+   *  visible (badged with a padlock, never hidden), like the seasons rail. */
+  private bakeStrip(r: number) {
+    const top = this.railY - BADGE_H - CARD_H / 2;
+    // re-entry: keys persist across scene restarts — drop the stale strip first
+    if (this.textures.exists(`advstrip${r}`)) this.textures.remove(`advstrip${r}`);
+    const tex = this.textures.createCanvas(`advstrip${r}`, STRIP_W, STRIP_H);
     const ctx = tex?.getContext();
     if (!tex || !ctx) return;
 
-    const ly = (y: number) => y - rowTop + 10; // world-y → canvas-local
+    const cardCy = BADGE_H + CARD_H / 2;
+    const cardCx = (c: number) => CARD_PAD + CARD_W / 2 + c * CARD_GAP;
+    const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
 
-    // the road through this row — thick underlay + ice guide line, incl. the
-    // segment that connects up to the previous row's last node
-    for (let i = Math.max(1, r * COLS); i <= r * COLS + COLS - 1 && i < TOTAL_LEVELS; i++) {
-      const a = this.nodePos(i - 1);
-      const b = this.nodePos(i);
-      ctx.strokeStyle = 'rgba(42,74,99,0.8)';
-      ctx.lineWidth = 10;
+    // ---- the timeline behind the cards — white on claimed ground, dark ahead ----
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(23,21,31,0.8)';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(0, cardCy);
+    ctx.lineTo(STRIP_W, cardCy);
+    ctx.stroke();
+    let claimX = -1;
+    for (let c = 0; c < COLS; c++) {
+      const n = r * COLS + c + 1;
+      if (n > TOTAL_LEVELS) break;
+      if (this.prog.stars[n] !== undefined) claimX = cardCx(c) + CARD_GAP * 0.6;
+    }
+    if (claimX > 0) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 7;
       ctx.beginPath();
-      ctx.moveTo(a.x, ly(a.y));
-      ctx.lineTo(b.x, ly(b.y));
-      ctx.stroke();
-      ctx.strokeStyle = pal.roadCss;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(a.x, ly(a.y));
-      ctx.lineTo(b.x, ly(b.y));
+      ctx.moveTo(0, cardCy);
+      ctx.lineTo(Math.min(claimX, STRIP_W), cardCy);
       ctx.stroke();
     }
+
+    const hex = (cx: number, cy: number, rad: number) => {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const px = cx + Math.cos(a) * rad;
+        const py = cy + Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+    };
 
     for (let c = 0; c < COLS; c++) {
       const i = r * COLS + c;
       const n = i + 1;
-      const p = this.nodePos(i);
-      const py = ly(p.y);
-      const isMilestone = n % LEVELS_PER_MILESTONE === 0;
-      const rad = isMilestone ? NODE_R + 6 : NODE_R;
-
-      if (clouded) {
-        // a stop ghosting through the fog — you know the road continues
-        ctx.beginPath();
-        ctx.arc(p.x, py, rad * 0.7, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(35,64,90,0.45)';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(74,122,159,0.35)';
-        ctx.stroke();
-        continue;
-      }
-
+      if (n > TOTAL_LEVELS) break;
+      const cx = cardCx(c);
+      const left = cx - CARD_W / 2;
+      const top0 = cardCy - CARD_H / 2;
       const done = this.prog.stars[n] !== undefined;
       const open = n <= this.prog.unlocked;
+      const isFrontier = n === frontierN;
+      const isMilestone = n % COLS === 0;
 
-      // node body — locked nodes still read as stops on the road
+      // drop base — the "card on a coaster" shadow
+      ctx.fillStyle = 'rgba(10,8,18,0.4)';
       ctx.beginPath();
-      ctx.arc(p.x, py, rad, 0, Math.PI * 2);
-      ctx.fillStyle = done ? '#f0c04a' : open ? pal.accentCss : '#23405a';
+      ctx.roundRect(left + 5, top0 + 6, CARD_W, CARD_H, 14);
       ctx.fill();
-      ctx.lineWidth = isMilestone ? 4 : 3;
-      ctx.strokeStyle = n === this.prog.unlocked ? '#ffffff' : done ? '#8a6d3a' : '#4a7a9f';
-      ctx.stroke();
+      // rim — white like theirs; the frontier card wears gold instead
+      ctx.fillStyle = isFrontier ? '#ffc93c' : '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(left - 3, top0 - 3, CARD_W + 6, CARD_H + 6, 17);
+      ctx.fill();
+      // face — content always on show, locked or not
+      ctx.fillStyle = done ? '#ffe9b8' : open ? '#fdf8ec' : '#eef3f7';
+      ctx.beginPath();
+      ctx.roundRect(left, top0, CARD_W, CARD_H, 14);
+      ctx.fill();
+      // gloss sheen across the top
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath();
+      ctx.roundRect(left + 5, top0 + 4, CARD_W - 10, 22, 9);
+      ctx.fill();
 
-      // number / lock
-      ctx.fillStyle = done ? '#3a2c10' : open ? '#0d1b2a' : '#7fa8c4';
-      ctx.font = `bold ${isMilestone ? 15 : 13}px sans-serif`;
+      // hexagon tier badge overlapping the card's top edge — pink like theirs
+      const bx = cx;
+      const by = top0 - 1;
+      ctx.fillStyle = '#9c2160'; // deep-pink under-edge
+      hex(bx, by + 3, 19);
+      ctx.fill();
+      ctx.fillStyle = '#e84393';
+      hex(bx, by, 19);
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#ffffff';
+      hex(bx, by, 19);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `800 ${n >= 100 ? 13 : 17}px "Baloo 2", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(open ? String(n) : '🔒', p.x, py + 1);
+      ctx.fillText(String(n), bx, by + 1);
 
-      // stars under completed nodes
+      // face content — earned stars or ghost stars still up for grabs
       const s = this.prog.stars[n] ?? 0;
+      ctx.font = '15px sans-serif';
       if (s > 0) {
-        ctx.fillStyle = '#f0c04a';
-        ctx.font = '10px sans-serif';
-        ctx.fillText('★'.repeat(s), p.x, py + rad + 11);
+        ctx.fillStyle = '#e8a40f';
+        ctx.fillText('★'.repeat(s), cx, cardCy + 8);
+      } else {
+        ctx.fillStyle = open ? 'rgba(201,138,0,0.4)' : 'rgba(90,105,120,0.55)';
+        ctx.fillText('★ ★ ★', cx, cardCy + 8);
       }
-    }
+      if (levelDef(n).boss) {
+        ctx.fillStyle = open || done ? '#e84393' : 'rgba(90,105,120,0.6)';
+        ctx.font = '800 10px "Baloo 2", sans-serif';
+        ctx.fillText('BOSS', cx, cardCy + 30);
+      }
 
-    if (clouded) {
-      // the fog itself — covers this row's band + the connector bleed below it
-      ctx.fillStyle = 'rgba(13,27,42,0.78)';
-      ctx.fillRect(0, 4, width, canvasH - 4);
-      for (let k = 0; k < 6; k++) {
-        const px = (r * 97 + k * 211) % width;
-        const py = 10 + ((r * 57 + k * 89) % (canvasH - 20));
-        const rad = 42 + ((r * 31 + k * 17) % 34);
-        const g = ctx.createRadialGradient(px, py, 4, px, py, rad);
-        g.addColorStop(0, 'rgba(120,150,175,0.30)');
-        g.addColorStop(1, 'rgba(120,150,175,0)');
-        ctx.fillStyle = g;
+      // padlock — locked tiers badge it, never hide it
+      if (!open) {
+        const lx = cx + CARD_W / 2 - 20;
+        const ly = top0 + 14;
+        ctx.strokeStyle = 'rgba(56,70,86,0.9)';
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(px, py, rad, 0, Math.PI * 2);
+        ctx.arc(lx, ly, 5.5, Math.PI, 0);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(56,70,86,0.9)';
+        ctx.beginPath();
+        ctx.roundRect(lx - 8, ly, 16, 13, 3);
         ctx.fill();
+      }
+
+      // the strip's milestone card carries the town nameplate underneath
+      if (isMilestone) {
+        const label = MILESTONE_TOWNS[r].toUpperCase();
+        ctx.font = '800 13px "Baloo 2", sans-serif';
+        const tw = ctx.measureText(label).width + 24;
+        const ty = cardCy + CARD_H / 2 + 8;
+        ctx.fillStyle = 'rgba(10,8,18,0.35)';
+        ctx.beginPath();
+        ctx.roundRect(cx - tw / 2 + 2, ty + 2, tw, 22, 11);
+        ctx.fill();
+        ctx.fillStyle = '#fdf8ec';
+        ctx.beginPath();
+        ctx.roundRect(cx - tw / 2, ty, tw, 22, 11);
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = open ? '#0f7fb8' : '#8a97a5';
+        ctx.beginPath();
+        ctx.roundRect(cx - tw / 2 + 1, ty + 1, tw - 2, 20, 10);
+        ctx.stroke();
+        ctx.fillStyle = open ? '#1c2a3a' : '#5a6978';
+        ctx.fillText(label, cx, ty + 12);
       }
     }
     tex.refresh();
-    const img = this.add
-      .image(width / 2, rowTop - 10, `advrow${r}`)
-      .setOrigin(0.5, 0)
+    this.stripImgs[r] = this.add
+      .image(this.stripX(r), top, `advstrip${r}`)
+      .setOrigin(0, 0)
       .setDepth(2);
-    this.rowImgs[r] = this.track(img, width / 2, rowTop - ROW_H) as Phaser.GameObjects.Image;
-
-    if (clouded) return; // no town names, no tap zones in the fog
-
-    // milestone gate — the town name beside the big node
-    const n = (r + 1) * COLS;
-    const p = this.nodePos(n - 1);
-    const open = n <= this.prog.unlocked;
-    // label sits inward of the gate node so it never clips the canvas edge
-    const right = r % 2 === 0;
-    const lx = p.x + (right ? -36 : 36);
-    const lyy = p.y - 34;
-    const townLabel = this.track(
-      this.add
-        .text(lx, lyy, `${MILESTONE_TOWNS[r].toUpperCase()}`, {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '14px',
-          color: open ? '#f5efe0' : '#4a637a',
-          stroke: '#081420',
-          strokeThickness: 4,
-        })
-        .setOrigin(right ? 1 : 0, 0.5)
-        .setDepth(3),
-      lx,
-      lyy,
-    ) as Phaser.GameObjects.Text;
-    if (revealing) {
-      townLabel.setAlpha(0);
-      this.revealLabel = townLabel;
-    } else if (open) {
-      this.tweens.add({
-        targets: townLabel,
-        alpha: 0.55,
-        duration: 1600,
-        delay: r * 90,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
-
-    // tap zones — repositioned each frame onto the node's warped position
-    for (let c = 0; c < COLS; c++) {
-      const n2 = r * COLS + c + 1;
-      const p2 = this.nodePos(n2 - 1);
-      const z = this.add
-        .zone(p2.x - 21, p2.y - 21, 42, 42)
-        .setOrigin(0, 0)
-        .setInteractive({ useHandCursor: n2 <= this.prog.unlocked })
-        .on('pointerdown', () => {
-          if (!this.marching && n2 <= this.prog.unlocked) this.showLevelCard(n2);
-        });
-      this.zoneRefs.push({ z, r, px: p2.x, py: p2.y, zr: 21 });
-    }
   }
 
   // ---------- global leaderboard overlay ----------
@@ -801,9 +544,12 @@ export class AdventureScene extends Phaser.Scene {
     const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(60);
     this.boardLayer = layer;
 
+    // the seasons underlay — cyan crown field + rings, then a light veil
+    const bg = fgCrownField(this, width, height, width / 2, height * 0.45, FG.cyan, 0x1fa9e8, 0x0f7fb8);
     const dim = this.add
-      .rectangle(width / 2, height / 2, width, height, 0x081420, 0.85)
-      .setInteractive(); // swallow taps
+      .rectangle(-width, -height, width * 3, height * 3, 0x081420, 0.22)
+      .setOrigin(0)
+      .setInteractive(); // swallow taps — overscan covers camera-zoom margins
     const pw = Math.min(460, width - 40);
     const ph = Math.min(620, height - 40);
     const px = (width - pw) / 2;
@@ -811,33 +557,36 @@ export class AdventureScene extends Phaser.Scene {
 
     const pnl = panel(this, px, py, pw, ph, { alpha: 0.97 });
     const title = this.add
-      .text(width / 2, py + 30, 'TOP RUNNERS', {
+      .text(width / 2, py + 34, 'TOP RUNNERS', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '24px',
-        color: '#ffd54a',
+        fontSize: '32px',
+        color: '#e84393',
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setShadow(0, 4, '#9c2160', 0, true, false);
     const sub = this.add
-      .text(width / 2, py + 56, 'who is furthest up the road north', {
+      .text(width / 2, py + 68, 'who is furthest up the road north', {
         fontFamily: UI_FONT,
-        fontSize: '12px',
-        color: '#9db4c4',
+        fontSize: '14px',
+        fontStyle: '600',
+        color: '#7a8a99',
       })
       .setOrigin(0.5);
     const rows = this.add
-      .text(px + 30, py + 84, 'reaching the board…', {
+      .text(px + 30, py + 96, 'reaching the board…', {
         fontFamily: UI_FONT,
-        fontSize: '14px',
-        color: '#d8e6ee',
-        lineSpacing: 8,
+        fontSize: '15px',
+        fontStyle: '600',
+        color: '#33475a',
+        lineSpacing: 7,
       })
       .setName('boardRows');
     const me = this.add
       .text(width / 2, py + ph - 66, '', {
         fontFamily: UI_FONT,
-        fontSize: '14px',
+        fontSize: '15px',
         fontStyle: '600',
-        color: '#7fd8f0',
+        color: '#0f7fb8',
       })
       .setOrigin(0.5)
       .setName('boardMe');
@@ -845,19 +594,25 @@ export class AdventureScene extends Phaser.Scene {
       .text(width / 2, py + ph - 44, 'win levels to climb · deeper north = higher rank', {
         fontFamily: UI_FONT,
         fontSize: '11px',
-        color: '#5a7184',
+        fontStyle: '600',
+        color: '#7a8a99',
       })
       .setOrigin(0.5);
+    // close affordance — dark rimmed dot, same as every modal's
+    const cdG = this.add.graphics();
+    cdG.fillStyle(UI.shade, 0.5).fillCircle(px + pw - 27, py + 27, 15);
+    cdG.fillStyle(UI.ink, 1).fillCircle(px + pw - 28, py + 26, 14);
+    cdG.lineStyle(2, 0xffffff, 0.85).strokeCircle(px + pw - 28, py + 26, 13);
     const close = this.add
-      .text(px + pw - 12, py + 10, '✕', {
+      .text(px + pw - 28, py + 25, '✕', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '20px',
-        color: '#9db4c4',
+        fontSize: '13px',
+        color: '#f5efe0',
       })
-      .setOrigin(1, 0)
+      .setOrigin(0.5)
       .setPadding(8)
       .setInteractive({ useHandCursor: true });
-    close.on('pointerover', () => close.setColor('#f5efe0')).on('pointerout', () => close.setColor('#9db4c4'));
+    close.on('pointerover', () => close.setColor('#ffc93c')).on('pointerout', () => close.setColor('#f5efe0'));
 
     // name row — tap SET to name your runner (shares the online lobby name)
     const nameLbl = this.add
@@ -865,35 +620,54 @@ export class AdventureScene extends Phaser.Scene {
         fontFamily: UI_FONT,
         fontSize: '13px',
         fontStyle: '600',
-        color: '#7d93a5',
+        color: '#7a8a99',
       })
       .setOrigin(0, 0.5)
       .setName('boardName');
     const doSet = () => {
-      const n = window.prompt('runner name (shows on the board)', playerName());
-      if (n === null) return;
-      setPlayerName(n);
-      nameLbl.setText(`NAME: ${playerName() || '—'}`);
-      submitAdventureScore(true);
-      this.time.delayedCall(700, () => this.renderBoard()); // let the post land
+      this.modalOpen = true;
+      void promptModal(this, {
+        title: 'NAME YOUR RUNNER',
+        sub: 'shows on the board',
+        label: 'RUNNER NAME',
+        placeholder: 'your name',
+        value: playerName(),
+        maxLen: 14,
+        okLabel: 'SAVE',
+        depth: 80,
+        field: { base: FG.cyan, ring: 0x1fa9e8, crown: 0x0f7fb8 },
+      }).then((n) => {
+        this.modalOpen = false;
+        if (n === null) return;
+        setPlayerName(n);
+        nameLbl.setText(`NAME: ${playerName() || '—'}`);
+        submitAdventureScore(true);
+        this.time.delayedCall(700, () => this.renderBoard()); // let the post land
+      });
     };
+    // SET — small cyan candy pill like the lobby's join action
+    const sbw = 64, sbh = 34, scx = px + pw - 40, scy = py + ph - 96;
+    const sg = this.add.graphics();
+    sg.fillStyle(shade(UI.water, -38), 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 + 2, sbw, sbh, sbh / 2);
+    sg.fillStyle(UI.water, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 - 3, sbw, sbh - 2, sbh / 2);
+    sg.fillStyle(0xffffff, 0.22).fillRoundedRect(scx - sbw / 2 + 6, scy - sbh / 2 + 1, sbw - 12, 10, 5);
     const setBtn = this.add
-      .text(px + pw - 30, py + ph - 96, 'SET', {
+      .text(scx, scy - 2, 'SET', {
         fontFamily: DISPLAY_FONT,
         fontSize: '14px',
-        color: '#4dd0e1',
+        color: '#ffffff',
       })
-      .setOrigin(1, 0.5)
+      .setOrigin(0.5)
+      .setShadow(0, 2, '#0b6a99', 0, true, false)
       .setPadding(10, 8, 10, 8)
       .setInteractive({ useHandCursor: true });
-    setBtn.on('pointerover', () => setBtn.setColor('#f5efe0')).on('pointerout', () => setBtn.setColor('#4dd0e1'));
     // screen-space tap rects — board sits in an sf0 container, children miss input
     this.boardHit = [
       { x: px + pw - 58, y: py + 4, w: 56, h: 44, fn: () => this.closeBoard() },
       { x: px + pw - 76, y: py + ph - 118, w: 72, h: 44, fn: doSet },
     ];
 
-    layer.add([dim, pnl, title, sub, rows, me, hint, close, nameLbl, setBtn]);
+    layer.add([bg, dim, pnl, title, sub, rows, me, hint, cdG, close, nameLbl, sg, setBtn]);
 
     this.renderBoard();
   }
@@ -908,7 +682,7 @@ export class AdventureScene extends Phaser.Scene {
         b.top.length
           ? b.top
               .slice(0, 20)
-              .map((e) => `${String(e.rank).padStart(2)}  ${e.name.padEnd(14)}  L${e.level}  ·  ★${e.stars}`)
+              .map((e) => `${String(e.rank).padStart(2)}  ${e.name.slice(0, 14).padEnd(14)}  L${e.level}  ·  ★${e.stars}`)
               .join('\n')
           : 'no runners yet — be the first to post a level!',
       );
@@ -931,15 +705,9 @@ export class AdventureScene extends Phaser.Scene {
     this.boardHit = [];
   }
 
-  private closeCard() {
-    this.cardLayer?.destroy();
-    this.cardLayer = null;
-    this.cardHit = [];
-  }
-
   /** manual overlay hit test — board zones win over card zones */
   private onOverlayTap(p: Phaser.Input.Pointer) {
-    if (this.marching) return;
+    if (this.marching || this.modalOpen) return;
     for (const z of [...this.boardHit, ...this.cardHit]) {
       if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) {
         z.fn();
@@ -948,86 +716,225 @@ export class AdventureScene extends Phaser.Scene {
     }
   }
 
-  /** bottom sheet — the level's name, chapter, objective, stars, PLAY */
-  private showLevelCard(n: number) {
-    this.closeCard();
-    const def = levelDef(this.campaign, Math.min(n, TOTAL_LEVELS));
-    const pal = TRACK_META[this.campaign];
-    const { width, height } = this.scale;
-    const W = Math.min(440, width - 36);
-    const H = 128;
-    const x = width / 2 - W / 2;
-    const y = height - H - 16;
-
-    const g = this.add.graphics();
-    g.fillStyle(UI.panel, 0.96).fillRoundedRect(x, y, W, H, 12);
-    g.lineStyle(2, pal.accent, 0.85).strokeRoundedRect(x + 1, y + 1, W - 2, H - 2, 12);
-
-    const stars = this.prog.stars[n] ?? 0;
-    // screen-space tap rects — the real input path (container children miss)
-    this.cardHit = [
-      { x: x + W - 118, y: y + H - 54, w: 110, h: 48, fn: () => this.playLevel(n) },
-      { x: x + W - 58, y: y + 4, w: 54, h: 44, fn: () => this.closeCard() },
-    ];
-    const playBtn = this.add
-      .text(x + W - 20, y + H - 30, 'PLAY ▶', {
+  /** seasons header — wordmark stack + hex level badge + angled progress bar
+   *  + the earn-stars line, all screen-fixed over the cyan field */
+  private buildHeader(width: number, _height: number) {
+    const lvl = Math.min(this.prog.unlocked, TOTAL_LEVELS);
+    this.add
+      .text(30, 60, `ICE 'N' WATER`, {
         fontFamily: DISPLAY_FONT,
-        fontSize: '17px',
-        color: pal.accentCss,
+        fontSize: '26px',
+        color: '#ffffff',
       })
-      .setOrigin(1, 0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerover', () => playBtn.setColor('#f5efe0'))
-      .on('pointerout', () => playBtn.setColor(pal.accentCss));
-    const kids = [
-      g,
-      this.add.text(x + 16, y + 12, `LEVEL ${n} — ${def.name}`, {
+      .setScrollFactor(0)
+      .setDepth(41)
+      .setShadow(0, 3, '#0f7fb8', 0, true, false);
+    this.add
+      .text(30, 92, 'SEASON 1 — THE ROAD NORTH', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '15px',
-        color: '#f5efe0',
-      }),
-      this.add
-        .text(x + W - 44, y + 14, stars ? '★'.repeat(stars) : '—', {
-          fontFamily: UI_FONT,
-          fontSize: '15px',
-          color: '#f0c04a',
-        })
-        .setOrigin(1, 0),
-      this.add.text(x + 16, y + 38, `${def.chapter}${def.town ? '  ·  ' + def.town.toUpperCase() : ''}`, {
-        fontFamily: UI_FONT,
-        fontSize: '12px',
-        fontStyle: '600',
-        color: '#9db4c4',
-      }),
-      this.add.text(x + 16, y + 60, `◆ ${objectiveText(def)}${def.boss ? '  ·  BOSS FIGHT' : ''}`, {
+        fontSize: '16px',
+        fontStyle: 'italic',
+        color: '#e84393',
+      })
+      .setScrollFactor(0)
+      .setDepth(41)
+      .setShadow(0, 2, '#9c2160', 0, true, false);
+    this.add
+      .text(30, 116, `ends at ${MILESTONE_TOWNS[TOTAL_MILESTONES - 1]} — ${TOTAL_LEVELS} stops`, {
         fontFamily: UI_FONT,
         fontSize: '13px',
-        color: pal.accentCss,
+        fontStyle: 'italic 700',
+        color: 'rgba(255,255,255,0.9)',
+      })
+      .setScrollFactor(0)
+      .setDepth(41);
+
+    // hex badge + angled bar + count — the same parts the seasons screen uses
+    fgHexBadge(this, 50, 156, 21, `${lvl}`).forEach((o) => o.setScrollFactor(0).setDepth(41));
+    fgProgressBar(
+      this,
+      74,
+      146,
+      Math.min(300, width * 0.34),
+      20,
+      (lvl - 1) / (TOTAL_LEVELS - 1),
+      `${lvl - 1}/${TOTAL_LEVELS}`,
+    ).forEach((o) => o.setScrollFactor(0).setDepth(41));
+
+    // earn-stars line — their "Earn FAME by competing in Shows!"
+    const star = this.add.graphics().setScrollFactor(0).setDepth(41);
+    star.fillStyle(FG.pink, 1);
+    star.fillCircle(38, 188, 9);
+    star.lineStyle(2, 0xffffff, 0.85).strokeCircle(38, 188, 9);
+    this.add
+      .text(38, 188, '★', { fontFamily: UI_FONT, fontSize: '12px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(42);
+    this.add
+      .text(52, 180, `earn STARS — crown the north  ·  ★ ${totalStars(this.prog)}`, {
+        fontFamily: UI_FONT,
+        fontSize: '13px',
+        fontStyle: 'italic 700',
+        color: '#ffffff',
+      })
+      .setScrollFactor(0)
+      .setDepth(41);
+  }
+
+  /** magenta podium + a one-shot bean render — static texture, zero per-frame
+   *  three.js cost on this screen (the title lobby keeps the live one) */
+  private buildPodium(width: number, height: number) {
+    const podX = width < 640 ? width - 130 : width * 0.66;
+    const podTopY = height * 0.66;
+    const pod = this.add.graphics().setScrollFactor(0).setDepth(1);
+    pod.fillStyle(FG.podiumSide, 1).fillRect(podX - 170, podTopY, 340, height - podTopY + 80);
+    pod.fillStyle(FG.podiumTop, 1).fillEllipse(podX, podTopY, 340, 54);
+    pod.fillStyle(0xffffff, 0.34).fillEllipse(podX, podTopY - 4, 288, 34);
+    pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(podX, podTopY, 340, 54);
+    pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
+
+    const hero = new Hero3D(440, 540);
+    if (hero.ok && hero.canvas) {
+      hero.update(1.1); // one settled pose — a statue, not a live render
+      const copy = document.createElement('canvas');
+      copy.width = 440;
+      copy.height = 540;
+      copy.getContext('2d')!.drawImage(hero.canvas, 0, 0);
+      if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
+      this.textures.addCanvas('adv_hero', copy);
+      this.add
+        .image(podX, podTopY + 34 - 270 * 0.7, 'adv_hero')
+        .setOrigin(0.5)
+        .setScale(0.7) // feet planted on the podium, head clear of the top bar
+        .setScrollFactor(0)
+        .setDepth(1);
+      hero.dispose();
+      this.events.once('shutdown', () => {
+        if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
+      });
+    }
+  }
+
+  /** move the rail cursor + rebuild the detail card for level `n` */
+  private selectLevel(n: number, tap: boolean) {
+    this.selected = n - 1;
+    this.selRing?.setPosition(this.cardX(n - 1), this.railY);
+    if (tap) sfx.pickup();
+    this.buildDetail();
+  }
+
+  /** the reward-detail card — cyan face, white rim, drop base: level name,
+   *  town, status chip, stats and the PLAY pill, wired to the selection */
+  private buildDetail() {
+    this.detailLayer?.destroy();
+    const { width, height } = this.scale;
+    const n = this.selected + 1;
+    const def = levelDef(n);
+    const stars = this.prog.stars[n] ?? 0;
+    const open = n <= this.prog.unlocked;
+    const done = this.prog.stars[n] !== undefined;
+    const isFrontier = n === Math.min(this.prog.unlocked, TOTAL_LEVELS);
+
+    const W = Math.min(320, width - 48);
+    const H = 158;
+    const x = 34;
+    // sits under the header; on short screens it overlaps the rail's left edge —
+    // cards scroll behind it, and the frontier anchors right of the card
+    const y = Phaser.Math.Clamp(height * 0.36, 202, 232);
+
+    const g = this.add.graphics();
+    g.fillStyle(0x081420, 0.3).fillRoundedRect(x + 4, y + 6, W, H, 14); // drop base
+    g.fillStyle(0xffffff, 1).fillRoundedRect(x - 3, y - 3, W + 6, H + 6, 16); // white rim
+    g.fillStyle(0x4dd0e1, 1).fillRoundedRect(x, y, W, H, 13); // cyan face like theirs
+    g.fillStyle(0xffffff, 0.25).fillRoundedRect(x + 8, y + 5, W - 16, 26, 10); // sheen
+
+    // status chip — CLEARED / NEXT UP / LOCKED
+    const chipT = done ? `CLEARED ${'★'.repeat(stars)}` : isFrontier ? 'NEXT UP' : open ? 'UNLOCKED' : 'LOCKED';
+    const chipFill = done ? 0xffc93c : open ? 0x0f7fb8 : 0x3a4656;
+    const cw = Math.max(74, chipT.length * 8 + 22);
+    const cg = this.add.graphics();
+    cg.fillStyle(0x081420, 0.35).fillRoundedRect(x + W - cw - 12, y + 12 + 2, cw, 24, 12);
+    cg.fillStyle(chipFill, 1).fillRoundedRect(x + W - cw - 12, y + 12, cw, 24, 12);
+    cg.lineStyle(2, 0xffffff, 0.6).strokeRoundedRect(x + W - cw - 11, y + 13, cw - 2, 22, 11);
+
+    const kids: Phaser.GameObjects.GameObject[] = [
+      g,
+      cg,
+      this.add
+        .text(x + 16, y + 14, `LEVEL ${n}`, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '21px',
+          color: '#ffffff',
+        })
+        .setShadow(0, 3, '#0f7fb8', 0, true, false),
+      this.add.text(x + 16, y + 42, `${def.name} — ${def.town || def.chapter}`, {
+        fontFamily: UI_FONT,
+        fontSize: '13px',
+        fontStyle: 'italic 700',
+        color: 'rgba(255,255,255,0.92)',
       }),
-      this.add.text(x + 16, y + 82, `${def.chasers} militia · ${def.seconds}s · crew of ${def.crew}`, {
+      this.add.text(x + 16, y + 66, `◆ ${objectiveText(def)}${def.boss ? '  ·  BOSS FIGHT' : ''}`, {
+        fontFamily: UI_FONT,
+        fontSize: '13px',
+        fontStyle: '700',
+        color: '#0f7fb8',
+      }),
+      this.add.text(x + 16, y + 90, `${def.chasers} militia · ${def.seconds}s · crew of ${def.crew}`, {
         fontFamily: UI_FONT,
         fontSize: '12px',
-        color: '#7d93a5',
+        fontStyle: '700',
+        color: 'rgba(255,255,255,0.75)',
       }),
-      playBtn,
-      this.add
-        .text(x + W - 16, y + 12, '✕', {
-          fontFamily: UI_FONT,
-          fontSize: '17px',
-          fontStyle: '600',
-          color: '#7d93a5',
-        })
-        .setOrigin(1, 0)
-        .setPadding(8),
+      this.add.text(x + 16, y + 12 + 17, chipT, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '12px',
+        color: done ? '#1c1626' : '#ffffff',
+      }),
     ];
+    // chip label was added at title x — reposition onto the chip
+    (kids[kids.length - 1] as Phaser.GameObjects.Text)
+      .setPosition(x + W - cw - 12 + cw / 2, y + 24)
+      .setOrigin(0.5);
 
-    const c = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(50);
-    if (!REDUCED_MOTION) {
-      c.y = 60;
-      c.alpha = 0;
-      this.tweens.add({ targets: c, y: 0, alpha: 1, duration: 220, ease: 'Cubic.easeOut' });
-    }
-    this.cardLayer = c;
+    // PLAY pill — danfo when playable, dead-gray when locked
+    const pbw = 118;
+    const pbh = 40;
+    const pbx = x + W - pbw - 14;
+    const pby = y + H - pbh - 12;
+    const pg = this.add.graphics();
+    const pfill = open ? 0xffc93c : 0x8a97a5;
+    pg.fillStyle(shade(pfill, -48), 1).fillRoundedRect(pbx, pby + 3, pbw, pbh, pbh / 2);
+    pg.fillStyle(pfill, 1).fillRoundedRect(pbx, pby - 3, pbw, pbh - 2, pbh / 2);
+    pg.fillStyle(0xffffff, 0.22).fillRoundedRect(pbx + 6, pby + 1, pbw - 12, 12, 6);
+    kids.push(
+      pg,
+      this.add
+        .text(pbx + pbw / 2, pby + pbh / 2 - 3, open ? 'PLAY ▶' : 'LOCKED', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '15px',
+          color: open ? '#1c1626' : '#e8eef4',
+        })
+        .setOrigin(0.5)
+        .setShadow(0, 2, open ? '#c98a00' : '#3a4656', 0, true, false),
+    );
+    // the SELECT keycap hint — their bottom-right affordance, repurposed here
+    kids.push(
+      this.add
+        .text(x + 14, y + H - 22, 'tap a card to select · ENTER plays', {
+          fontFamily: UI_FONT,
+          fontSize: '11px',
+          fontStyle: '700',
+          color: 'rgba(255,255,255,0.7)',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    this.cardHit = open
+      ? [{ x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => this.playLevel(n) }]
+      : [];
+
+    this.detailLayer = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(46);
   }
 
   private playLevel(n: number) {
@@ -1035,7 +942,52 @@ export class AdventureScene extends Phaser.Scene {
     sfx.shortWhistle();
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('game', { adventure: levelDef(this.campaign, Math.min(n, TOTAL_LEVELS)) }),
+      this.scene.start('game', { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) }),
+    );
+  }
+
+  /** top-bar icons share one guard — no actions while a modal owns input or
+   *  the frontier marker is mid-march */
+  private gated(fn: () => void) {
+    if (this.modalOpen || this.boardLayer || this.marching) return;
+    fn();
+  }
+
+  /** the pink active tab — jump the rail back to the frontier card */
+  private focusFrontier() {
+    const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
+    const cam = this.cameras.main;
+    const focusX = this.scale.width * Math.min(0.7, Math.max(0.42, 414 / this.scale.width));
+    const targetX = Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.scale.width);
+    this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
+    this.selectLevel(frontierN, false);
+  }
+
+  /** pencil tab — name your runner without opening the board first */
+  private renameRunner() {
+    this.modalOpen = true;
+    void promptModal(this, {
+      title: 'NAME YOUR RUNNER',
+      sub: 'shows on the board',
+      label: 'RUNNER NAME',
+      placeholder: 'your name',
+      value: playerName(),
+      maxLen: 14,
+      okLabel: 'SAVE',
+      depth: 80,
+      field: { base: FG.cyan, ring: 0x1fa9e8, crown: 0x0f7fb8 },
+    }).then((n) => {
+      this.modalOpen = false;
+      if (n === null) return;
+      setPlayerName(n);
+      submitAdventureScore(true);
+    });
+  }
+
+  private toLobby() {
+    this.cameras.main.fadeOut(220, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
+      this.scene.start('lobby'),
     );
   }
 
