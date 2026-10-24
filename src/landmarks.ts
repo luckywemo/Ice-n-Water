@@ -1,7 +1,6 @@
 // Named levels — every stop on the road carries a real place-name.
 // Each town contributes 10 names: real landmarks where they exist,
-// padded with Nigerian street-name flavors. Police-track levels get a
-// procedural "operation" wrapper around the same landmark.
+// padded with Nigerian street-name flavors.
 
 import { MILESTONE_TOWNS } from './adventure';
 

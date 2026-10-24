@@ -1,7 +1,7 @@
 {
   "name": "Ice 'N' Water",
   "short_name": "Ice N Water",
-  "description": "The playground chase game — freeze, rescue, survive. Ice & Water / Police & Thief.",
+  "description": "The playground chase game — freeze, rescue, survive. Ice & Water.",
   "start_url": ".",
   "scope": ".",
   "display": "fullscreen",

@@ -2,10 +2,10 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION, shade } from '../ui';
 import { LevelDef, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
-import { DIFFS, Mode, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
+import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 
@@ -49,7 +49,7 @@ interface ChaserState {
   tag?: Phaser.GameObjects.Text; // floating boss name
 }
 
-type ItemType = 'slippers' | 'charm' | 'water' | 'key';
+type ItemType = 'slippers' | 'charm' | 'water';
 type Phase = 'countdown' | 'play' | 'over';
 type EventKind = 'danfo' | 'nepa' | 'rain';
 type Personality = (typeof CONFIG.crew)[number] | null;
@@ -87,8 +87,7 @@ export class GameScene extends Phaser.Scene {
   private lastShownSec = -1;
   private bannerTween: Phaser.Tweens.Tween | null = null;
 
-  // modes & difficulty
-  private mode: Mode = 'ice';
+  // difficulty
   private diff: DiffPreset = DIFFS.normal;
   private chaserSpeed: number = CONFIG.chaser.speed;
   private roundSeconds: number = CONFIG.round.seconds;
@@ -98,11 +97,6 @@ export class GameScene extends Phaser.Scene {
   private initialChasers = 1;
   private reinforceCount = 1;
   private eventsEnabled = true;
-
-  // police & thief — jail state
-  private breakoutProgress = 0;
-  private jailGfx!: Phaser.GameObjects.Graphics;
-  private padGfx!: Phaser.GameObjects.Graphics;
 
   // random events
   private nextEventAt = 0;
@@ -121,6 +115,9 @@ export class GameScene extends Phaser.Scene {
   private lastResult: { won: boolean; survived: number } | null = null;
   private endButtons: Phaser.GameObjects.Container[] = []; // result dashboard
   private endHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
+  private paused = false; // single-player only — net play never pauses
+  private pauseObjs: { destroy: () => void }[] = [];
+  private pauseHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
 
   // adventure objectives — collect tokens / rescue mates beyond raw survival
   private objGot = 0;
@@ -141,11 +138,9 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  init(data: { mode?: Mode; difficulty?: Difficulty; adventure?: LevelDef }) {
-    this.mode = data.mode === 'police' ? 'police' : 'ice';
+  init(data: { difficulty?: Difficulty; adventure?: LevelDef }) {
     this.diff = DIFFS[data.difficulty ?? 'normal'] ?? DIFFS.normal;
     this.level = data.adventure ?? null;
-    if (this.level) this.mode = this.level.mode;
   }
 
   create() {
@@ -170,10 +165,12 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = null;
     this.endButtons = [];
     this.endHitZones = [];
+    this.paused = false;
+    this.pauseObjs = [];
+    this.pauseHitZones = [];
     this.phase = 'countdown';
     this.countdownLeft = CONFIG.round.countdownSec;
     this.countdownShown = 0;
-    this.breakoutProgress = 0;
     this.nextEventAt = 0;
     this.lastEvent = null;
     this.slipperyUntil = 0;
@@ -212,7 +209,6 @@ export class GameScene extends Phaser.Scene {
     makeTextures(this);
     this.buildArena();
     decorateYard(this, this.obstacleRects, seededRng(this.mapSeed ^ 0x9e3779b9));
-    if (this.mode === 'police') this.buildJail();
 
     this.itemGroup = this.physics.add.group({ allowGravity: false, immovable: true });
     this.spawnEntities();
@@ -244,6 +240,7 @@ export class GameScene extends Phaser.Scene {
             this.transitionTo('game', true);
           }
         },
+        onPause: () => this.togglePause(),
       },
       loadPicks().joy,
     );
@@ -277,6 +274,8 @@ export class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
+    this.input.on('pointerdown', this.onPauseTap, this);
+    this.events.once('shutdown', () => this.input.off('pointerdown', this.onPauseTap, this));
 
     this.cameras.main.fadeIn(280, 0, 0, 0);
 
@@ -325,50 +324,6 @@ export class GameScene extends Phaser.Scene {
   private lit<T extends Phaser.GameObjects.GameObject>(obj: T): T {
     (obj as unknown as { setPipeline: (p: string) => void }).setPipeline('Light2D');
     return obj;
-  }
-
-  /** Police & Thief mode — draw the jail cell and the breakout pad */
-  private buildJail() {
-    const { jail } = CONFIG;
-    const g = this.add.graphics().setDepth(1.1);
-    this.jailGfx = g;
-
-    // cell floor + cage outline
-    g.fillStyle(0x3a3230, 0.85);
-    g.fillRect(jail.x - jail.w / 2, jail.y - jail.h / 2, jail.w, jail.h);
-    g.lineStyle(4, 0x1d1a18, 1);
-    g.strokeRect(jail.x - jail.w / 2, jail.y - jail.h / 2, jail.w, jail.h);
-    // bars across the front face
-    g.lineStyle(3, 0x1d1a18, 1);
-    const left = jail.x - jail.w / 2;
-    for (let bx = left + 12; bx < left + jail.w; bx += 16) {
-      g.lineBetween(bx, jail.y - jail.h / 2, bx, jail.y + jail.h / 2);
-    }
-    this.add
-      .text(jail.x, jail.y - jail.h / 2 - 12, 'JAIL', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '14px',
-        color: '#4a3f2e',
-      })
-      .setOrigin(0.5)
-      .setDepth(1.1);
-
-    // breakout pad — stand here to free the crew
-    const p = this.add.graphics().setDepth(1.05);
-    this.padGfx = p;
-    p.lineStyle(3, 0x4dd0e1, 0.8);
-    p.strokeCircle(jail.pad.x, jail.pad.y, jail.pad.r);
-    p.fillStyle(0x4dd0e1, 0.12);
-    p.fillCircle(jail.pad.x, jail.pad.y, jail.pad.r);
-    this.add
-      .text(jail.pad.x, jail.pad.y, 'BREAK\nOUT', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '12px',
-        color: '#4dd0e1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setDepth(1.1);
   }
 
   private spawnEntities() {
@@ -504,7 +459,7 @@ export class GameScene extends Phaser.Scene {
     const spawn = (type: ItemType, count: number) => {
       for (let i = 0; i < count; i++) {
         const p = this.randomFreePos();
-        const s = this.itemGroup.create(p.x, p.y, type) as Sprite;
+        const s = this.lit(this.itemGroup.create(p.x, p.y, type) as Sprite);
         s.setDepth(1.6);
         this.itemType.set(s, type);
         this.tweens.add({
@@ -518,19 +473,18 @@ export class GameScene extends Phaser.Scene {
     };
     spawn('slippers', items.slippers.count);
     spawn('charm', items.charm.count);
-    // ice mode drops pure water (ranged thaw); police mode drops jail keys
-    if (this.mode === 'ice') spawn('water', items.water.count);
-    else spawn('key', items.key.count);
+    // pure water — ranged thaw item
+    spawn('water', items.water.count);
   }
 
-  /** collect-objective levels — scattered drops (ice) / evidence (police) */
+  /** collect-objective levels — scattered water drops */
   private spawnCollectTokens() {
     const need = this.level!.objective.count;
     // two spare pickups so nothing can soft-lock behind a bad spawn
     const total = need + 2;
     if (!this.textures.exists('lvltoken')) {
       const g = this.add.graphics();
-      const c = this.mode === 'police' ? 0xf0a13a : 0x7fd8f0;
+      const c = 0x7fd8f0;
       g.fillStyle(c, 1).fillCircle(12, 12, 10);
       g.fillStyle(0xffffff, 0.35).fillCircle(9, 8, 4);
       g.lineStyle(2, 0x081420, 0.7).strokeCircle(12, 12, 9);
@@ -558,8 +512,8 @@ export class GameScene extends Phaser.Scene {
 
   private collectToken(t: Sprite) {
     if (this.phase !== 'play') return;
-    this.burst(t.x, t.y, this.mode === 'police' ? 0xf0a13a : 0x7fd8f0, 12, 160);
-    this.floatText(t.x, t.y, this.mode === 'police' ? 'EVIDENCE!' : 'WATER DROP!');
+    this.burst(t.x, t.y, 0x7fd8f0, 12, 160);
+    this.floatText(t.x, t.y, 'WATER DROP!');
     sfx.pickup();
     t.destroy();
     this.objGot++;
@@ -582,7 +536,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildHud() {
-    const style = { fontFamily: UI_FONT, fontSize: '19px', fontStyle: '600', color: '#f5efe0' };
+    const style = { fontFamily: UI_FONT, fontSize: '19px', fontStyle: '600', color: '#1c2a3a' };
 
     this.pin(panel(this, 14, 8, this.level ? 340 : 240, this.level ? 78 : 62), 0, 0);
     this.timeText = this.pin(
@@ -590,7 +544,7 @@ export class GameScene extends Phaser.Scene {
       0, 0, 28, 14,
     );
     this.infoText = this.pin(
-      this.add.text(0, 0, '', { ...style, fontSize: '14px', fontStyle: '500', color: '#b7c8d4' }).setDepth(10),
+      this.add.text(0, 0, '', { ...style, fontSize: '14px', fontStyle: '500', color: '#5a7184' }).setDepth(10),
       0, 0, 28, 40,
     );
     this.itemText = this.pin(
@@ -601,7 +555,7 @@ export class GameScene extends Phaser.Scene {
     );
     // adventure objective line — landmark name + what the level wants
     this.objText = this.pin(
-      this.add.text(0, 0, '', { ...style, fontSize: '12px', fontStyle: '500', color: '#ffd54a' }).setDepth(10),
+      this.add.text(0, 0, '', { ...style, fontSize: '12px', fontStyle: '500', color: '#c98a00' }).setDepth(10),
       0, 0, 28, 60,
     );
 
@@ -619,8 +573,8 @@ export class GameScene extends Phaser.Scene {
       this.add.text(0, 0, '', {
         fontFamily: DISPLAY_FONT,
         fontSize: '54px',
-        color: '#f5efe0',
-        stroke: '#081420',
+        color: '#e84393',
+        stroke: '#9c2160',
         strokeThickness: 10,
       }).setOrigin(0.5).setDepth(20),
       0.5, 0.5, 0, -40,
@@ -653,14 +607,25 @@ export class GameScene extends Phaser.Scene {
 
     const isTouch = TouchControls.isTouchDevice();
     const exitLabel = this.level ? 'T — the road' : 'T — title';
-    this.pin(
+    const hintText = this.pin(
       this.add.text(0, 0, isTouch
           ? 'left thumb — move   ·   RUN — sprint   ·   H₂O — use item   ·   ↻ — restart'
           : `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`,
-        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '500', color: '#4a3f2e' },
+        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
       ).setOrigin(0.5, 1).setDepth(10),
       0.5, 1, 0, -12,
     );
+    // dark keycap chip behind the hint — the "Select Ⓛ" affordance
+    const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+    chip
+      .fillStyle(0x0a1420, 0.6)
+      .fillRoundedRect(
+        -hintText.width / 2 - 14,
+        -hintText.height - 9,
+        hintText.width + 28,
+        hintText.height + 11,
+        9,
+      );
 
     this.staminaGfx = this.add.graphics().setDepth(9);
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
@@ -678,23 +643,19 @@ export class GameScene extends Phaser.Scene {
     const g = this.minimap;
 
     g.clear();
-    g.fillStyle(0x081420, 0.62);
-    g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 8);
-    g.lineStyle(2, UI.ice, 0.3);
-    g.strokeRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 8);
+    // rimmed card anatomy — offset dark base, white rim, ink face
+    g.fillStyle(0x0a1420, 0.55);
+    g.fillRoundedRect(x0 - 1, y0 - 1, mw + 18, mh + 18, 12);
+    g.fillStyle(0xffffff, 0.95);
+    g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
+    g.fillStyle(UI.ink, 0.92);
+    g.fillRoundedRect(x0 - 2, y0 - 2, mw + 4, mh + 4, 7);
 
     // obstacle blocks
     g.fillStyle(0x4a3f2e, 0.9);
     for (const r of this.obstacleRects) {
       g.fillRect(x0 + r.x * sx, y0 + r.y * sy, r.width * sx, r.height * sy);
     }
-    // jail marker in police mode
-    if (this.mode === 'police') {
-      const { jail } = CONFIG;
-      g.fillStyle(0x4dd0e1, 0.8);
-      g.fillRect(x0 + jail.x * sx - 3, y0 + jail.y * sy - 3, 6, 6);
-    }
-
     const dot = (x: number, y: number, color: number, r: number) => {
       g.fillStyle(color, 0.95);
       g.fillCircle(x0 + x * sx, y0 + y * sy, r);
@@ -738,6 +699,142 @@ export class GameScene extends Phaser.Scene {
         duration: 220,
       });
     }
+  }
+
+  /** Fall Guys-style result ribbon — a full-width band slides in, giant
+   *  outlined word pops, hex badge lands under it, holds ~1.4s, exits,
+   *  then the caller lands the detail banner + pills. */
+  private playResultRibbon(won: boolean, timedOut: boolean) {
+    // any mid-round banner still up (level intro, event line) must vacate —
+    // clearBanner() no-ops in 'over' phase so we fade it directly
+    this.tweens.add({ targets: [this.bannerText, this.subBannerText], alpha: 0, duration: 180 });
+    const vw = this.scale.width;
+    const bandCol = won ? 0x29b6f6 : 0xe84393; // cyan band on a win, pink on a loss
+    const strokeCol = won ? '#e84393' : '#29b6f6'; // outline flips, like the ref
+    const final = this.level?.n === TOTAL_LEVELS;
+    const word = won
+      ? final
+        ? 'JOURNEY COMPLETE!'
+        : 'CLEARED!'
+      : timedOut
+        ? 'OUT OF TIME!'
+        : 'CAUGHT!';
+    const note = won ? 'cleared!' : timedOut ? 'out of time' : 'frozen!';
+
+    const c = this.add.container(0, 0).setDepth(55);
+    const band = this.add.container(0, 0);
+    const g = this.add.graphics();
+    const BW = vw + 200;
+    const BH = 92;
+    // angled pill caps poking past the band's ends — dark base under each
+    const cap = (cx: number, fill: number) => {
+      g.fillStyle(0x17151f, 1).fillRoundedRect(cx - 80, -BH / 2 + 12, 160, 58, 29);
+      g.fillStyle(fill, 1).fillRoundedRect(cx - 80, -BH / 2 + 6, 160, 58, 29);
+    };
+    cap(-BW / 2 + 40, won ? 0x17151f : 0x29b6f6);
+    cap(BW / 2 - 40, won ? 0xe84393 : 0x17151f);
+    g.fillStyle(bandCol, 1).fillRect(-BW / 2, -BH / 2, BW, BH);
+    g.fillStyle(0xffffff, 1).fillRect(-BW / 2, -BH / 2 - 4, BW, 4).fillRect(-BW / 2, BH / 2, BW, 4);
+    // faint crown stamps baked into the band, like their patterned ribbon
+    g.fillStyle(0xffffff, 0.09);
+    for (let i = 0; i < 15; i++) {
+      const cx = -BW / 2 + 60 + i * ((BW - 120) / 14);
+      const cy2 = i % 2 ? -18 : 22;
+      const s = 9;
+      g.beginPath();
+      g.moveTo(cx - s, cy2 + s * 0.7);
+      g.lineTo(cx - s, cy2 - s * 0.5);
+      g.lineTo(cx - s * 0.5, cy2 + s * 0.1);
+      g.lineTo(cx, cy2 - s * 0.8);
+      g.lineTo(cx + s * 0.5, cy2 + s * 0.1);
+      g.lineTo(cx + s, cy2 - s * 0.5);
+      g.lineTo(cx + s, cy2 + s * 0.7);
+      g.closePath();
+      g.fillPath();
+    }
+    band.add(g);
+    band.setX(-vw - 40); // parked off-screen left
+    band.setAngle(-2); // the slight FG tilt
+
+    const t = this.add
+      .text(0, -6, word, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: word.length > 14 ? '56px' : '82px',
+        color: '#ffffff',
+        stroke: strokeCol,
+        strokeThickness: 14,
+      })
+      .setOrigin(0.5)
+      .setScale(0)
+      .setShadow(0, 5, 'rgba(0,0,0,0.35)', 0, true, false);
+
+    // hex badge under the band — gold + star on a win, ink + ✕ on a loss
+    const bg = this.add.graphics();
+    const hexAt = (r: number) => {
+      bg.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const px = Math.cos(a) * r;
+        const py = 78 + Math.sin(a) * r;
+        if (i === 0) bg.moveTo(px, py);
+        else bg.lineTo(px, py);
+      }
+      bg.closePath();
+      bg.fillPath();
+    };
+    bg.fillStyle(0xffffff, 1);
+    hexAt(30);
+    bg.fillStyle(won ? 0xf7bd14 : 0x17151f, 1);
+    hexAt(26);
+    const icon = this.add
+      .text(0, 74, won ? '★' : '✕', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '24px',
+        color: won ? '#17151f' : '#ffffff',
+      })
+      .setOrigin(0.5);
+    const noteT = this.add
+      .text(0, 116, note, {
+        fontFamily: UI_FONT,
+        fontSize: '15px',
+        fontStyle: '700',
+        color: '#ffffff',
+        stroke: 'rgba(10,8,18,0.55)',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5);
+    bg.setAlpha(0);
+    icon.setAlpha(0);
+    noteT.setAlpha(0);
+
+    c.add([band, t, bg, icon, noteT]);
+    this.pin(c, 0.5, 0.5, 0, -14);
+    this.relayout(); // pin() only registers — place it now
+
+    if (REDUCED_MOTION) {
+      band.setX(0).setAngle(0);
+      t.setScale(1);
+      bg.setAlpha(1);
+      icon.setAlpha(1);
+      noteT.setAlpha(1);
+    } else {
+      this.tweens.add({ targets: band, x: 0, duration: 330, ease: 'Cubic.easeOut' });
+      this.tweens.add({ targets: t, scale: 1, duration: 320, delay: 150, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: [bg, icon, noteT], alpha: 1, duration: 220, delay: 380 });
+    }
+
+    this.time.delayedCall(REDUCED_MOTION ? 900 : 1400, () => {
+      this.tweens.add({
+        targets: c,
+        alpha: 0,
+        y: -40,
+        duration: 240,
+        onComplete: () => {
+          c.destroy();
+          this.hudItems = this.hudItems.filter((i) => i.obj !== (c as unknown as HudItem['obj']));
+        },
+      });
+    });
   }
 
   // ---------- fx helpers ----------
@@ -803,8 +900,7 @@ export class GameScene extends Phaser.Scene {
       this.floatText(runner.x, runner.y, 'JUJU BLOCKED IT!');
       return;
     }
-    if (this.mode === 'police') this.jail(runner);
-    else this.freeze(runner);
+    this.freeze(runner);
   }
 
   private freeze(runner: Sprite) {
@@ -839,41 +935,6 @@ export class GameScene extends Phaser.Scene {
     this.barkNear(runner, 'catch');
   }
 
-  /** Police & Thief — tagged runners get dragged to the jail cell */
-  private jail(runner: Sprite) {
-    const st = this.rState.get(runner)!;
-    st.frozen = true;
-    const body = runner.body as Body;
-    body.setVelocity(0, 0);
-    body.moves = false;
-
-    // slot them inside the cell
-    const jailedIdx = this.runners.filter((r) => this.rState.get(r)!.frozen).length - 1;
-    const { jail } = CONFIG;
-    runner.setPosition(
-      jail.x - 30 + (jailedIdx % 3) * 30,
-      jail.y - 14 + Math.floor(jailedIdx / 3) * 30,
-    );
-    runner.setTint(0x6b6660);
-    runner.setAlpha(0.85);
-
-    sfx.jail();
-    this.burst(runner.x, runner.y, 0x8a8a8a, 14, 180);
-    this.shake(110, 0.005);
-    this.hitstop(85);
-
-    if (st.isPlayer) {
-      this.playerFreezes++;
-      this.showBanner('JAILED!', 'Someone has to reach the BREAK OUT pad...');
-      this.shake(180, 0.009);
-    }
-
-    const idx = this.runners.indexOf(runner);
-    const dot = this.teamDots[idx];
-    if (dot) this.tweens.add({ targets: dot, scale: 3, duration: 150, yoyo: true });
-    this.barkNear(runner, 'catch');
-  }
-
   private thaw(runner: Sprite, rescuer?: Sprite) {
     const st = this.rState.get(runner)!;
     st.frozen = false;
@@ -881,15 +942,6 @@ export class GameScene extends Phaser.Scene {
     (runner.body as Body).moves = true;
     runner.clearTint();
     runner.setAlpha(1);
-
-    // freed runners spill out at the breakout pad in police mode
-    if (this.mode === 'police') {
-      const { pad } = CONFIG.jail;
-      runner.setPosition(
-        pad.x + Phaser.Math.Between(-16, 16),
-        pad.y + Phaser.Math.Between(-10, 10),
-      );
-    }
 
     if (st.iceBlock) {
       const ice = st.iceBlock;
@@ -927,7 +979,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       st.water++;
       if (st.isPlayer) {
-        this.floatText(runner.x, runner.y, type === 'key' ? 'JAIL KEY +1' : 'PURE WATER +1');
+        this.floatText(runner.x, runner.y, 'PURE WATER +1');
       }
     }
 
@@ -949,7 +1001,18 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     const now = this.time.now;
 
+    if (this.paused) {
+      if (
+        Phaser.Input.Keyboard.JustDown(this.keys.ESC) ||
+        Phaser.Input.Keyboard.JustDown(this.keys.SPACE)
+      ) {
+        this.resume();
+      }
+      return;
+    }
+
     if (this.phase === 'countdown') {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) return this.togglePause();
       this.countdownLeft -= delta / 1000;
       const shown = Math.ceil(this.countdownLeft);
       if (shown !== this.countdownShown && shown > 0) {
@@ -1008,7 +1071,17 @@ export class GameScene extends Phaser.Scene {
 
     const dt = delta / 1000;
     this.timeLeft -= dt;
-    if (this.timeLeft <= 0) return this.endGame(false);
+    if (this.timeLeft <= 0) {
+      // survive levels pay out for outlasting the clock. collect/rescue
+      // levels: the objective IS the job — clock zero without it fails.
+      const o = this.level?.objective;
+      const done =
+        !o ||
+        o.kind === 'survive' ||
+        (o.kind === 'collect' && this.objGot >= o.count) ||
+        (o.kind === 'rescue' && this.playerRescues >= o.count);
+      return this.endGame(!done, true);
+    }
 
     if (!this.reinforced && this.timeLeft <= this.roundSeconds * this.reinforceFrac) {
       this.spawnReinforcement();
@@ -1018,13 +1091,8 @@ export class GameScene extends Phaser.Scene {
     for (const r of this.runners) if (!this.rState.get(r)!.isPlayer) this.updateAiRunner(r, delta);
     for (const c of this.chasers) this.updateChaser(c, delta);
 
-    if (this.mode === 'ice') {
-      this.resolveThaws();
-      this.aiUseWater();
-    } else {
-      this.updateBreakout(dt);
-      this.aiUseKeys();
-    }
+    this.resolveThaws();
+    this.aiUseWater();
     this.updateEvents(dt);
     this.updateNepaLights();
     this.updateDanger();
@@ -1042,7 +1110,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.keys.R)) this.transitionTo('game', true);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.T) || Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) return this.togglePause();
+    if (Phaser.Input.Keyboard.JustDown(this.keys.T)) {
       this.transitionTo(this.level ? 'adventure' : 'title');
     }
     if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.useItem(this.player);
@@ -1054,7 +1123,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       if (restart) this.scene.restart();
-      else this.scene.start(key, key === 'adventure' && this.level ? { track: this.level.track } : undefined);
+      else this.scene.start(key);
     });
   }
 
@@ -1063,11 +1132,10 @@ export class GameScene extends Phaser.Scene {
     this.transitioning = true;
     // back to the road first — the map marches the marker to the next stop,
     // and the player taps the next node (PLAY) to actually enter the level
-    const track = this.level.track;
     const cleared = this.level.n;
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('adventure', { track, advance: cleared }),
+      this.scene.start('adventure', { advance: cleared }),
     );
   }
 
@@ -1081,6 +1149,12 @@ export class GameScene extends Phaser.Scene {
       this.cState.set(c, this.freshChaser(c));
       this.collideWithWorld(c);
       this.burst(p.x, p.y, CONFIG.colors.chaser, 20, 260);
+    }
+    // the danfo collider was built from a snapshot — re-arm it so the new
+    // squad doesn't ghost straight through the bus
+    if (this.bus) {
+      this.busCollider?.destroy();
+      this.busCollider = this.physics.add.collider(this.bus, [...this.runners, ...this.chasers]);
     }
     sfx.shortWhistle();
     this.showBanner('', 'MILITIA REINFORCEMENTS!');
@@ -1154,22 +1228,6 @@ export class GameScene extends Phaser.Scene {
           .set(r.x - chaser.x, r.y - chaser.y)
           .normalize()
           .rotate(Phaser.Math.FloatBetween(-0.45, 0.45));
-      } else if (this.mode === 'police') {
-        // head for the breakout pad when a mate is locked up
-        const someoneJailed = this.runners.some((o) => this.rState.get(o)!.frozen);
-        if (someoneJailed && wantsRescue) {
-          const { pad } = CONFIG.jail;
-          const padDist = Phaser.Math.Distance.Between(r.x, r.y, pad.x, pad.y);
-          if (padDist > pad.r * 0.55) {
-            st.aiDir.set(pad.x - r.x, pad.y - r.y).normalize();
-          } else {
-            st.aiDir.set(0, 0); // stand on the pad and channel
-          }
-        } else if (p?.seeksItems && this.seekItem(r, st)) {
-          /* seekItem set aiDir */
-        } else if (st.aiDir.lengthSq() === 0 || Math.random() < 0.25) {
-          st.aiDir.setToPolar(Math.random() * Math.PI * 2, 1);
-        }
       } else if (frozenAlly && wantsRescue) {
         st.aiDir.set(frozenAlly.x - r.x, frozenAlly.y - r.y).normalize();
       } else if (p?.seeksItems && this.seekItem(r, st)) {
@@ -1379,105 +1437,19 @@ export class GameScene extends Phaser.Scene {
     const st = this.rState.get(runner)!;
     if (st.frozen || st.water <= 0) return;
 
-    if (this.mode === 'ice') {
-      // pure water — thaw the nearest frozen mate from range
-      const frozen = this.nearestOf(
-        this.runners.filter((o) => this.rState.get(o)!.frozen),
-        runner,
-      );
-      if (
-        frozen &&
-        Phaser.Math.Distance.Between(runner.x, runner.y, frozen.x, frozen.y) <=
-          CONFIG.items.water.thawRange
-      ) {
-        st.water--;
-        this.thaw(frozen, runner);
-      }
-    } else {
-      // jail key — instant breakout when you're near the cell
-      const { jail } = CONFIG;
-      const jailed = this.runners.filter((o) => this.rState.get(o)!.frozen);
-      if (
-        jailed.length > 0 &&
-        Phaser.Math.Distance.Between(runner.x, runner.y, jail.x, jail.y) <=
-          CONFIG.items.key.jailRange
-      ) {
-        st.water--;
-        this.jailbreak(runner);
-      }
+    // pure water — thaw the nearest frozen mate from range
+    const frozen = this.nearestOf(
+      this.runners.filter((o) => this.rState.get(o)!.frozen),
+      runner,
+    );
+    if (
+      frozen &&
+      Phaser.Math.Distance.Between(runner.x, runner.y, frozen.x, frozen.y) <=
+        CONFIG.items.water.thawRange
+    ) {
+      st.water--;
+      this.thaw(frozen, runner);
     }
-  }
-
-  private aiUseKeys() {
-    for (const r of this.runners) {
-      const st = this.rState.get(r)!;
-      if (st.isPlayer || st.frozen || st.water <= 0) continue;
-      const { jail } = CONFIG;
-      const jailed = this.runners.filter((o) => this.rState.get(o)!.frozen);
-      if (
-        jailed.length > 0 &&
-        Phaser.Math.Distance.Between(r.x, r.y, jail.x, jail.y) <= CONFIG.items.key.jailRange
-      ) {
-        st.water--;
-        this.jailbreak(r);
-      }
-    }
-  }
-
-  /** Free runners on the pad channel a jailbreak; progress resets if it empties */
-  private updateBreakout(dt: number) {
-    const { jail } = CONFIG;
-    const jailed = this.runners.filter((r) => this.rState.get(r)!.frozen);
-    const onPad = this.runners.filter((r) => {
-      const st = this.rState.get(r)!;
-      return (
-        !st.frozen &&
-        Phaser.Math.Distance.Between(r.x, r.y, jail.pad.x, jail.pad.y) <= jail.pad.r
-      );
-    });
-
-    if (jailed.length === 0) {
-      this.breakoutProgress = 0;
-    } else if (onPad.length > 0) {
-      this.breakoutProgress += (dt * onPad.length) / (jail.channelMs / 1000);
-      if (this.breakoutProgress >= 1) this.jailbreak(onPad[0]);
-    } else {
-      this.breakoutProgress = Math.max(0, this.breakoutProgress - dt * 0.6);
-    }
-
-    // progress ring above the pad
-    this.padGfx.clear();
-    this.padGfx.lineStyle(3, 0x4dd0e1, 0.8);
-    this.padGfx.strokeCircle(jail.pad.x, jail.pad.y, jail.pad.r);
-    this.padGfx.fillStyle(0x4dd0e1, 0.12);
-    this.padGfx.fillCircle(jail.pad.x, jail.pad.y, jail.pad.r);
-    if (this.breakoutProgress > 0) {
-      this.padGfx.lineStyle(5, 0x7fd8f0, 1);
-      this.padGfx.beginPath();
-      this.padGfx.arc(
-        jail.pad.x,
-        jail.pad.y,
-        jail.pad.r + 7,
-        -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * Math.min(1, this.breakoutProgress),
-      );
-      this.padGfx.strokePath();
-    }
-  }
-
-  private jailbreak(rescuer?: Sprite) {
-    this.breakoutProgress = 0;
-    sfx.breakout();
-    const { pad } = CONFIG.jail;
-    this.burst(pad.x, pad.y, 0x7fd8f0, 24, 280);
-    this.shake(160, 0.006);
-    for (const r of this.runners) {
-      if (this.rState.get(r)!.frozen) this.thaw(r, rescuer);
-    }
-    if (this.chasers.length) {
-      this.bark(Phaser.Utils.Array.GetRandom(this.chasers), 'jailbreak');
-    }
-    this.announce('JAILBREAK!');
   }
 
   /** Vignette + heartbeat when a militia is closing on the player */
@@ -1640,10 +1612,12 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private endGame(militiaWon: boolean) {
+  private endGame(militiaWon: boolean, timedOut = false) {
     this.phase = 'over';
     sfx.stopMusic();
     this.vignette.setAlpha(0);
+    this.tweens.killTweensOf(this.countText);
+    this.countText.setText('').setAlpha(1).setScale(1);
 
     for (const s of [...this.runners, ...this.chasers]) {
       (s.body as Body).setVelocity(0, 0);
@@ -1653,7 +1627,7 @@ export class GameScene extends Phaser.Scene {
     const survived = Math.round(this.roundSeconds - Math.max(0, this.timeLeft));
     const rec = recordResult(!militiaWon, survived);
     this.lastResult = { won: !militiaWon, survived };
-    const caught = this.mode === 'police' ? 'Jailed' : 'Frozen';
+    const caught = 'Frozen';
     const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
     // touch devices get tappable buttons instead of key hints in the sub-line
     const isTouch = TouchControls.isTouchDevice();
@@ -1661,27 +1635,39 @@ export class GameScene extends Phaser.Scene {
     // dim the field so the result reads clean — screen space
     const { width, height } = this.scale;
     const dim = this.pin(
-      this.add.rectangle(0, 0, width * 1.1, height * 1.1, 0x081420, 0.6),
+      this.add.rectangle(0, 0, width * 3, height * 3, 0x081420, 0.6),
       0.5, 0.5,
     ).setDepth(18).setAlpha(0);
     this.tweens.add({ targets: dim, alpha: 1, duration: 400 });
 
+    // the FG ribbon gets the first beat; the detail banner + pills land after it
+    const landResult = (main: string, sub: string, won: boolean) => {
+      this.time.delayedCall(REDUCED_MOTION ? 950 : 1450, () => {
+        this.showBanner(main, sub);
+        this.showEndButtons(won);
+      });
+    };
+
     if (militiaWon) {
       sfx.lose();
-      this.showBanner(
-        this.level ? `LEVEL ${this.level.n} — CAUGHT` : 'MILITIA WINS',
+      this.playResultRibbon(false, timedOut);
+      landResult(
+        this.level
+          ? `LEVEL ${this.level.n} — ${timedOut ? 'OUT OF TIME' : 'CAUGHT'}`
+          : 'MILITIA WINS',
         this.level
           ? `${stats}${isTouch ? '' : '\nR — retry   T — the road'}`
           : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — run it back   T — title   S — share'}`,
+        false,
       );
       this.shake(250, 0.01);
     } else {
       sfx.win();
       let stars = 0;
       if (this.level) {
-        // ★ survive · ★★ at most one freeze/jail · ★★★ untouched
+        // ★ survive · ★★ at most one freeze · ★★★ untouched
         stars = this.playerFreezes === 0 ? 3 : this.playerFreezes === 1 ? 2 : 1;
-        recordLevel(this.level.track, this.level.n, stars as 1 | 2 | 3);
+        recordLevel(this.level.n, stars as 1 | 2 | 3);
         submitAdventureScore();
       }
       const finalLevel = this.level?.n === TOTAL_LEVELS;
@@ -1690,13 +1676,15 @@ export class GameScene extends Phaser.Scene {
             isTouch ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
           }`
         : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — play again   T — title   S — share'}`;
-      this.showBanner(
+      this.playResultRibbon(true, false);
+      landResult(
         finalLevel
           ? 'JOURNEY COMPLETE!'
           : this.level
             ? `LEVEL ${this.level.n} CLEAR ${'★'.repeat(stars)}`
             : 'RUNNERS WIN!',
         sub,
+        true,
       );
       for (let i = 0; i < 3; i++) {
         this.time.delayedCall(i * 180, () =>
@@ -1711,7 +1699,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.touch?.setActive(false); // pads off — the dashboard owns the taps now
-    this.showEndButtons(!militiaWon);
   }
 
   /** screen-space hit test for dashboard pills — reliable on real touch hardware */
@@ -1729,56 +1716,215 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** same manual hit test for the pause menu's pills */
+  private onPauseTap(p: Phaser.Input.Pointer) {
+    if (!this.paused) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    for (const b of this.pauseHitZones) {
+      const sx = b.ax * w + b.ox;
+      const sy = b.ay * h + b.oy;
+      if (Math.abs(p.x - sx) <= b.bw / 2 + 8 && Math.abs(p.y - sy) <= b.bh / 2 + 8) {
+        b.go();
+        return;
+      }
+    }
+  }
+
+  // ---------- pause — single-player only; net play never freezes ----------
+
+  private togglePause() {
+    if (this.phase === 'over' || this.transitioning || this.paused) return;
+    this.paused = true;
+    this.touch?.setActive(false); // pads off — the menu owns the taps
+    this.physics.pause();
+    this.time.paused = true; // freezes the event clock — no bus/NEPA/rain mid-pause
+    this.tweens.pauseAll(); // entity anims freeze; menu tweens added after are unaffected
+    this.buildPauseMenu();
+  }
+
+  private resume() {
+    if (!this.paused) return;
+    const gone = new Set<unknown>(this.pauseObjs);
+    for (const o of this.pauseObjs) o.destroy();
+    this.pauseObjs = [];
+    this.pauseHitZones = [];
+    this.hudItems = this.hudItems.filter((it) => !gone.has(it.obj));
+    this.paused = false;
+    this.physics.resume();
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.touch?.setActive(true);
+  }
+
+  /** pause card — a menu, so paper card + candy pills (unlike the banner-only result) */
+  private buildPauseMenu() {
+    const W = 330;
+    const H = 340;
+    const cy = -10;
+    const track = <T extends HudItem['obj']>(o: T, ax = 0.5, ay = 0.5, ox = 0, oy = 0): T => {
+      this.pin(o, ax, ay, ox, oy);
+      this.pauseObjs.push(o as unknown as { destroy: () => void });
+      return o;
+    };
+
+    const dim = this.add.graphics().setDepth(40);
+    dim.fillStyle(0x0a1420, 0.62).fillRect(-1600, -1200, 3200, 2400);
+    track(dim);
+    track(panel(this, -W / 2, cy - H / 2, W, H, { depth: 41 }), 0.5, 0.5, 0, 0);
+
+    track(
+      this.add
+        .text(0, 0, 'PAUSED', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '30px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setDepth(42)
+        .setShadow(0, 4, '#9c2160', 0, true, false),
+      0.5, 0.5, 0, cy - H / 2 + 46,
+    );
+    track(
+      this.add
+        .text(0, 0, 'take a breather — the militia can wait', {
+          fontFamily: UI_FONT,
+          fontSize: '12px',
+          fontStyle: '600',
+          color: '#7a8a99',
+        })
+        .setOrigin(0.5)
+        .setDepth(42),
+      0.5, 0.5, 0, cy - H / 2 + 72,
+    );
+
+    const bw = 210;
+    const bh = 46;
+    const lip = 6;
+    const pill = (
+      oy: number,
+      label: string,
+      fill: number,
+      go: () => void,
+      inkText = true,
+    ) => {
+      const c = this.add.container(0, 0).setDepth(42);
+      const g = this.add.graphics();
+      g.fillStyle(shade(fill, -38), 1).fillRoundedRect(-bw / 2, -bh / 2 - 2, bw, bh, bh / 2);
+      g.fillStyle(fill, 1).fillRoundedRect(-bw / 2, -bh / 2 - lip, bw, bh - 2, bh / 2);
+      g.fillStyle(0xffffff, 0.2).fillRoundedRect(-bw / 2 + 7, -bh / 2 - lip + 4, bw - 14, bh * 0.34, bh / 4);
+      const t = this.add
+        .text(0, -lip / 2 - 1, label, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '15px',
+          color: inkText ? '#1c1626' : '#f5efe0',
+        })
+        .setOrigin(0.5);
+      c.add([g, t]);
+      track(c, 0.5, 0.5, 0, oy);
+      this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy, bw, bh, go });
+    };
+
+    pill(cy - 34, 'RESUME', UI.danfo, () => this.resume());
+    pill(cy + 22, 'RESTART', 0x29b6f6, () => {
+      this.resume();
+      this.transitionTo('game', true);
+    }, false);
+    pill(cy + 78, this.level ? 'QUIT — THE ROAD' : 'QUIT — TITLE', UI.ink, () => {
+      this.resume();
+      this.transitionTo(this.level ? 'adventure' : 'title');
+    }, false);
+
+    // sound toggle — a live chip reflecting sfx mute state
+    const sg = this.add.graphics().setDepth(42);
+    const st = this.add
+      .text(0, -1, '', { fontFamily: DISPLAY_FONT, fontSize: '13px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(42);
+    const sw = 130;
+    const sh = 32;
+    const soy = cy + 128;
+    const drawSound = () => {
+      const on = !sfx.isMuted;
+      sg.clear();
+      sg.fillStyle(0x0a0710, 1).fillRoundedRect(-sw / 2, -sh / 2 + 2, sw, sh, sh / 2);
+      sg.fillStyle(on ? 0x29b6f6 : 0x5a7184, 1).fillRoundedRect(-sw / 2, -sh / 2 - 2, sw, sh - 2, sh / 2);
+      sg.fillStyle(0xffffff, 0.18).fillRoundedRect(-sw / 2 + 6, -sh / 2 - 2 + 3, sw - 12, sh * 0.32, sh / 4);
+      st.setText(on ? 'SOUND ON' : 'SOUND OFF');
+    };
+    drawSound();
+    track(sg, 0.5, 0.5, 0, soy);
+    track(st, 0.5, 0.5, 0, soy - 2);
+    this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy: soy, bw: sw, bh: sh, go: () => { sfx.toggleMute(); drawSound(); } });
+
+    track(
+      this.add
+        .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
+        .setOrigin(1, 1)
+        .setDepth(42),
+      0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
+    );
+    this.relayout(); // pinned post-create — place everything now
+  }
+
   /** touch-first result dashboard — big tappable pills under the banner */
   private showEndButtons(won: boolean) {
     this.hudItems = this.hudItems.filter((it) => !this.endButtons.includes(it.obj as Phaser.GameObjects.Container));
     for (const c of this.endButtons) c.destroy();
     this.endButtons = [];
     this.endHitZones = [];
+    // no result card — the banner + pills float over the dimmed field,
+    // like Fall Guys' ELIMINATED/QUALIFIED screens. Banner keeps its
+    // pink signature; the sub-line stays white-on-dark for the dim.
+    this.bannerText.setShadow(0, 0, '#000000', 0, false, false);
+    this.subBannerText.setColor('#f5efe0').setStroke('#081420', 5);
     const L = this.level;
     const canNext = !!L && won && L.n < TOTAL_LEVELS;
-    const acts: { label: string; short?: string; fill: number; edge: number; go: () => void }[] = [];
+    const acts: { label: string; short?: string; fill: number; inkText?: boolean; go: () => void }[] = [];
     if (canNext) {
       acts.push({
         label: 'NEXT MISSION ▶',
         short: 'NEXT ▶',
-        fill: 0x2a5c3f,
-        edge: 0x4ecb71,
+        fill: UI.leaf,
+        inkText: true,
         go: () => this.transitionToNextLevel(),
       });
     } else {
       acts.push({
         label: won ? 'PLAY AGAIN' : 'RETRY',
-        fill: won ? 0x2a5c3f : 0x6e2f2f,
-        edge: won ? 0x4ecb71 : 0xe08a80,
+        fill: won ? UI.leaf : UI.danger,
+        inkText: won,
         go: () => this.transitionTo('game', true),
       });
     }
     // always offer the road — classic players should funnel into the campaign
     acts.push({
       label: 'THE ROAD',
-      fill: 0x1d4a66,
-      edge: 0x4dd0e1,
+      fill: UI.danfo,
+      inkText: true,
       go: () => this.transitionTo('adventure'),
     });
-    acts.push({ label: 'SHARE', fill: 0x233447, edge: 0x7d93a5, go: () => this.shareScore(false) });
+    acts.push({ label: 'SHARE', fill: UI.ink, go: () => this.shareScore(false) });
 
     // fit the row inside the viewport; shrink pills before they'd clip
     const gap = 12;
     const bw = Phaser.Math.Clamp((this.scale.width - 60 - gap * (acts.length - 1)) / acts.length, 104, 190);
     const bh = 50;
+    const lip = 7;
     const total = acts.length * bw + gap * (acts.length - 1);
     acts.forEach((b, i) => {
       const ox = -total / 2 + i * (bw + gap) + bw / 2;
       const c = this.add.container(0, 0).setDepth(21).setAlpha(0);
       const g = this.add.graphics();
-      g.fillStyle(b.fill, 0.96).fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 14);
-      g.lineStyle(2, b.edge, 0.85).strokeRoundedRect(-bw / 2 + 1, -bh / 2 + 1, bw - 2, bh - 2, 13);
+      // lip + candy body + sheen — same language as the menu pills
+      g.fillStyle(shade(b.fill, -38), 1).fillRoundedRect(-bw / 2, -bh / 2 - 2, bw, bh, bh / 2);
+      g.fillStyle(b.fill, 1).fillRoundedRect(-bw / 2, -bh / 2 - lip, bw, bh - 2, bh / 2);
+      g.fillStyle(0xffffff, 0.2).fillRoundedRect(-bw / 2 + 7, -bh / 2 - lip + 4, bw - 14, bh * 0.34, bh / 4);
       const t = this.add
-        .text(0, 0, bw < 150 && b.short ? b.short : b.label, {
+        .text(0, -lip / 2 - 1, bw < 150 && b.short ? b.short : b.label, {
           fontFamily: DISPLAY_FONT,
           fontSize: bw < 150 ? '13px' : '15px',
-          color: '#f5efe0',
+          color: b.inkText ? '#1c1626' : '#f5efe0',
         })
         .setOrigin(0.5);
       c.add([g, t]);
@@ -1794,8 +1940,7 @@ export class GameScene extends Phaser.Scene {
   private shareScore(whatsapp: boolean) {
     if (!this.lastResult) return;
     const { won, survived } = this.lastResult;
-    const modeTxt = this.mode === 'police' ? 'POLICE & THIEF' : 'ICE & WATER';
-    const where = this.level ? `level ${this.level.n} of the adventure` : `${this.diff.label} — ${modeTxt}`;
+    const where = this.level ? `level ${this.level.n} of the adventure` : `${this.diff.label} — ICE & WATER`;
     const text = won
       ? `My crew survived ${survived}s on ${where} in ICE 'N' WATER 🔥 Think you can do better?`
       : `The militia got us after ${survived}s on ${where} in ICE 'N' WATER. Out for revenge 😤`;
@@ -1825,15 +1970,13 @@ export class GameScene extends Phaser.Scene {
         `TIME ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`,
       );
       if (secs <= 10) {
-        this.timeText.setColor('#ff6b6b');
+        this.timeText.setColor('#d63a4a');
         this.tweens.add({ targets: this.timeText, scale: 1.3, duration: 110, yoyo: true });
       }
     }
     const lvl = this.level ? `LVL ${this.level.n} · ` : '';
     this.infoText.setText(
-      this.mode === 'police'
-        ? `${lvl}CREW ${this.runners.length - frozenCount} free · ${frozenCount} jailed`
-        : `${lvl}CREW ${this.runners.length - frozenCount} free`,
+      `${lvl}CREW ${this.runners.length - frozenCount} free${frozenCount ? ` · ${frozenCount} frozen` : ''}`,
     );
 
     if (this.level) {
@@ -1860,7 +2003,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (st.charm) held.push('JUJU CHARM');
     if (st.water > 0) {
-      held.push(this.mode === 'police' ? `KEY x${st.water} (E)` : `WATER x${st.water} (E)`);
+      held.push(`WATER x${st.water} (E)`);
     }
     this.itemText.setText(held.join('  |  '));
 

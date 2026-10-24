@@ -37,10 +37,9 @@ export function generateLayout(seed: number): ObstacleRect[] {
         Math.abs(r.x - x) * 2 < r.w + rw + GAP * 2 &&
         Math.abs(r.y - y) * 2 < r.h + rh + GAP * 2,
     );
-  // keep-out: jail corner (top-left) and the police muster line (bottom-center)
+  // keep-out: the chaser muster line (bottom-center) stays clear for spawns
   const keepOut = (x: number, y: number, rw: number, rh: number) =>
-    (x - rw / 2 < 380 && y - rh / 2 < 360) ||
-    (y + rh / 2 > height - 200 && Math.abs(x - width / 2) < 380);
+    y + rh / 2 > height - 200 && Math.abs(x - width / 2) < 380;
   const inside = (x: number, y: number, rw: number, rh: number) =>
     x - rw / 2 > wall + 60 &&
     x + rw / 2 < width - wall - 60 &&

@@ -6,6 +6,7 @@ import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { NetScene } from './scenes/NetScene';
 import { AdventureScene } from './scenes/AdventureScene';
+import { promptModal } from './fgui';
 
 // mobile hygiene: no long-press menus, no pull-to-refresh scroll
 document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -50,16 +51,25 @@ const boot = () =>
 
 const go = () => {
   const game = boot();
+  // drop the boot splash once Phaser is live — covers every scene entry,
+  // including the dev hash jumps below that skip the title screen
+  game.events.once(Phaser.Core.Events.READY, () => {
+    document.getElementById('boot')?.remove();
+    // dev shortcut — #adventure / #advance:5 / #gamelevel:3 / #lobby.
+    // Route through the title scene's own plugin so `start` stops it — a bare
+    // game.scene.start leaves the title running behind (its DOM hero leaks).
+    const jumpTo = (key: string, data?: object) =>
+      game.scene.getScene('title').scene.start(key, data);
+    const [jump, arg] = location.hash.slice(1).split(':');
+    if (jump === 'adventure') jumpTo('adventure');
+    else if (jump === 'advance')
+      jumpTo('adventure', { advance: Number(arg) || undefined });
+    else if (jump === 'gamelevel')
+      jumpTo('game', { adventure: levelDef(Number(arg) || 1) });
+    else if (jump) jumpTo(jump);
+  });
   (window as unknown as { __game: Phaser.Game }).__game = game; // e2e/CDP hook
-  // dev shortcut — #adventure / #adventure:police / #advance:ice:5 / #gamelevel:ice:3 / #lobby
-  const [jump, arg, arg2] = location.hash.slice(1).split(':');
-  const track = arg === 'police' ? 'police' : 'ice';
-  if (jump === 'adventure') game.scene.start('adventure', { track });
-  else if (jump === 'advance')
-    game.scene.start('adventure', { track, advance: Number(arg2) || undefined });
-  else if (jump === 'gamelevel')
-    game.scene.start('game', { adventure: levelDef(track, Number(arg2) || 1) });
-  else if (jump) game.scene.start(jump);
+  (window as unknown as { __ui: { promptModal: typeof promptModal } }).__ui = { promptModal }; // e2e modal probe
 };
 
 if (document.fonts?.ready) {

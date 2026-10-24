@@ -79,11 +79,10 @@ let lastScore = -1;
 
 /** fire-and-forget — call after a level is cleared; only posts on a new best unless forced */
 export function submitAdventureScore(force = false) {
-  // the board counts both campaigns — 1000 levels of road
-  const ice = adventureProgress('ice');
-  const cop = adventureProgress('police');
-  const level = (ice.unlocked - 1) + (cop.unlocked - 1);
-  const stars = totalStars(ice) + totalStars(cop);
+  const prog = adventureProgress();
+  const level = prog.unlocked - 1;
+  if (level <= 0) return; // nothing cleared yet — don't post an empty run
+  const stars = totalStars(prog);
   const score = pack(level, stars);
   const now = Date.now();
   if (!force && (now - lastSubmit < 2500 || score <= lastScore)) return;

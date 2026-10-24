@@ -2,8 +2,8 @@
 // The game never sees Upstash credentials: this worker holds them,
 // validates every score, rate-limits by IP, and writes GT-only.
 
-const MAX_LEVEL = 500;
-const MAX_STARS = 1500; // 500 levels × 3
+const MAX_LEVEL = 1000; // levels cleared across BOTH campaigns (2 × 500)
+const MAX_STARS = 3000; // 1000 levels × 3
 const SUBMITS_PER_HOUR = 30; // generous — real clients post ~1 per level win
 
 const cors = {

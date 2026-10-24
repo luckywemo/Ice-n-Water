@@ -1,6 +1,6 @@
 import { Schema, MapSchema, type } from '@colyseus/schema';
 
-export type Team = 'police' | 'thief' | '';
+export type Team = 'ice' | 'water' | '';
 export type LobbyMode = 'infection' | 'rounds';
 export type Phase = 'lobby' | 'playing' | 'intermission' | 'ended';
 
@@ -12,7 +12,7 @@ export class Player extends Schema {
   @type('number') x = 0;
   @type('number') y = 0;
   @type('number') angle = 0;
-  // game rule state (used by milestone 3 — tags/jail)
+  // frozen/caught — set by the server under the 'rounds' ruleset
   @type('boolean') out = false;
 }
 
@@ -25,8 +25,8 @@ export class LobbyState extends Schema {
   // game rules (milestone 3)
   @type('number') timeLeft = 0;        // seconds left in the round
   @type('number') intermissionLeft = 0; // countdown between rounds
-  @type('number') policeScore = 0;
-  @type('number') thiefScore = 0;
+  @type('number') iceScore = 0;
+  @type('number') waterScore = 0;
   @type('string') message = '';        // event feed — client pops banners on change
   @type('string') winner = '';
   @type('number') mapSeed = 0;        // per-round layout — clients generate the same map

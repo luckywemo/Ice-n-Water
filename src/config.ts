@@ -49,18 +49,7 @@ export const CONFIG = {
     slippers: { count: 3, speedMult: 1.4, durationMs: 6000 },
     charm: { count: 2 },
     water: { count: 2, thawRange: 190 },
-    key: { count: 2, jailRange: 230 }, // police mode — instant jailbreak near the cell
     respawnMs: 8000,
-  },
-
-  // police & thief mode — the jail cell top-left of the yard
-  jail: {
-    x: 118,
-    y: 108,
-    w: 124,
-    h: 92,
-    pad: { x: 118, y: 246, r: 36 }, // stand here to break mates out
-    channelMs: 2400,
   },
 
   // named crew — each AI mate gets a personality
@@ -83,9 +72,8 @@ export const CONFIG = {
       'I dey come o!',
       'No hiding today!',
     ],
-    catch: ['ONE DOWN!', 'Dem don catch you!', 'Enter cell!', 'Gotcha!'],
+    catch: ['ONE DOWN!', 'Dem don catch you!', 'FROZEN SOLID!', 'Gotcha!'],
     dodge: ['AH! HOW?!', 'WHO TOUCH YOU?!', 'You get luck today!', 'Arrgh!'],
-    jailbreak: ['WHO OPEN CELL?!', 'Dem don free them o!', 'Heeeeey! Come back!'],
   },
 
   // random mid-round chaos
@@ -123,6 +111,5 @@ export const CONFIG = {
     slippers: 0xffd54a,
     charm: 0xb388ff,
     water: 0x4dd0e1,
-    key: 0xf0c04a,
   },
 } as const;

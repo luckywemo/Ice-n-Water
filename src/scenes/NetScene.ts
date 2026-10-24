@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
-import { Client, Room, getStateCallbacks } from 'colyseus.js';
+import { Client, Room, getStateCallbacks } from '@colyseus/sdk';
 import { SERVER_URL } from '../net';
 import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade } from '../ui';
 import { TouchControls } from '../mobile';
 import { loadPicks } from '../meta';
 import { generateLayout, seededRng } from '../mapgen';
@@ -27,8 +27,8 @@ type NetState = {
   round: number;
   timeLeft: number;
   intermissionLeft: number;
-  policeScore: number;
-  thiefScore: number;
+  iceScore: number;
+  waterScore: number;
   message: string;
   winner: string;
   mapSeed: number;
@@ -49,15 +49,15 @@ const SEND_EVERY_MS = 66; // ~15 pos updates per second
 const SPEED = 205;
 
 /**
- * Milestone-2 net sandbox: everyone runs around the same yard.
- * You move your own sprite; the server relays it; remote players
- * render from state. Tag/rules land in milestone 3.
+ * Online match — the server is authoritative for rules (tags, freezes,
+ * team conversions, round wins). Clients report positions; everyone
+ * renders remote players from state with lerp + team/frozen overlays.
  */
 export class NetScene extends Phaser.Scene {
   private room!: Room<NetState>;
   private me!: Phaser.Physics.Arcade.Sprite;
   private meLabel!: Phaser.GameObjects.Text;
-  private myTeam = 'thief';
+  private myTeam = 'water';
   private remotes = new Map<string, RemoteSprite>();
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private touch: TouchControls | null = null;
@@ -112,10 +112,10 @@ export class NetScene extends Phaser.Scene {
     if (this.room.state.mapSeed) this.rebuildMap(this.room.state.mapSeed);
 
     const myId = this.room.sessionId;
-    this.myTeam = this.room.state.players?.get(myId)?.team ?? 'thief';
+    this.myTeam = this.room.state.players?.get(myId)?.team ?? 'water';
 
-    // my sprite — police hunt red, thieves run green/blue
-    const myTex = this.myTeam === 'police' ? 'chaser' : 'player';
+    // my sprite — ice hunts, water runs
+    const myTex = this.myTeam === 'ice' ? 'chaser' : 'player';
     this.me = this.physics.add.sprite(
       arena.width / 2 + Phaser.Math.Between(-80, 80),
       arena.height / 2 + Phaser.Math.Between(-80, 80),
@@ -170,32 +170,32 @@ export class NetScene extends Phaser.Scene {
         .text(0, 0, `${this.room.state.mode.toUpperCase()} — room ${this.room.roomId}`, {
           fontFamily: DISPLAY_FONT,
           fontSize: '15px',
-          color: '#7fd8f0',
+          color: '#0f7fb8',
         })
         .setDepth(10),
       0, 0, 28, 14,
     );
     this.infoText = this.pin(
-      this.add.text(0, 0, '', { fontFamily: UI_FONT, fontSize: '14px', color: '#9db4c4' }).setDepth(10),
+      this.add.text(0, 0, '', { fontFamily: UI_FONT, fontSize: '14px', fontStyle: '600', color: '#5a7184' }).setDepth(10),
       0, 0, 28, 40,
     );
     this.timeText = this.pin(
       this.add
-        .text(0, 0, '', { fontFamily: DISPLAY_FONT, fontSize: '20px', color: '#f5efe0' })
+        .text(0, 0, '', { fontFamily: DISPLAY_FONT, fontSize: '20px', color: '#1c2a3a' })
         .setOrigin(1, 0)
         .setDepth(10),
       0, 0, 396, 16,
     );
     this.scoreText = this.pin(
       this.add
-        .text(0, 0, '', { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#9db4c4' })
+        .text(0, 0, '', { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#5a7184' })
         .setOrigin(1, 0)
         .setDepth(10),
       0, 0, 396, 44,
     );
     this.pin(
       this.add
-        .text(0, 0, 'police tag thieves · mates thaw the frozen · esc — leave', {
+        .text(0, 0, 'ice freezes water · mates thaw the frozen · esc — leave', {
           fontFamily: UI_FONT,
           fontSize: '13px',
           color: '#4a3f2e',
@@ -272,10 +272,10 @@ export class NetScene extends Phaser.Scene {
     const g = this.minimap;
 
     g.clear();
-    g.fillStyle(0x081420, 0.62);
-    g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 8);
-    g.lineStyle(2, UI.ice, 0.3);
-    g.strokeRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 8);
+    g.fillStyle(UI.ink, 0.85);
+    g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
+    g.lineStyle(2, UI.rim, 0.5);
+    g.strokeRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
 
     g.fillStyle(0x4a3f2e, 0.9);
     for (const r of this.obstacleRects) {
@@ -285,7 +285,7 @@ export class NetScene extends Phaser.Scene {
     const myId = this.room.sessionId;
     this.room.state.players?.forEach((p, id) => {
       if (id === myId) return;
-      const color = p.team === 'police' ? CONFIG.colors.chaser : p.out ? CONFIG.colors.frozen : CONFIG.colors.runner;
+      const color = p.team === 'ice' ? CONFIG.colors.chaser : p.out ? CONFIG.colors.frozen : CONFIG.colors.runner;
       g.fillStyle(color, 0.95);
       g.fillCircle(x0 + p.x * sx, y0 + p.y * sy, 2.4);
     });
@@ -309,8 +309,8 @@ export class NetScene extends Phaser.Scene {
     // ── team conversion (infection) ──────────────────────────
     if (myState && myState.team && myState.team !== this.myTeam) {
       this.myTeam = myState.team;
-      this.me.setTexture(this.myTeam === 'police' ? 'chaser' : 'player');
-      if (this.myTeam === 'police') this.banner("YOU'RE POLICE NOW — go hunt!", '#e84848');
+      this.me.setTexture(this.myTeam === 'ice' ? 'chaser' : 'player');
+      if (this.myTeam === 'ice') this.banner("YOU'RE ICE NOW — go freeze them!", '#e84848');
     }
 
     // ── round respawn — server scattered everyone ────────────
@@ -323,7 +323,7 @@ export class NetScene extends Phaser.Scene {
       for (const [, r] of this.remotes) r.ice?.setVisible(false);
     }
 
-    // ── frozen overlay on me ─────────────────────────────────
+    // ── frozen overlay on me ──────────────────────────────────
     if (frozen !== (this.myIce?.visible ?? false)) {
       this.myIce ??= this.add.image(this.me.x, this.me.y, 'iceblock').setDepth(7);
       this.myIce.setVisible(frozen);
@@ -371,7 +371,7 @@ export class NetScene extends Phaser.Scene {
       r.sprite.setDepth(2 + r.sprite.y * 0.002);
       r.label.setPosition(r.sprite.x, r.sprite.y - 24);
       // team flip live (infection conversion)
-      const tex = p.team === 'police' ? 'chaser' : 'runner';
+      const tex = p.team === 'ice' ? 'chaser' : 'runner';
       if (r.sprite.texture.key !== tex) r.sprite.setTexture(tex);
       // frozen overlay
       if (p.out !== (r.ice?.visible ?? false)) {
@@ -384,20 +384,20 @@ export class NetScene extends Phaser.Scene {
     this.drawMinimap();
 
     // ── HUD ──────────────────────────────────────────────────
-    const counts = { police: 0, thief: 0 };
+    const counts = { ice: 0, water: 0 };
     s.players?.forEach((p) => {
-      if (p.team === 'police') counts.police++;
-      else if (!p.out) counts.thief++;
+      if (p.team === 'ice') counts.ice++;
+      else if (!p.out) counts.water++;
     });
     this.infoText.setText(
-      `${counts.police} police / ${counts.thief} thieves free${counts.thief === 0 && counts.police === 0 ? ` · ${s.players?.size ?? 0} players` : ''}`,
+      `${counts.ice} ice / ${counts.water} water free${counts.water === 0 && counts.ice === 0 ? ` · ${s.players?.size ?? 0} players` : ''}`,
     );
     this.timeText.setText(
       s.phase === 'intermission' ? `next in ${Math.ceil(s.intermissionLeft)}` : this.fmtTime(s.timeLeft),
     );
-    this.timeText.setColor(s.timeLeft < 10 && playing ? '#ff8a80' : '#f5efe0');
+    this.timeText.setColor(s.timeLeft < 10 && playing ? '#e84848' : '#1c2a3a');
     this.scoreText.setText(
-      s.mode === 'rounds' ? `ROUND ${s.round} · POLICE ${s.policeScore} — ${s.thiefScore} THIEVES` : '',
+      s.mode === 'rounds' ? `ROUND ${s.round} · ICE ${s.iceScore} — ${s.waterScore} WATER` : '',
     );
 
     // ── server message feed → banners ────────────────────────
@@ -462,34 +462,47 @@ export class NetScene extends Phaser.Scene {
     const layer = this.pin(this.add.container(0, 0).setDepth(30), 0, 0);
     this.endLayer = layer;
 
-    layer.add(this.add.rectangle(0, 0, width * 1.1, height * 1.1, 0x000000, 0.62).setOrigin(0));
+    layer.add(this.add.rectangle(-width, -height, width * 3, height * 3, 0x000000, 0.62).setOrigin(0));
+    // result card — same paper panel as the solo end card
+    const cw = 560;
+    const ch = 330;
+    layer.add(panel(this, width / 2 - cw / 2, height / 2 - ch / 2, cw, ch, { alpha: 0.97 }));
     layer.add(
       this.add
-        .text(width / 2, height / 2 - 80, s.winner === 'police' ? 'POLICE WIN' : 'THIEVES WIN', {
+        .text(width / 2, height / 2 - 80, s.winner === 'ice' ? 'ICE WINS' : 'WATER WINS', {
           fontFamily: DISPLAY_FONT,
           fontSize: '52px',
-          color: s.winner === 'police' ? '#e84848' : '#7fd8f0',
-          stroke: '#081420',
-          strokeThickness: 8,
+          color: s.winner === 'ice' ? '#e84848' : '#0f7fb8',
         })
-        .setOrigin(0.5),
+        .setOrigin(0.5)
+        .setShadow(0, 4, '#d8cfb8', 0, true, false),
     );
     layer.add(
       this.add
         .text(width / 2, height / 2 - 14, s.message, {
           fontFamily: UI_FONT,
           fontSize: '18px',
-          color: '#9db4c4',
+          color: '#5a7184',
         })
         .setOrigin(0.5),
     );
 
+    // lipped pills drawn at the hit rects — same language as menu buttons
+    const drawPill = (cx: number, cy: number, w: number, h: number, fill: number) => {
+      const pg = this.add.graphics();
+      const lip = 7;
+      pg.fillStyle(shade(fill, -38), 1).fillRoundedRect(cx - w / 2, cy - h / 2 - 2, w, h, h / 2);
+      pg.fillStyle(fill, 1).fillRoundedRect(cx - w / 2, cy - h / 2 - lip, w, h - 2, h / 2);
+      pg.fillStyle(0xffffff, 0.2).fillRoundedRect(cx - w / 2 + 7, cy - h / 2 - lip + 4, w - 14, h * 0.34, h / 4);
+      layer.add(pg);
+    };
     const isHost = this.room.sessionId === s.host;
+    if (isHost) drawPill(width / 2, height / 2 + 53, 230, 50, UI.leaf);
     const again = this.add
-      .text(width / 2, height / 2 + 52, isHost ? 'PLAY AGAIN — space / tap' : 'waiting for host to rematch…', {
+      .text(width / 2, height / 2 + 49, isHost ? 'PLAY AGAIN  (space)' : 'waiting for host to rematch…', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '18px',
-        color: isHost ? '#f5efe0' : '#5a7184',
+        fontSize: '17px',
+        color: isHost ? '#1c1626' : '#5a7184',
       })
       .setOrigin(0.5);
     layer.add(again);
@@ -499,11 +512,12 @@ export class NetScene extends Phaser.Scene {
         if (this.room.state.phase === 'ended') this.room.send('restart');
       });
     }
+    drawPill(width / 2, height / 2 + 104, 190, 46, UI.ink);
     const leaveBtn = this.add
-      .text(width / 2, height / 2 + 104, 'LEAVE — esc / tap', {
+      .text(width / 2, height / 2 + 100, 'LEAVE  (esc)', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '16px',
-        color: '#9db4c4',
+        fontSize: '15px',
+        color: '#f5efe0',
       })
       .setOrigin(0.5)
       .setPadding(14, 10, 14, 10);
@@ -549,7 +563,7 @@ export class NetScene extends Phaser.Scene {
 
   private spawnRemote(p: NetPlayer, id: string) {
     if (id === this.room.sessionId || this.remotes.has(id)) return;
-    const sprite = this.physics.add.sprite(p.x, p.y, p.team === 'police' ? 'chaser' : 'runner');
+    const sprite = this.physics.add.sprite(p.x, p.y, p.team === 'ice' ? 'chaser' : 'runner');
     (sprite.body as Body).setCircle(CONFIG.runner.radius + 2);
     for (const w of this.wallBodies) this.physics.add.collider(sprite, w);
     this.physics.add.collider(sprite, this.obstacleGroup);
