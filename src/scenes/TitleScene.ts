@@ -529,7 +529,7 @@ export class TitleScene extends Phaser.Scene {
   private buildSettingsCard(vw: number, vh: number, isTouch: boolean) {
     const W = 620;
     const H = isTouch ? 380 : 460;
-    const cx = vw / 2;
+    const cx = vw * 0.4;
     const cy = vh * 0.52;
     const top = cy - H / 2;
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
@@ -552,10 +552,10 @@ export class TitleScene extends Phaser.Scene {
     field.fillStyle(0x9db2ef, 1).fillRect(-vw, -vh, vw * 3, vh * 3);
     field.lineStyle(3, 0xffffff, 0.08);
     for (let r = 70; r < vw * 1.1; r += 74)
-      field.strokeCircle(vw * 0.13, vh * 0.55, r);
+      field.strokeCircle(vw * 0.86, vh * 0.55, r);
     field.lineStyle(2, 0xffffff, 0.05);
     for (let r = 80; r < vw * 0.9; r += 96)
-      field.strokeCircle(vw * 0.92, vh * 0.06, r);
+      field.strokeCircle(vw * 0.08, vh * 0.06, r);
     // SETTINGS header tab — their top-left chamfered label, white-rimmed
     const tabPts = [
       { x: 0, y: 0 },
@@ -597,8 +597,8 @@ export class TitleScene extends Phaser.Scene {
       }
       card.add(this.add.image(gx, gy, key).setAlpha(0.92));
     };
-    gear(vw * 0.12, vh * 0.34, Math.min(vw, vh) * 0.14, 8);
-    gear(vw * 0.13, vh * 0.6, Math.min(vw, vh) * 0.085, 8);
+    gear(vw * 0.88, vh * 0.34, Math.min(vw, vh) * 0.14, 8);
+    gear(vw * 0.87, vh * 0.6, Math.min(vw, vh) * 0.085, 8);
     card.add(
       this.add
         .text(16, 23, 'SETTINGS', {
