@@ -1,6 +1,5 @@
-// Persistent meta: stats + last-picked mode/difficulty in localStorage.
+// Persistent meta: stats + last-picked difficulty in localStorage.
 
-export type Mode = 'ice' | 'police';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 // 'floating' — joystick appears where the thumb lands; 'sticky' — fixed spot
 export type JoyMode = 'floating' | 'sticky';
@@ -59,13 +58,12 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
   return s;
 }
 
-export function loadPicks(): { mode: Mode; difficulty: Difficulty; joy: JoyMode } {
+export function loadPicks(): { difficulty: Difficulty; joy: JoyMode } {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
     if (raw) {
       const p = JSON.parse(raw);
       return {
-        mode: p.mode === 'police' ? 'police' : 'ice',
         difficulty: ['easy', 'normal', 'hard'].includes(p.difficulty) ? p.difficulty : 'normal',
         joy: p.joy === 'sticky' ? 'sticky' : 'floating',
       };
@@ -73,12 +71,12 @@ export function loadPicks(): { mode: Mode; difficulty: Difficulty; joy: JoyMode 
   } catch {
     /* fall through */
   }
-  return { mode: 'ice', difficulty: 'normal', joy: 'floating' };
+  return { difficulty: 'normal', joy: 'floating' };
 }
 
-export function savePicks(mode: Mode, difficulty: Difficulty, joy: JoyMode = 'floating') {
+export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating') {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ mode, difficulty, joy }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy }));
   } catch {
     /* fine */
   }

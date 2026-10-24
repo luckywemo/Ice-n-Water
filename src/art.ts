@@ -45,6 +45,52 @@ export function makeTextures(scene: Phaser.Scene) {
   character('runner', colors.skin1, colors.runner);
   character('chaser', colors.skin3, colors.chaser, { uniform: true });
 
+  // podium hero — front-facing kid for the title stage (sign-painted flat)
+  // baked at 3x so it stays sharp at podium scale
+  g.clear();
+  const hx = 138; // character center-x inside the 276×384 canvas
+  const skin = colors.skin2;
+  const shirt = colors.player;
+  // sandals
+  g.fillStyle(0x1d1512, 1);
+  g.fillEllipse(hx - 42, 366, 66, 24);
+  g.fillEllipse(hx + 42, 366, 66, 24);
+  // legs
+  g.fillStyle(skin, 1);
+  g.fillRoundedRect(hx - 57, 276, 39, 84, 15);
+  g.fillRoundedRect(hx + 18, 276, 39, 84, 15);
+  // shorts
+  g.fillStyle(0x1c1626, 1);
+  g.fillRoundedRect(hx - 66, 222, 132, 72, 21);
+  // torso — player blue jersey with a chalk collar
+  g.fillStyle(shirt, 1);
+  g.fillRoundedRect(hx - 72, 108, 144, 132, 36);
+  g.fillStyle(0xf5efe0, 0.9);
+  g.fillRoundedRect(hx - 24, 108, 48, 21, 9);
+  // arms hanging easy
+  g.fillStyle(skin, 1);
+  g.fillEllipse(hx - 84, 174, 36, 90);
+  g.fillEllipse(hx + 84, 174, 36, 90);
+  // head
+  g.fillStyle(skin, 1);
+  g.fillCircle(hx, 60, 54);
+  // hair cap
+  g.fillStyle(0x1d1512, 1);
+  g.fillCircle(hx, 30, 45);
+  g.fillRect(hx - 45, 24, 90, 18);
+  // face — two dots + a grin
+  g.fillStyle(0x12090a, 1);
+  g.fillCircle(hx - 18, 60, 7.2);
+  g.fillCircle(hx + 18, 60, 7.2);
+  g.lineStyle(8, 0x12090a, 1);
+  g.beginPath();
+  g.arc(hx, 75, 21, Math.PI * 0.15, Math.PI * 0.85);
+  g.strokePath();
+  // danfo-yellow headband — the brand stripe
+  g.fillStyle(0xf2c531, 1);
+  g.fillRoundedRect(hx - 51, 18, 102, 21, 9);
+  g.generateTexture('hero', 276, 384);
+
   // soft drop shadow
   g.clear();
   g.fillStyle(0x000000, 0.28);
@@ -112,19 +158,6 @@ export function makeTextures(scene: Phaser.Scene) {
   g.fillCircle(118, 50, 9); // wheels
   g.generateTexture('bus', 150, 60);
 
-  // jail key — police mode item
-  g.clear();
-  g.fillStyle(0x2b2115, 1);
-  g.fillCircle(11, 11, 11);
-  g.fillStyle(0xf0c04a, 1);
-  g.fillCircle(11, 11, 9);
-  g.lineStyle(3, 0x2b2115, 1);
-  g.strokeCircle(8, 9, 3); // bow
-  g.lineBetween(10, 12, 17, 18); // shaft
-  g.lineBetween(14, 16, 17, 14); // teeth
-  g.lineBetween(15, 17.5, 18, 15.5);
-  g.generateTexture('key', 22, 22);
-
   // decor
   g.clear();
   g.lineStyle(5, 0x2e2a26, 1);
@@ -140,6 +173,7 @@ export function makeTextures(scene: Phaser.Scene) {
 
   // danger vignette — screen-space overlay, sized to the viewport
   const { width, height } = CONFIG.view;
+  if (scene.textures.exists('vignette')) return;
   const vt = scene.textures.createCanvas('vignette', width, height);
   if (vt) {
     const ctx = vt.getContext();

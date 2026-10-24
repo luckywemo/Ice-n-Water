@@ -27,21 +27,16 @@ export class Sfx {
     'No hiding today!': 'voice-no-hiding',
     'ONE DOWN!': 'voice-one-down',
     'Dem don catch you!': 'voice-dem-don-catch',
-    'Enter cell!': 'voice-enter-cell',
     'Gotcha!': 'voice-gotcha',
     // Ezinne (en-NG, female) — player cries + the announcer
     'AH! HOW?!': 'voice-ez-ah-how',
     'WHO TOUCH YOU?!': 'voice-ez-who-touch',
     'You get luck today!': 'voice-get-luck',
     'Arrgh!': 'voice-ez-arrgh',
-    'WHO OPEN CELL?!': 'voice-who-open-cell',
-    'Dem don free them o!': 'voice-dem-don-free',
-    'Heeeeey! Come back!': 'voice-heey-come-back',
     'DANFO!': 'voice-ez-danfo',
     'NEPA DON TAKE LIGHT!': 'voice-ez-nepa',
     'UP NEPA!': 'voice-ez-up-nepa',
     'RAIN': 'voice-ez-rain',
-    'JAILBREAK!': 'voice-ez-jailbreak',
     'MILITIA REINFORCEMENTS!': 'voice-reinforcements',
   };
 
@@ -156,19 +151,6 @@ export class Sfx {
   honk() {
     this.tone('square', 340, 340, 0.16, 0.18);
     this.tone('square', 430, 430, 0.22, 0.18, 0.1);
-  }
-
-  /** Jail door clangs shut */
-  jail() {
-    this.tone('square', 320, 140, 0.2, 0.2);
-    this.noise(0.18, 0.22, 1500, 300, 0.02);
-    this.tone('square', 180, 120, 0.3, 0.14, 0.12);
-  }
-
-  /** Jailbreak — mates are free */
-  breakout() {
-    [392, 523, 659, 784].forEach((f, i) => this.tone('triangle', f, f, 0.16, 0.16, i * 0.07));
-    this.noise(0.35, 0.14, 2500, 500, 0.15);
   }
 
   /** Rain burst */
