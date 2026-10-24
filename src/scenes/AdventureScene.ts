@@ -435,10 +435,10 @@ export class AdventureScene extends Phaser.Scene {
       const isFrontier = n === frontierN;
       const isMilestone = n % COLS === 0;
 
-      // drop base — the "card on a coaster" shadow
-      ctx.fillStyle = 'rgba(10,8,18,0.4)';
+      // drop base — the thick solid "card on a coaster" shadow from the ref
+      ctx.fillStyle = 'rgba(12,10,22,0.55)';
       ctx.beginPath();
-      ctx.roundRect(left + 5, top0 + 6, CARD_W, CARD_H, 14);
+      ctx.roundRect(left + 7, top0 + 10, CARD_W, CARD_H, 14);
       ctx.fill();
       // rim — fat white like theirs; the frontier card wears fat gold instead
       const rim = isFrontier ? '#ffc93c' : '#ffffff';
