@@ -122,11 +122,9 @@ export class AdventureScene extends Phaser.Scene {
     // ---- the rail: one baked strip per town — 10 tier cards + town label ----
     for (let r = 0; r < TOTAL_MILESTONES; r++) this.bakeStrip(r);
 
-    // ---- frontier marker — pulse ring + walker + YOU riding the live card ----
+    // ---- frontier marker — walker + YOU above the live card; the gold rim
+    //  already singles it out, a ring would ape the white progress line ----
     const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
-    const fRing = this.add
-      .circle(0, 0, CARD_W / 2 + 8)
-      .setStrokeStyle(4, 0xffffff, 0.95);
     const fWalker = this.add.sprite(0, -CARD_H / 2 - 26, 'player').setScale(0.8);
     const fYou = this.add
       .text(0, -CARD_H / 2 - 50, 'YOU', {
@@ -138,9 +136,8 @@ export class AdventureScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.frontier = this.add
-      .container(this.cardX(frontierN - 1), this.railY, [fRing, fWalker, fYou])
+      .container(this.cardX(frontierN - 1), this.railY, [fWalker, fYou])
       .setDepth(6);
-    this.tweens.add({ targets: fRing, alpha: 0.2, duration: 750, yoyo: true, repeat: -1 });
     this.tweens.add({
       targets: fWalker,
       alpha: 0.55,
