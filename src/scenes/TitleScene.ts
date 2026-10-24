@@ -634,22 +634,7 @@ export class TitleScene extends Phaser.Scene {
     cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
     card.add(cg);
 
-    // ✕ close-dot — same affordance as the prompt modal
-    const closeG = this.add.graphics();
-    closeG.fillStyle(0x0a0710, 0.55).fillCircle(cx + W / 2 - 24, top + 24, 13);
-    closeG.lineStyle(2.5, 0xffffff, 1).strokeCircle(cx + W / 2 - 24, top + 24, 13);
-    closeG.lineStyle(2.5, 0xffffff, 1);
-    closeG.lineBetween(cx + W / 2 - 28, top + 20, cx + W / 2 - 20, top + 28);
-    closeG.lineBetween(cx + W / 2 - 20, top + 20, cx + W / 2 - 28, top + 28);
-    card.add(closeG);
-    const closeZ = gateZone(
-      this.add
-        .zone(cx + W / 2 - 38, top + 10, 28, 28)
-        .setOrigin(0, 0)
-        .setInteractive({ useHandCursor: true }),
-    );
-    closeZ.on('pointerdown', () => this.toggleSettings());
-    card.add(closeZ);
+
 
     // ---- section bar — dark beveled tag like MOUSE SETTINGS/CONTROL BINDING ----
     const section = (y: number, title: string) => {
