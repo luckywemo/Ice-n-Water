@@ -147,8 +147,9 @@ export class AdventureScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    // ---- selection ring — the rail's cursor; the frontier keeps its gold rim ----
-    this.selRing = this.add.graphics().setDepth(5);
+    // ---- selection ring — a halo *behind* the cards (depth < strips); the
+    //  baked strip canvas masks it, so it never crosses badges or faces ----
+    this.selRing = this.add.graphics().setDepth(1.5);
     this.selRing
       .lineStyle(7, 0x0f7fb8, 0.4)
       .strokeRoundedRect(-CARD_W / 2 - 7, -CARD_H / 2 - 7, CARD_W + 14, CARD_H + 14, 17)
