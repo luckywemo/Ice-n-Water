@@ -546,9 +546,82 @@ export class TitleScene extends Phaser.Scene {
       this.add.zone(-vw, -vh, vw * 3, vh * 3).setOrigin(0, 0).setInteractive(),
     );
     dimZ.on('pointerdown', () => this.toggleSettings());
-    const dim = this.add.graphics();
-    dim.fillStyle(0x000000, 0.45).fillRect(-vw, -vh, vw * 3, vh * 3);
-    card.add([dimZ, dim]);
+    // FG settings is a full takeover — periwinkle field + rings + gear stamps,
+    // not a dimmed lobby. Zone stays clear so taps off the card still close.
+    const field = this.add.graphics();
+    field.fillStyle(0x9db2ef, 1).fillRect(-vw, -vh, vw * 3, vh * 3);
+    field.lineStyle(3, 0xffffff, 0.08);
+    for (let r = 70; r < vw * 1.1; r += 74)
+      field.strokeCircle(vw * 0.13, vh * 0.55, r);
+    field.lineStyle(2, 0xffffff, 0.05);
+    for (let r = 80; r < vw * 0.9; r += 96)
+      field.strokeCircle(vw * 0.92, vh * 0.06, r);
+    // SETTINGS header tab — their top-left chamfered label
+    field.fillStyle(0x241a3a, 1);
+    field.fillPoints(
+      [
+        { x: 0, y: 0 },
+        { x: 168, y: 0 },
+        { x: 168, y: 32 },
+        { x: 156, y: 46 },
+        { x: 0, y: 46 },
+      ],
+      true,
+    );
+    card.add([dimZ, field]);
+    const gear = (gx: number, gy: number, gr: number, teeth: number) => {
+      const key = `fg_gear_${Math.round(gr)}`;
+      const c = gr + 6;
+      if (!this.textures.exists(key)) {
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = Math.ceil(c * 2);
+        const ctx = cv.getContext('2d')!;
+        const step = (Math.PI * 2) / teeth;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        for (let t = 0; t < teeth; t++) {
+          const a = t * step;
+          for (const [rr, da] of [
+            [gr * 0.8, 0],
+            [gr, step * 0.22],
+            [gr, step * 0.52],
+            [gr * 0.8, step * 0.74],
+          ])
+            ctx.lineTo(c + Math.cos(a + da) * rr, c + Math.sin(a + da) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(c, c, gr * 0.36, 0, Math.PI * 2);
+        ctx.fill();
+        this.textures.addCanvas(key, cv);
+      }
+      card.add(this.add.image(gx, gy, key).setAlpha(0.92));
+    };
+    gear(vw * 0.12, vh * 0.34, Math.min(vw, vh) * 0.14, 8);
+    gear(vw * 0.13, vh * 0.6, Math.min(vw, vh) * 0.085, 8);
+    card.add(
+      this.add
+        .text(16, 23, 'SETTINGS', {
+          fontFamily: FG_FONT,
+          fontSize: '20px',
+          fontStyle: 'italic',
+          color: '#ffffff',
+        })
+        .setOrigin(0, 0.5),
+    );
+    // footer hints — their Select Ⓛ / Back Ⓑ row
+    card.add(
+      this.add
+        .text(vw - 18, vh - 16, '❮ ❯ — change   ·   esc — close', {
+          fontFamily: FG_BODY,
+          fontSize: '12px',
+          fontStyle: '700',
+          color: '#eef2ff',
+        })
+        .setOrigin(1, 1),
+    );
     // swallows taps on the card body so they don't hit the dim zone
     const swallow = gateZone(
       this.add.zone(cx - W / 2, cy - H / 2, W, H).setOrigin(0, 0).setInteractive(),
@@ -563,17 +636,6 @@ export class TitleScene extends Phaser.Scene {
     cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
     card.add(cg);
 
-    card.add(
-      this.add
-        .text(cx, top + 30, 'SETTINGS', {
-          fontFamily: FG_FONT,
-          fontSize: '24px',
-          fontStyle: 'italic',
-          color: '#ffffff',
-        })
-        .setOrigin(0.5)
-        .setShadow(0, 3, '#0b6a99', 0, true, false),
-    );
     // ✕ close-dot — same affordance as the prompt modal
     const closeG = this.add.graphics();
     closeG.fillStyle(0x0a0710, 0.55).fillCircle(cx + W / 2 - 24, top + 24, 13);
@@ -685,7 +747,7 @@ export class TitleScene extends Phaser.Scene {
       );
     };
 
-    let y = top + 62;
+    let y = top + 30;
     section(y, 'GAME');
     y += 42;
     this.diffVal = selector(y, 'Difficulty', () => DIFFS[this.diff].label, (dir) => {
@@ -764,16 +826,6 @@ export class TitleScene extends Phaser.Scene {
     );
     doneZ.on('pointerdown', () => this.toggleSettings());
     card.add(doneZ);
-    card.add(
-      this.add
-        .text(cx + W / 2 - 16, cy + H / 2 - 14, 'esc — close', {
-          fontFamily: FG_BODY,
-          fontSize: '11px',
-          fontStyle: '600',
-          color: '#b9e8f7',
-        })
-        .setOrigin(1, 1),
-    );
     this.settingsCard = card;
   }
 
