@@ -847,10 +847,9 @@ export class AdventureScene extends Phaser.Scene {
     const isFrontier = n === Math.min(this.prog.unlocked, TOTAL_LEVELS);
 
     const W = this.colW();
-    const H = 196;
+    const H = 148;
     const x = 34;
-    // sits under the header; on short screens it overlaps the rail's left edge —
-    // cards scroll behind it, and the frontier anchors right of the card
+    // sits under the header, clear of the rail — the frontier anchors right of it
     const y = Phaser.Math.Clamp(height * 0.44, 262, 280);
 
     const g = this.add.graphics();
@@ -905,11 +904,12 @@ export class AdventureScene extends Phaser.Scene {
         .setOrigin(0.5),
     ];
 
-    // PLAY pill — danfo when playable, dead-gray when locked
+    // PLAY pill — right column under the status chip; danfo when playable,
+    // dead-gray when locked
     const pbw = 148;
     const pbh = 50;
-    const pbx = x + W - pbw - 18;
-    const pby = y + H - pbh - 16;
+    const pbx = x + W - pbw - 16;
+    const pby = y + 62;
     const pg = this.add.graphics();
     const pfill = open ? 0xffc93c : 0x8a97a5;
     pg.fillStyle(shade(pfill, -48), 1).fillRoundedRect(pbx, pby + 4, pbw, pbh, pbh / 2);
@@ -925,17 +925,6 @@ export class AdventureScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setShadow(0, 3, open ? '#c98a00' : '#3a4656', 0, true, false),
-    );
-    // the SELECT keycap hint — their bottom-right affordance, repurposed here
-    kids.push(
-      this.add
-        .text(x + 20, y + H - 26, 'tap a card to select · ENTER plays', {
-          fontFamily: UI_FONT,
-          fontSize: '13px',
-          fontStyle: '700',
-          color: 'rgba(255,255,255,0.7)',
-        })
-        .setOrigin(0, 0.5),
     );
 
     this.cardHit = open
