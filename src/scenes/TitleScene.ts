@@ -527,10 +527,10 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private buildSettingsCard(vw: number, vh: number, isTouch: boolean) {
-    const W = 620;
-    const H = isTouch ? 380 : 460;
-    const cx = vw * 0.4;
-    const cy = vh * 0.52;
+    const W = 560;
+    const H = isTouch ? 430 : 510;
+    const cx = vw * 0.66;
+    const cy = vh * 0.5;
     const top = cy - H / 2;
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
 
@@ -550,12 +550,12 @@ export class TitleScene extends Phaser.Scene {
     // not a dimmed lobby. Zone stays clear so taps off the card still close.
     const field = this.add.graphics();
     field.fillStyle(0x9db2ef, 1).fillRect(-vw, -vh, vw * 3, vh * 3);
+    // rings radiate from behind the card, not the cogs
     field.lineStyle(3, 0xffffff, 0.08);
-    for (let r = 70; r < vw * 1.1; r += 74)
-      field.strokeCircle(vw * 0.86, vh * 0.55, r);
+    for (let r = 70; r < vw * 1.1; r += 74) field.strokeCircle(cx, cy, r);
     field.lineStyle(2, 0xffffff, 0.05);
     for (let r = 80; r < vw * 0.9; r += 96)
-      field.strokeCircle(vw * 0.08, vh * 0.06, r);
+      field.strokeCircle(vw * 0.95, vh * 0.04, r);
     // SETTINGS header tab — their top-left chamfered label, white-rimmed
     const tabPts = [
       { x: 0, y: 0 },
@@ -580,10 +580,10 @@ export class TitleScene extends Phaser.Scene {
         for (let t = 0; t < teeth; t++) {
           const a = t * step;
           for (const [rr, da] of [
-            [gr * 0.8, 0],
-            [gr, step * 0.22],
-            [gr, step * 0.52],
-            [gr * 0.8, step * 0.74],
+            [gr * 0.82, 0],
+            [gr, step * 0.18],
+            [gr, step * 0.55],
+            [gr * 0.82, step * 0.73],
           ])
             ctx.lineTo(c + Math.cos(a + da) * rr, c + Math.sin(a + da) * rr);
         }
@@ -591,14 +591,15 @@ export class TitleScene extends Phaser.Scene {
         ctx.fill();
         ctx.globalCompositeOperation = 'destination-out';
         ctx.beginPath();
-        ctx.arc(c, c, gr * 0.36, 0, Math.PI * 2);
+        ctx.arc(c, c, gr * 0.4, 0, Math.PI * 2);
         ctx.fill();
         this.textures.addCanvas(key, cv);
       }
       card.add(this.add.image(gx, gy, key).setAlpha(0.92));
     };
-    gear(vw * 0.88, vh * 0.34, Math.min(vw, vh) * 0.14, 8);
-    gear(vw * 0.87, vh * 0.6, Math.min(vw, vh) * 0.085, 8);
+    // diagonal cluster — small cog nests down-right of the big one
+    gear(vw * 0.16, vh * 0.36, Math.min(vw, vh) * 0.15, 9);
+    gear(vw * 0.28, vh * 0.58, Math.min(vw, vh) * 0.095, 8);
     card.add(
       this.add
         .text(16, 23, 'SETTINGS', {
@@ -767,28 +768,28 @@ export class TitleScene extends Phaser.Scene {
       );
     };
 
-    let y = top + 30;
+    let y = top + 34;
     section(y, 'GAME');
-    y += 42;
+    y += 48;
     this.diffVal = selector(y, 'Difficulty', () => DIFFS[this.diff].label, (dir) => {
       this.cycleDiff(dir);
     });
-    y += 40;
+    y += 46;
     this.soundVal = selector(y, 'Sound', () => (sfx.isMuted ? 'OFF' : 'ON'), () => {
       const off = sfx.toggleMute();
       this.soundVal?.setText(off ? 'OFF' : 'ON');
     });
     if (isTouch) {
-      y += 40;
+      y += 46;
       this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
         const i = JOY_ORDER.indexOf(this.joy);
         this.joy = JOY_ORDER[(i + dir + JOY_ORDER.length) % JOY_ORDER.length];
         this.refreshPicks();
       });
     }
-    y += 46;
+    y += 54;
     section(y, 'CONTROLS');
-    y += 38;
+    y += 44;
     if (isTouch) {
       card.add(
         this.add
@@ -811,7 +812,7 @@ export class TitleScene extends Phaser.Scene {
         ['Pause', 'ESC'],
       ];
       binds.forEach(([label, cap], i) => {
-        const ry = y + i * 32;
+        const ry = y + i * 36;
         card.add(
           this.add
             .text(cx - W / 2 + 38, ry, label, {
