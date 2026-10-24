@@ -654,11 +654,12 @@ export class TitleScene extends Phaser.Scene {
     const section = (y: number, title: string) => {
       const sg = this.add.graphics();
       const bx = cx - W / 2 + 22;
+      const bw = (W - 44) * 0.75;
       sg.fillStyle(0x17151f, 1).fillPoints(
         [
           { x: bx, y },
-          { x: bx + W - 44, y },
-          { x: bx + W - 56, y: y + 26 },
+          { x: bx + bw, y },
+          { x: bx + bw - 12, y: y + 26 },
           { x: bx, y: y + 26 },
         ],
         true,
