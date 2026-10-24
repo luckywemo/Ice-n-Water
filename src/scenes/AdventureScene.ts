@@ -260,7 +260,7 @@ export class AdventureScene extends Phaser.Scene {
     // after a clear we open right on the frontier instead — the march needs it.
     // anchor keeps the focused card right of the detail card even on narrow screens
     const anchorI = advance !== null ? advance : frontierN - 1;
-    const focusX = width * Math.min(0.7, Math.max(0.42, 414 / width));
+    const focusX = width * this.focusFrac();
     const targetX = Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - width);
     cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : 0;
     if (!REDUCED_MOTION && advance === null && targetX > 60) {
@@ -291,8 +291,7 @@ export class AdventureScene extends Phaser.Scene {
     this.marching = true;
     const toX = this.cardX(a); // a+1's card is the new frontier
     const cam = this.cameras.main;
-    const focusX = this.scale.width * Math.min(0.7, Math.max(0.42, 414 / this.scale.width));
-    const camX = Phaser.Math.Clamp(toX - focusX, 0, this.worldW - this.scale.width);
+    const camX = Phaser.Math.Clamp(toX - this.scale.width * this.focusFrac(), 0, this.worldW - this.scale.width);
     const done = () => {
       this.marching = false;
       sfx.pickup();
@@ -716,65 +715,76 @@ export class AdventureScene extends Phaser.Scene {
     }
   }
 
+  /** left column width — header + detail card share it, ~half the viewport */
+  private colW(): number {
+    return Math.min(500, this.scale.width * 0.48);
+  }
+
+  /** camera anchor keeps the focused card clear of the left column */
+  private focusFrac(): number {
+    return Math.min(0.72, Math.max(0.42, (34 + this.colW() + 60) / this.scale.width));
+  }
+
   /** seasons header — wordmark stack + hex level badge + angled progress bar
    *  + the earn-stars line, all screen-fixed over the cyan field */
   private buildHeader(width: number, _height: number) {
     const lvl = Math.min(this.prog.unlocked, TOTAL_LEVELS);
+    const colW = this.colW();
     this.add
-      .text(30, 60, `ICE 'N' WATER`, {
+      .text(34, 60, `ICE 'N' WATER`, {
         fontFamily: DISPLAY_FONT,
-        fontSize: '26px',
+        fontSize: '40px',
         color: '#ffffff',
       })
       .setScrollFactor(0)
       .setDepth(41)
-      .setShadow(0, 3, '#0f7fb8', 0, true, false);
+      .setShadow(0, 4, '#0f7fb8', 0, true, false);
     this.add
-      .text(30, 92, 'SEASON 1 — THE ROAD NORTH', {
+      .text(34, 110, 'SEASON 1 — THE ROAD NORTH', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '16px',
+        fontSize: '24px',
         fontStyle: 'italic',
         color: '#e84393',
       })
       .setScrollFactor(0)
       .setDepth(41)
-      .setShadow(0, 2, '#9c2160', 0, true, false);
+      .setShadow(0, 3, '#9c2160', 0, true, false);
     this.add
-      .text(30, 116, `ends at ${MILESTONE_TOWNS[TOTAL_MILESTONES - 1]} — ${TOTAL_LEVELS} stops`, {
+      .text(34, 144, `ends at ${MILESTONE_TOWNS[TOTAL_MILESTONES - 1]} — ${TOTAL_LEVELS} stops`, {
         fontFamily: UI_FONT,
-        fontSize: '13px',
+        fontSize: '18px',
         fontStyle: 'italic 700',
         color: 'rgba(255,255,255,0.9)',
       })
       .setScrollFactor(0)
       .setDepth(41);
 
-    // hex badge + angled bar + count — the same parts the seasons screen uses
-    fgHexBadge(this, 50, 156, 21, `${lvl}`).forEach((o) => o.setScrollFactor(0).setDepth(41));
+    // bar first, then the hex badge — it sits ON the left cap, not under it
     fgProgressBar(
       this,
-      74,
-      146,
-      Math.min(300, width * 0.34),
-      20,
+      78,
+      196,
+      colW - 44,
+      28,
       (lvl - 1) / (TOTAL_LEVELS - 1),
       `${lvl - 1}/${TOTAL_LEVELS}`,
     ).forEach((o) => o.setScrollFactor(0).setDepth(41));
+    fgHexBadge(this, 78, 210, 30, `${lvl}`).forEach((o) => o.setScrollFactor(0).setDepth(41));
 
     // earn-stars line — their "Earn FAME by competing in Shows!"
     const star = this.add.graphics().setScrollFactor(0).setDepth(41);
     star.fillStyle(FG.pink, 1);
-    star.fillCircle(38, 188, 9);
-    star.lineStyle(2, 0xffffff, 0.85).strokeCircle(38, 188, 9);
+    star.fillCircle(42, 246, 12);
+    star.lineStyle(2.5, 0xffffff, 0.85).strokeCircle(42, 246, 12);
     this.add
-      .text(38, 188, '★', { fontFamily: UI_FONT, fontSize: '12px', color: '#ffffff' })
+      .text(42, 246, '★', { fontFamily: UI_FONT, fontSize: '15px', color: '#ffffff' })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(42);
     this.add
-      .text(52, 180, `earn STARS — crown the north  ·  ★ ${totalStars(this.prog)}`, {
+      .text(60, 236, `earn STARS — crown the north  ·  ★ ${totalStars(this.prog)}`, {
         fontFamily: UI_FONT,
-        fontSize: '13px',
+        fontSize: '17px',
         fontStyle: 'italic 700',
         color: '#ffffff',
       })
@@ -836,94 +846,92 @@ export class AdventureScene extends Phaser.Scene {
     const done = this.prog.stars[n] !== undefined;
     const isFrontier = n === Math.min(this.prog.unlocked, TOTAL_LEVELS);
 
-    const W = Math.min(320, width - 48);
-    const H = 158;
+    const W = this.colW();
+    const H = 196;
     const x = 34;
     // sits under the header; on short screens it overlaps the rail's left edge —
     // cards scroll behind it, and the frontier anchors right of the card
-    const y = Phaser.Math.Clamp(height * 0.36, 202, 232);
+    const y = Phaser.Math.Clamp(height * 0.44, 262, 280);
 
     const g = this.add.graphics();
-    g.fillStyle(0x081420, 0.3).fillRoundedRect(x + 4, y + 6, W, H, 14); // drop base
-    g.fillStyle(0xffffff, 1).fillRoundedRect(x - 3, y - 3, W + 6, H + 6, 16); // white rim
-    g.fillStyle(0x4dd0e1, 1).fillRoundedRect(x, y, W, H, 13); // cyan face like theirs
-    g.fillStyle(0xffffff, 0.25).fillRoundedRect(x + 8, y + 5, W - 16, 26, 10); // sheen
+    g.fillStyle(0x081420, 0.3).fillRoundedRect(x + 5, y + 7, W, H, 16); // drop base
+    g.fillStyle(0xffffff, 1).fillRoundedRect(x - 4, y - 4, W + 8, H + 8, 19); // white rim
+    g.fillStyle(0x4dd0e1, 1).fillRoundedRect(x, y, W, H, 15); // cyan face like theirs
+    g.fillStyle(0xffffff, 0.25).fillRoundedRect(x + 10, y + 6, W - 20, 34, 12); // sheen
 
     // status chip — CLEARED / NEXT UP / LOCKED
     const chipT = done ? `CLEARED ${'★'.repeat(stars)}` : isFrontier ? 'NEXT UP' : open ? 'UNLOCKED' : 'LOCKED';
     const chipFill = done ? 0xffc93c : open ? 0x0f7fb8 : 0x3a4656;
-    const cw = Math.max(74, chipT.length * 8 + 22);
+    const cw = Math.max(96, chipT.length * 10 + 28);
     const cg = this.add.graphics();
-    cg.fillStyle(0x081420, 0.35).fillRoundedRect(x + W - cw - 12, y + 12 + 2, cw, 24, 12);
-    cg.fillStyle(chipFill, 1).fillRoundedRect(x + W - cw - 12, y + 12, cw, 24, 12);
-    cg.lineStyle(2, 0xffffff, 0.6).strokeRoundedRect(x + W - cw - 11, y + 13, cw - 2, 22, 11);
+    cg.fillStyle(0x081420, 0.35).fillRoundedRect(x + W - cw - 16, y + 18 + 2, cw, 30, 15);
+    cg.fillStyle(chipFill, 1).fillRoundedRect(x + W - cw - 16, y + 18, cw, 30, 15);
+    cg.lineStyle(2, 0xffffff, 0.6).strokeRoundedRect(x + W - cw - 15, y + 19, cw - 2, 28, 14);
 
     const kids: Phaser.GameObjects.GameObject[] = [
       g,
       cg,
       this.add
-        .text(x + 16, y + 14, `LEVEL ${n}`, {
+        .text(x + 20, y + 16, `LEVEL ${n}`, {
           fontFamily: DISPLAY_FONT,
-          fontSize: '21px',
+          fontSize: '30px',
           color: '#ffffff',
         })
-        .setShadow(0, 3, '#0f7fb8', 0, true, false),
-      this.add.text(x + 16, y + 42, `${def.name} — ${def.town || def.chapter}`, {
+        .setShadow(0, 4, '#0f7fb8', 0, true, false),
+      this.add.text(x + 20, y + 56, `${def.name} — ${def.town || def.chapter}`, {
         fontFamily: UI_FONT,
-        fontSize: '13px',
+        fontSize: '17px',
         fontStyle: 'italic 700',
         color: 'rgba(255,255,255,0.92)',
       }),
-      this.add.text(x + 16, y + 66, `◆ ${objectiveText(def)}${def.boss ? '  ·  BOSS FIGHT' : ''}`, {
+      this.add.text(x + 20, y + 86, `◆ ${objectiveText(def)}${def.boss ? '  ·  BOSS FIGHT' : ''}`, {
         fontFamily: UI_FONT,
-        fontSize: '13px',
+        fontSize: '16px',
         fontStyle: '700',
         color: '#0f7fb8',
       }),
-      this.add.text(x + 16, y + 90, `${def.chasers} militia · ${def.seconds}s · crew of ${def.crew}`, {
+      this.add.text(x + 20, y + 114, `${def.chasers} militia · ${def.seconds}s · crew of ${def.crew}`, {
         fontFamily: UI_FONT,
-        fontSize: '12px',
+        fontSize: '15px',
         fontStyle: '700',
         color: 'rgba(255,255,255,0.75)',
       }),
-      this.add.text(x + 16, y + 12 + 17, chipT, {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '12px',
-        color: done ? '#1c1626' : '#ffffff',
-      }),
+      this.add
+        .text(x + W - cw - 16 + cw / 2, y + 33, chipT, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '14px',
+          color: done ? '#1c1626' : '#ffffff',
+        })
+        .setOrigin(0.5),
     ];
-    // chip label was added at title x — reposition onto the chip
-    (kids[kids.length - 1] as Phaser.GameObjects.Text)
-      .setPosition(x + W - cw - 12 + cw / 2, y + 24)
-      .setOrigin(0.5);
 
     // PLAY pill — danfo when playable, dead-gray when locked
-    const pbw = 118;
-    const pbh = 40;
-    const pbx = x + W - pbw - 14;
-    const pby = y + H - pbh - 12;
+    const pbw = 148;
+    const pbh = 50;
+    const pbx = x + W - pbw - 18;
+    const pby = y + H - pbh - 16;
     const pg = this.add.graphics();
     const pfill = open ? 0xffc93c : 0x8a97a5;
-    pg.fillStyle(shade(pfill, -48), 1).fillRoundedRect(pbx, pby + 3, pbw, pbh, pbh / 2);
-    pg.fillStyle(pfill, 1).fillRoundedRect(pbx, pby - 3, pbw, pbh - 2, pbh / 2);
-    pg.fillStyle(0xffffff, 0.22).fillRoundedRect(pbx + 6, pby + 1, pbw - 12, 12, 6);
+    pg.fillStyle(shade(pfill, -48), 1).fillRoundedRect(pbx, pby + 4, pbw, pbh, pbh / 2);
+    pg.fillStyle(pfill, 1).fillRoundedRect(pbx, pby - 4, pbw, pbh - 3, pbh / 2);
+    pg.fillStyle(0xffffff, 0.22).fillRoundedRect(pbx + 8, pby + 1, pbw - 16, 15, 7);
     kids.push(
       pg,
       this.add
-        .text(pbx + pbw / 2, pby + pbh / 2 - 3, open ? 'PLAY ▶' : 'LOCKED', {
+        .text(pbx + pbw / 2, pby + pbh / 2 - 4, open ? 'PLAY ▶' : 'LOCKED', {
           fontFamily: DISPLAY_FONT,
-          fontSize: '15px',
+          fontSize: '19px',
           color: open ? '#1c1626' : '#e8eef4',
         })
         .setOrigin(0.5)
-        .setShadow(0, 2, open ? '#c98a00' : '#3a4656', 0, true, false),
+        .setShadow(0, 3, open ? '#c98a00' : '#3a4656', 0, true, false),
     );
     // the SELECT keycap hint — their bottom-right affordance, repurposed here
     kids.push(
       this.add
-        .text(x + 14, y + H - 22, 'tap a card to select · ENTER plays', {
+        .text(x + 20, y + H - 26, 'tap a card to select · ENTER plays', {
           fontFamily: UI_FONT,
-          fontSize: '11px',
+          fontSize: '13px',
           fontStyle: '700',
           color: 'rgba(255,255,255,0.7)',
         })
@@ -957,7 +965,7 @@ export class AdventureScene extends Phaser.Scene {
   private focusFrontier() {
     const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
     const cam = this.cameras.main;
-    const focusX = this.scale.width * Math.min(0.7, Math.max(0.42, 414 / this.scale.width));
+    const focusX = this.scale.width * this.focusFrac();
     const targetX = Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.scale.width);
     this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
     this.selectLevel(frontierN, false);
