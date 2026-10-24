@@ -578,7 +578,7 @@ export class TitleScene extends Phaser.Scene {
       { x: vis.l + 160, y: vis.t + 48 },
       { x: vis.l, y: vis.t + 48 },
     ];
-    field.fillStyle(0x241a3a, 1).fillPoints(tabPts, true);
+    field.fillStyle(0x000000, 1).fillPoints(tabPts, true);
     field.lineStyle(2.5, 0xffffff, 0.9).strokePoints(tabPts, true);
     card.add([dimZ, field]);
     const gear = (gx: number, gy: number, gr: number, teeth: number) => {
