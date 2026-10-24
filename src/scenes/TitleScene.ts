@@ -556,18 +556,16 @@ export class TitleScene extends Phaser.Scene {
     field.lineStyle(2, 0xffffff, 0.05);
     for (let r = 80; r < vw * 0.9; r += 96)
       field.strokeCircle(vw * 0.92, vh * 0.06, r);
-    // SETTINGS header tab — their top-left chamfered label
-    field.fillStyle(0x241a3a, 1);
-    field.fillPoints(
-      [
-        { x: 0, y: 0 },
-        { x: 168, y: 0 },
-        { x: 168, y: 32 },
-        { x: 156, y: 46 },
-        { x: 0, y: 46 },
-      ],
-      true,
-    );
+    // SETTINGS header tab — their top-left chamfered label, white-rimmed
+    const tabPts = [
+      { x: 0, y: 0 },
+      { x: 176, y: 0 },
+      { x: 176, y: 32 },
+      { x: 160, y: 48 },
+      { x: 0, y: 48 },
+    ];
+    field.fillStyle(0x241a3a, 1).fillPoints(tabPts, true);
+    field.lineStyle(2.5, 0xffffff, 0.9).strokePoints(tabPts, true);
     card.add([dimZ, field]);
     const gear = (gx: number, gy: number, gr: number, teeth: number) => {
       const key = `fg_gear_${Math.round(gr)}`;
@@ -606,7 +604,6 @@ export class TitleScene extends Phaser.Scene {
         .text(16, 23, 'SETTINGS', {
           fontFamily: FG_FONT,
           fontSize: '20px',
-          fontStyle: 'italic',
           color: '#ffffff',
         })
         .setOrigin(0, 0.5),
@@ -653,10 +650,19 @@ export class TitleScene extends Phaser.Scene {
     closeZ.on('pointerdown', () => this.toggleSettings());
     card.add(closeZ);
 
-    // ---- section bar — dark pill header like MOUSE SETTINGS/CONTROL BINDING ----
+    // ---- section bar — dark beveled tag like MOUSE SETTINGS/CONTROL BINDING ----
     const section = (y: number, title: string) => {
       const sg = this.add.graphics();
-      sg.fillStyle(0x17151f, 1).fillRoundedRect(cx - W / 2 + 22, y, W - 44, 26, 8);
+      const bx = cx - W / 2 + 22;
+      sg.fillStyle(0x17151f, 1).fillPoints(
+        [
+          { x: bx, y },
+          { x: bx + W - 44, y },
+          { x: bx + W - 56, y: y + 26 },
+          { x: bx, y: y + 26 },
+        ],
+        true,
+      );
       card.add(sg);
       card.add(
         this.add
@@ -676,21 +682,34 @@ export class TitleScene extends Phaser.Scene {
       get: () => string,
       step: (dir: 1 | -1) => void,
     ): Phaser.GameObjects.Text => {
+      // focused-row band — their light-cyan highlight on the selected row
+      const hl = this.add.graphics().setAlpha(0);
+      hl.fillStyle(0xffffff, 0.18).fillRoundedRect(
+        cx - W / 2 + 10,
+        y - 21,
+        W - 20,
+        42,
+        8,
+      );
+      card.add(hl);
+      const rowZ = gateZone(
+        this.add
+          .zone(cx - W / 2 + 10, y - 21, W - 20, 42)
+          .setOrigin(0, 0)
+          .setInteractive(),
+      );
+      rowZ.on('pointerover', () => hl.setAlpha(1));
+      rowZ.on('pointerout', () => hl.setAlpha(0));
+      card.add(rowZ);
       card.add(
         this.add
           .text(cx - W / 2 + 38, y, label, {
             fontFamily: FG_FONT,
             fontSize: '16px',
-            fontStyle: 'italic',
             color: '#ffffff',
           })
           .setOrigin(0, 0.5),
       );
-      // dark value recess
-      const rg = this.add.graphics();
-      rg.fillStyle(0x0a0710, 0.45).fillRoundedRect(cx + W / 2 - 190, y - 15, 120, 30, 8);
-      rg.lineStyle(2, 0xffffff, 0.35).strokeRoundedRect(cx + W / 2 - 190, y - 15, 120, 30, 8);
-      card.add(rg);
       const val = this.add
         .text(cx + W / 2 - 130, y, get(), {
           fontFamily: FG_FONT,
