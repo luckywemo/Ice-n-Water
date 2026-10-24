@@ -1554,17 +1554,11 @@ export class GameScene extends Phaser.Scene {
     for (const c of this.endButtons) c.destroy();
     this.endButtons = [];
     this.endHitZones = [];
-    // result card — paper panel framing the banner + pills (under texts, over dim)
-    const card = this.pin(
-      panel(this, -300, -170, 600, 340, { depth: 19 }),
-      0.5, 0.5, 0, -4,
-    ) as Phaser.GameObjects.Graphics;
-    card.setAlpha(0);
-    this.tweens.add({ targets: card, alpha: 1, duration: 350, delay: 260 });
-    // the result texts sit on the paper card — recolor from white-on-dark
-    // to dark ink with the FG drop shadow (banner keeps mid-game colors)
-    this.bannerText.setColor('#1c2a3a').setStroke('#000000', 0).setShadow(0, 4, '#d8cfb8', 0, true, false);
-    this.subBannerText.setColor('#4a5f73').setStroke('#000000', 0);
+    // no result card — the banner + pills float over the dimmed field,
+    // like Fall Guys' ELIMINATED/QUALIFIED screens. Banner keeps its
+    // pink signature; the sub-line stays white-on-dark for the dim.
+    this.bannerText.setShadow(0, 0, '#000000', 0, false, false);
+    this.subBannerText.setColor('#f5efe0').setStroke('#081420', 5);
     const L = this.level;
     const canNext = !!L && won && L.n < TOTAL_LEVELS;
     const acts: { label: string; short?: string; fill: number; inkText?: boolean; go: () => void }[] = [];
