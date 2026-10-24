@@ -701,6 +701,142 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Fall Guys-style result ribbon — a full-width band slides in, giant
+   *  outlined word pops, hex badge lands under it, holds ~1.4s, exits,
+   *  then the caller lands the detail banner + pills. */
+  private playResultRibbon(won: boolean, timedOut: boolean) {
+    // any mid-round banner still up (level intro, event line) must vacate —
+    // clearBanner() no-ops in 'over' phase so we fade it directly
+    this.tweens.add({ targets: [this.bannerText, this.subBannerText], alpha: 0, duration: 180 });
+    const vw = this.scale.width;
+    const bandCol = won ? 0x29b6f6 : 0xe84393; // cyan band on a win, pink on a loss
+    const strokeCol = won ? '#e84393' : '#29b6f6'; // outline flips, like the ref
+    const final = this.level?.n === TOTAL_LEVELS;
+    const word = won
+      ? final
+        ? 'JOURNEY COMPLETE!'
+        : 'CLEARED!'
+      : timedOut
+        ? 'OUT OF TIME!'
+        : 'CAUGHT!';
+    const note = won ? 'cleared!' : timedOut ? 'out of time' : 'frozen!';
+
+    const c = this.add.container(0, 0).setDepth(55);
+    const band = this.add.container(0, 0);
+    const g = this.add.graphics();
+    const BW = vw + 200;
+    const BH = 92;
+    // angled pill caps poking past the band's ends — dark base under each
+    const cap = (cx: number, fill: number) => {
+      g.fillStyle(0x17151f, 1).fillRoundedRect(cx - 80, -BH / 2 + 12, 160, 58, 29);
+      g.fillStyle(fill, 1).fillRoundedRect(cx - 80, -BH / 2 + 6, 160, 58, 29);
+    };
+    cap(-BW / 2 + 40, won ? 0x17151f : 0x29b6f6);
+    cap(BW / 2 - 40, won ? 0xe84393 : 0x17151f);
+    g.fillStyle(bandCol, 1).fillRect(-BW / 2, -BH / 2, BW, BH);
+    g.fillStyle(0xffffff, 1).fillRect(-BW / 2, -BH / 2 - 4, BW, 4).fillRect(-BW / 2, BH / 2, BW, 4);
+    // faint crown stamps baked into the band, like their patterned ribbon
+    g.fillStyle(0xffffff, 0.09);
+    for (let i = 0; i < 15; i++) {
+      const cx = -BW / 2 + 60 + i * ((BW - 120) / 14);
+      const cy2 = i % 2 ? -18 : 22;
+      const s = 9;
+      g.beginPath();
+      g.moveTo(cx - s, cy2 + s * 0.7);
+      g.lineTo(cx - s, cy2 - s * 0.5);
+      g.lineTo(cx - s * 0.5, cy2 + s * 0.1);
+      g.lineTo(cx, cy2 - s * 0.8);
+      g.lineTo(cx + s * 0.5, cy2 + s * 0.1);
+      g.lineTo(cx + s, cy2 - s * 0.5);
+      g.lineTo(cx + s, cy2 + s * 0.7);
+      g.closePath();
+      g.fillPath();
+    }
+    band.add(g);
+    band.setX(-vw - 40); // parked off-screen left
+    band.setAngle(-2); // the slight FG tilt
+
+    const t = this.add
+      .text(0, -6, word, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: word.length > 14 ? '56px' : '82px',
+        color: '#ffffff',
+        stroke: strokeCol,
+        strokeThickness: 14,
+      })
+      .setOrigin(0.5)
+      .setScale(0)
+      .setShadow(0, 5, 'rgba(0,0,0,0.35)', 0, true, false);
+
+    // hex badge under the band — gold + star on a win, ink + ✕ on a loss
+    const bg = this.add.graphics();
+    const hexAt = (r: number) => {
+      bg.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const px = Math.cos(a) * r;
+        const py = 78 + Math.sin(a) * r;
+        if (i === 0) bg.moveTo(px, py);
+        else bg.lineTo(px, py);
+      }
+      bg.closePath();
+      bg.fillPath();
+    };
+    bg.fillStyle(0xffffff, 1);
+    hexAt(30);
+    bg.fillStyle(won ? 0xf7bd14 : 0x17151f, 1);
+    hexAt(26);
+    const icon = this.add
+      .text(0, 74, won ? '★' : '✕', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '24px',
+        color: won ? '#17151f' : '#ffffff',
+      })
+      .setOrigin(0.5);
+    const noteT = this.add
+      .text(0, 116, note, {
+        fontFamily: UI_FONT,
+        fontSize: '15px',
+        fontStyle: '700',
+        color: '#ffffff',
+        stroke: 'rgba(10,8,18,0.55)',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5);
+    bg.setAlpha(0);
+    icon.setAlpha(0);
+    noteT.setAlpha(0);
+
+    c.add([band, t, bg, icon, noteT]);
+    this.pin(c, 0.5, 0.5, 0, -14);
+    this.relayout(); // pin() only registers — place it now
+
+    if (REDUCED_MOTION) {
+      band.setX(0).setAngle(0);
+      t.setScale(1);
+      bg.setAlpha(1);
+      icon.setAlpha(1);
+      noteT.setAlpha(1);
+    } else {
+      this.tweens.add({ targets: band, x: 0, duration: 330, ease: 'Cubic.easeOut' });
+      this.tweens.add({ targets: t, scale: 1, duration: 320, delay: 150, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: [bg, icon, noteT], alpha: 1, duration: 220, delay: 380 });
+    }
+
+    this.time.delayedCall(REDUCED_MOTION ? 900 : 1400, () => {
+      this.tweens.add({
+        targets: c,
+        alpha: 0,
+        y: -40,
+        duration: 240,
+        onComplete: () => {
+          c.destroy();
+          this.hudItems = this.hudItems.filter((i) => i.obj !== (c as unknown as HudItem['obj']));
+        },
+      });
+    });
+  }
+
   // ---------- fx helpers ----------
 
   private burst(x: number, y: number, tint: number, count = 14, speed = 200) {
@@ -1504,15 +1640,25 @@ export class GameScene extends Phaser.Scene {
     ).setDepth(18).setAlpha(0);
     this.tweens.add({ targets: dim, alpha: 1, duration: 400 });
 
+    // the FG ribbon gets the first beat; the detail banner + pills land after it
+    const landResult = (main: string, sub: string, won: boolean) => {
+      this.time.delayedCall(REDUCED_MOTION ? 950 : 1450, () => {
+        this.showBanner(main, sub);
+        this.showEndButtons(won);
+      });
+    };
+
     if (militiaWon) {
       sfx.lose();
-      this.showBanner(
+      this.playResultRibbon(false, timedOut);
+      landResult(
         this.level
           ? `LEVEL ${this.level.n} — ${timedOut ? 'OUT OF TIME' : 'CAUGHT'}`
           : 'MILITIA WINS',
         this.level
           ? `${stats}${isTouch ? '' : '\nR — retry   T — the road'}`
           : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — run it back   T — title   S — share'}`,
+        false,
       );
       this.shake(250, 0.01);
     } else {
@@ -1530,13 +1676,15 @@ export class GameScene extends Phaser.Scene {
             isTouch ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
           }`
         : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — play again   T — title   S — share'}`;
-      this.showBanner(
+      this.playResultRibbon(true, false);
+      landResult(
         finalLevel
           ? 'JOURNEY COMPLETE!'
           : this.level
             ? `LEVEL ${this.level.n} CLEAR ${'★'.repeat(stars)}`
             : 'RUNNERS WIN!',
         sub,
+        true,
       );
       for (let i = 0; i < 3; i++) {
         this.time.delayedCall(i * 180, () =>
@@ -1551,7 +1699,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.touch?.setActive(false); // pads off — the dashboard owns the taps now
-    this.showEndButtons(!militiaWon);
   }
 
   /** screen-space hit test for dashboard pills — reliable on real touch hardware */
