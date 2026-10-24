@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
-import { UI_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, HUD_SCALE } from './ui';
+import { UI_FONT, DISPLAY_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, HUD_SCALE } from './ui';
 import { JoyMode } from './meta';
 
 // Virtual joystick (left thumb) + sprint/water buttons (right thumb).
@@ -60,9 +60,9 @@ export class TouchControls {
       .setScale(HUD_SCALE)
       .setScrollFactor(0);
 
-    this.sprintBtn = this.makeButton(scene, 44, 'RUN');
-    this.waterBtn = this.makeButton(scene, 36, 'H₂O');
-    this.restartBtn = this.makeButton(scene, 22, '↻'); // beside the HUD panel — minimap owns top-right
+    this.sprintBtn = this.makeButton(scene, 44, 'RUN', 0xf7bd14, '#17151f');
+    this.waterBtn = this.makeButton(scene, 36, 'H₂O', 0x29b6f6);
+    this.restartBtn = this.makeButton(scene, 22, '↻', 0x17151f); // beside the HUD panel — minimap owns top-right
 
     // pin: sprint bottom-right, water just above-left of it, restart top-left
     this.pin(this.sprintBtn, 1, 1, -80, -96);
@@ -185,19 +185,24 @@ export class TouchControls {
     scene: Phaser.Scene,
     r: number,
     label: string,
+    face: number,
+    labelColor = '#ffffff',
   ): Phaser.GameObjects.Container {
-    const circle = scene.add
-      .circle(0, 0, r, 0x12293f, 0.45)
-      .setStrokeStyle(2, UI.ice, 0.55);
+    // candy anatomy like every other control: dark base, white rim,
+    // colored face, sheen — not a flat translucent disc
+    const g = scene.add.graphics();
+    g.fillStyle(0x0a1420, 0.55).fillCircle(2, 5, r); // drop base
+    g.fillStyle(0xffffff, 1).fillCircle(0, 0, r + 3); // rim
+    g.fillStyle(face, 1).fillCircle(0, 0, r); // face
+    g.fillStyle(0xffffff, 0.28).fillEllipse(0, -r * 0.42, r * 1.15, r * 0.5); // sheen
     const text = scene.add
-      .text(0, 0, label, {
-        fontFamily: UI_FONT,
-        fontSize: '15px',
-        fontStyle: '600',
-        color: '#f5efe0',
+      .text(0, 1, label, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: `${Math.max(13, r * 0.36)}px`,
+        color: labelColor,
       })
       .setOrigin(0.5);
-    const c = scene.add.container(0, 0, [circle, text]).setDepth(30).setScrollFactor(0);
+    const c = scene.add.container(0, 0, [g, text]).setDepth(30).setScrollFactor(0);
     return c;
   }
 

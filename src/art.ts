@@ -215,6 +215,20 @@ export function decorateYard(
   d.strokeRect(wall + 4, height / 2 - 120, 96, 240);
   d.strokeRect(width - wall - 100, height / 2 - 120, 96, 240);
 
+  // danfo-yellow dashed boundary just inside the chalk — the brand accent
+  const ins = wall + 16;
+  const dash = (x1: number, y1: number, x2: number, y2: number) =>
+    d.lineBetween(x1, y1, x2, y2);
+  d.lineStyle(4, 0xf7bd14, 0.55);
+  for (let x = ins; x < width - ins - 14; x += 30) {
+    dash(x, ins, x + 14, ins);
+    dash(x, height - ins, x + 14, height - ins);
+  }
+  for (let y = ins; y < height - ins - 14; y += 30) {
+    dash(ins, y, ins, y + 14);
+    dash(width - ins, y, width - ins, y + 14);
+  }
+
   // scattered junk — tires and rocks, kept clear of obstacles
   for (let i = 0; i < 26; i++) {
     const x = wall + 40 + rng() * (width - wall * 2 - 80);

@@ -564,8 +564,8 @@ export class GameScene extends Phaser.Scene {
       this.add.text(0, 0, '', {
         fontFamily: DISPLAY_FONT,
         fontSize: '54px',
-        color: '#f5efe0',
-        stroke: '#081420',
+        color: '#e84393',
+        stroke: '#9c2160',
         strokeThickness: 10,
       }).setOrigin(0.5).setDepth(20),
       0.5, 0.5, 0, -40,
@@ -598,14 +598,25 @@ export class GameScene extends Phaser.Scene {
 
     const isTouch = TouchControls.isTouchDevice();
     const exitLabel = this.level ? 'T — the road' : 'T — title';
-    this.pin(
+    const hintText = this.pin(
       this.add.text(0, 0, isTouch
           ? 'left thumb — move   ·   RUN — sprint   ·   H₂O — use item   ·   ↻ — restart'
           : `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`,
-        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '500', color: '#4a3f2e' },
+        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
       ).setOrigin(0.5, 1).setDepth(10),
       0.5, 1, 0, -12,
     );
+    // dark keycap chip behind the hint — the "Select Ⓛ" affordance
+    const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+    chip
+      .fillStyle(0x0a1420, 0.6)
+      .fillRoundedRect(
+        -hintText.width / 2 - 14,
+        -hintText.height - 9,
+        hintText.width + 28,
+        hintText.height + 11,
+        9,
+      );
 
     this.staminaGfx = this.add.graphics().setDepth(9);
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
@@ -623,10 +634,13 @@ export class GameScene extends Phaser.Scene {
     const g = this.minimap;
 
     g.clear();
-    g.fillStyle(UI.ink, 0.85);
+    // rimmed card anatomy — offset dark base, white rim, ink face
+    g.fillStyle(0x0a1420, 0.55);
+    g.fillRoundedRect(x0 - 1, y0 - 1, mw + 18, mh + 18, 12);
+    g.fillStyle(0xffffff, 0.95);
     g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
-    g.lineStyle(2, UI.rim, 0.5);
-    g.strokeRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
+    g.fillStyle(UI.ink, 0.92);
+    g.fillRoundedRect(x0 - 2, y0 - 2, mw + 4, mh + 4, 7);
 
     // obstacle blocks
     g.fillStyle(0x4a3f2e, 0.9);
