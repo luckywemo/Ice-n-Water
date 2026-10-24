@@ -389,7 +389,7 @@ export class AdventureScene extends Phaser.Scene {
     const lineY = cardCy + 8;
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(23,21,31,0.85)';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 12;
     ctx.beginPath();
     ctx.moveTo(0, lineY);
     ctx.lineTo(STRIP_W, lineY);
@@ -402,7 +402,7 @@ export class AdventureScene extends Phaser.Scene {
     }
     if (claimX > 0) {
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 9;
       ctx.beginPath();
       ctx.moveTo(0, lineY);
       ctx.lineTo(Math.min(claimX, STRIP_W), lineY);
