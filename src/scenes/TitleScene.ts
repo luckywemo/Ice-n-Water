@@ -34,8 +34,9 @@ const TILTS = [-0.07, 0.04, -0.03, 0.06, -0.05, 0.03, -0.06, 0.05, -0.02, 0.04, 
 export class TitleScene extends Phaser.Scene {
   private diff: Difficulty = 'normal';
   private joy: JoyMode = 'floating';
-  private diffChips: Phaser.GameObjects.Container[] = [];
-  private joyChips: Phaser.GameObjects.Container[] = [];
+  private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
+  private joyVal?: Phaser.GameObjects.Text;
+  private soundVal?: Phaser.GameObjects.Text;
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
@@ -165,8 +166,9 @@ export class TitleScene extends Phaser.Scene {
     const picks = loadPicks();
     this.diff = picks.difficulty;
     this.joy = picks.joy;
-    this.diffChips = [];
-    this.joyChips = [];
+    this.diffVal = undefined;
+    this.joyVal = undefined;
+    this.soundVal = undefined;
     this.iceDecos = [];
     this.lobbyArm = undefined;
     this.lobbyDrop = undefined;
@@ -525,10 +527,11 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private buildSettingsCard(vw: number, vh: number, isTouch: boolean) {
-    const W = 600;
-    const H = 300;
+    const W = 620;
+    const H = isTouch ? 380 : 460;
     const cx = vw / 2;
     const cy = vh * 0.52;
+    const top = cy - H / 2;
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
 
     // zones gated by cardZones — enabled only while the card is open
@@ -552,116 +555,198 @@ export class TitleScene extends Phaser.Scene {
     );
     card.add(swallow);
 
-    card.add(panel(this, cx - W / 2, cy - H / 2, W, H, { depth: 0 }));
+    // ---- the cyan card — their settings face, not our paper ----
+    const cg = this.add.graphics();
+    cg.fillStyle(0x0a0710, 0.5).fillRoundedRect(cx - W / 2 + 6, cy - H / 2 + 8, W, H, 18);
+    cg.fillStyle(0xffffff, 1).fillRoundedRect(cx - W / 2 - 2, cy - H / 2 - 2, W + 4, H + 4, 18);
+    cg.fillStyle(FG.cyan, 1).fillRoundedRect(cx - W / 2, cy - H / 2, W, H, 16);
+    cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
+    card.add(cg);
+
     card.add(
       this.add
-        .text(cx, cy - H / 2 + 40, 'SETTINGS', {
+        .text(cx, top + 30, 'SETTINGS', {
           fontFamily: FG_FONT,
-          fontSize: '26px',
-          color: '#e84393',
+          fontSize: '24px',
+          fontStyle: 'italic',
+          color: '#ffffff',
         })
         .setOrigin(0.5)
-        .setShadow(0, 3, '#9c2160', 0, true, false),
+        .setShadow(0, 3, '#0b6a99', 0, true, false),
     );
-    card.add(
+    // ✕ close-dot — same affordance as the prompt modal
+    const closeG = this.add.graphics();
+    closeG.fillStyle(0x0a0710, 0.55).fillCircle(cx + W / 2 - 24, top + 24, 13);
+    closeG.lineStyle(2.5, 0xffffff, 1).strokeCircle(cx + W / 2 - 24, top + 24, 13);
+    closeG.lineStyle(2.5, 0xffffff, 1);
+    closeG.lineBetween(cx + W / 2 - 28, top + 20, cx + W / 2 - 20, top + 28);
+    closeG.lineBetween(cx + W / 2 - 20, top + 20, cx + W / 2 - 28, top + 28);
+    card.add(closeG);
+    const closeZ = gateZone(
       this.add
-        .text(cx, cy - H / 2 + 68, 'tune the chase', {
-          fontFamily: FG_BODY,
-          fontSize: '13px',
-          fontStyle: '600',
-          color: '#7a8a99',
-        })
-        .setOrigin(0.5),
+        .zone(cx + W / 2 - 38, top + 10, 28, 28)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true }),
     );
+    closeZ.on('pointerdown', () => this.toggleSettings());
+    card.add(closeZ);
 
-    // lobby chip — pale recess → cyan with white rim on select
-    const makeChip = (
-      x: number,
-      y: number,
-      w: number,
-      h: number,
-      label: string,
-      store: Phaser.GameObjects.Container[],
-    ) => {
-      const cg = this.add.graphics();
-      const txt = this.add
-        .text(0, -1, label, { fontFamily: FG_FONT, fontSize: '14px', color: '#1c2a3a' })
-        .setOrigin(0.5);
-      const draw = (sel: boolean) => {
-        cg.clear();
-        if (sel) {
-          cg.fillStyle(0x0b6a99, 1).fillRoundedRect(-w / 2 + 2, -h / 2 + 3, w, h, h / 2);
-          cg.fillStyle(FG.cyan, 1).fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
-          cg.lineStyle(2.5, 0xffffff, 1).strokeRoundedRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3, h / 2);
-          txt.setColor('#ffffff');
-        } else {
-          cg.fillStyle(0xe8eef4, 1).fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
-          cg.lineStyle(2, 0xc7d3dc, 1).strokeRoundedRect(-w / 2 + 1, -h / 2 + 1, w - 2, h - 2, h / 2);
-          txt.setColor('#1c2a3a');
-        }
-      };
-      draw(false);
-      const cc = this.add.container(x, y, [cg, txt]);
-      (cc as unknown as { __redraw: (s: boolean) => void }).__redraw = draw;
-      store.push(cc);
-      const z = gateZone(
-        this.add.zone(x - w / 2, y - h / 2, w, h).setOrigin(0, 0).setInteractive({ useHandCursor: true }),
-      );
-      card.add([cc, z]);
-      return z;
-    };
-
-    const label = (x: number, t: string) =>
+    // ---- section bar — dark pill header like MOUSE SETTINGS/CONTROL BINDING ----
+    const section = (y: number, title: string) => {
+      const sg = this.add.graphics();
+      sg.fillStyle(0x17151f, 1).fillRoundedRect(cx - W / 2 + 22, y, W - 44, 26, 8);
+      card.add(sg);
       card.add(
         this.add
-          .text(x, cy - 38, t, {
+          .text(cx - W / 2 + 38, y + 13, title, {
+            fontFamily: FG_FONT,
+            fontSize: '14px',
+            color: '#ffffff',
+          })
+          .setOrigin(0, 0.5),
+      );
+    };
+
+    // ---- chevron row — label left, ‹ value › selector right ----
+    const selector = (
+      y: number,
+      label: string,
+      get: () => string,
+      step: (dir: 1 | -1) => void,
+    ): Phaser.GameObjects.Text => {
+      card.add(
+        this.add
+          .text(cx - W / 2 + 38, y, label, {
+            fontFamily: FG_FONT,
+            fontSize: '16px',
+            fontStyle: 'italic',
+            color: '#ffffff',
+          })
+          .setOrigin(0, 0.5),
+      );
+      // dark value recess
+      const rg = this.add.graphics();
+      rg.fillStyle(0x0a0710, 0.45).fillRoundedRect(cx + W / 2 - 190, y - 15, 120, 30, 8);
+      rg.lineStyle(2, 0xffffff, 0.35).strokeRoundedRect(cx + W / 2 - 190, y - 15, 120, 30, 8);
+      card.add(rg);
+      const val = this.add
+        .text(cx + W / 2 - 130, y, get(), {
+          fontFamily: FG_FONT,
+          fontSize: '14px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5);
+      card.add(val);
+      const chev = (sx: number, dir: 1 | -1) => {
+        const t = this.add
+          .text(cx + W / 2 + sx, y - 2, dir < 0 ? '❮' : '❯', {
+            fontFamily: FG_BODY,
+            fontSize: '18px',
+            fontStyle: '800',
+            color: '#ffffff',
+          })
+          .setOrigin(0.5)
+          .setAlpha(0.9);
+        card.add(t);
+        const z = gateZone(
+          this.add
+            .zone(cx + W / 2 + sx - 16, y - 16, 32, 32)
+            .setOrigin(0, 0)
+            .setInteractive({ useHandCursor: true }),
+        );
+        z.on('pointerdown', () => {
+          step(dir);
+          sfx.pickup();
+          this.tweens.add({ targets: val, scale: 1.15, duration: 90, yoyo: true });
+        });
+        card.add(z);
+      };
+      chev(-210, -1);
+      chev(-50, 1);
+      return val;
+    };
+
+    // ---- keycap chip — the D/A/W/S/SPC style ----
+    const keycap = (x: number, y: number, cap: string) => {
+      const kg = this.add.graphics();
+      kg.fillStyle(0x0a0710, 0.45).fillRoundedRect(x - 2, y - 2, cap.length * 9.5 + 22, 26, 6);
+      kg.fillStyle(0x2a2733, 1).fillRoundedRect(x, y - 4, cap.length * 9.5 + 18, 26, 6);
+      kg.lineStyle(1.5, 0xffffff, 0.25).strokeRoundedRect(x, y - 4, cap.length * 9.5 + 18, 26, 6);
+      card.add(kg);
+      card.add(
+        this.add
+          .text(x + (cap.length * 9.5 + 18) / 2, y + 9, cap, {
             fontFamily: FG_BODY,
             fontSize: '12px',
             fontStyle: '800',
-            color: '#7a8a99',
+            color: '#ffffff',
           })
           .setOrigin(0.5),
       );
+    };
 
-    label(cx - 160, 'DIFFICULTY');
-    DIFF_ORDER.forEach((d, i) => {
-      makeChip(cx - 160 + (i - 1) * 118, cy + 14, 106, 42, DIFFS[d].label, this.diffChips).on(
-        'pointerdown',
-        () => {
-          this.diff = d;
-          this.refreshPicks();
-        },
-      );
+    let y = top + 62;
+    section(y, 'GAME');
+    y += 42;
+    this.diffVal = selector(y, 'Difficulty', () => DIFFS[this.diff].label, (dir) => {
+      this.cycleDiff(dir);
+    });
+    y += 40;
+    this.soundVal = selector(y, 'Sound', () => (sfx.isMuted ? 'OFF' : 'ON'), () => {
+      const off = sfx.toggleMute();
+      this.soundVal?.setText(off ? 'OFF' : 'ON');
     });
     if (isTouch) {
-      label(cx + 170, 'THUMBSTICK');
-      JOY_ORDER.forEach((j, i) => {
-        makeChip(cx + 170 + (i - 0.5) * 124, cy + 14, 112, 42, JOY_LABEL[j], this.joyChips).on(
-          'pointerdown',
-          () => {
-            this.joy = j;
-            this.refreshPicks();
-          },
-        );
+      y += 40;
+      this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
+        const i = JOY_ORDER.indexOf(this.joy);
+        this.joy = JOY_ORDER[(i + dir + JOY_ORDER.length) % JOY_ORDER.length];
+        this.refreshPicks();
       });
-    } else {
-      label(cx + 170, 'CONTROLS');
+    }
+    y += 46;
+    section(y, 'CONTROLS');
+    y += 38;
+    if (isTouch) {
       card.add(
         this.add
-          .text(cx + 170, cy + 14, 'arrows — move\nshift — sprint · E — item', {
+          .text(cx, y + 22, 'left thumb — move   ·   RUN — sprint\nH₂O — item   ·   ↻ — restart   ·   II — pause', {
             fontFamily: FG_BODY,
             fontSize: '14px',
             fontStyle: '700',
-            color: '#5a7184',
+            color: '#eaf6fb',
             align: 'center',
+            lineSpacing: 8,
           })
           .setOrigin(0.5),
       );
+    } else {
+      const binds: [string, string][] = [
+        ['Move', 'WASD'],
+        ['Sprint', 'SHIFT'],
+        ['Pure water', 'E'],
+        ['Restart', 'R'],
+        ['Pause', 'ESC'],
+      ];
+      binds.forEach(([label, cap], i) => {
+        const ry = y + i * 32;
+        card.add(
+          this.add
+            .text(cx - W / 2 + 38, ry, label, {
+              fontFamily: FG_BODY,
+              fontSize: '14px',
+              fontStyle: '700',
+              color: '#ffffff',
+            })
+            .setOrigin(0, 0.5),
+        );
+        keycap(cx + W / 2 - 38 - (cap.length * 9.5 + 18), ry - 9, cap);
+      });
     }
 
     // DONE — dark candy pill, same family as the lobby's BACK
     const dg = this.add.graphics();
-    const dw = 150, dh = 42, dcx = cx, dcy = cy + H / 2 - 46;
+    const dw = 150, dh = 42, dcx = cx, dcy = cy + H / 2 - 40;
     dg.fillStyle(0x0a0710, 1).fillRoundedRect(dcx - dw / 2, dcy - dh / 2 + 3, dw, dh, dh / 2);
     dg.fillStyle(UI.ink, 1).fillRoundedRect(dcx - dw / 2, dcy - dh / 2 - 4, dw, dh - 2, dh / 2);
     dg.fillStyle(0xffffff, 0.14).fillRoundedRect(dcx - dw / 2 + 7, dcy - dh / 2, dw - 14, 13, 7);
@@ -681,11 +766,11 @@ export class TitleScene extends Phaser.Scene {
     card.add(doneZ);
     card.add(
       this.add
-        .text(cx + W / 2 - 16, cy + H / 2 - 16, 'esc — close', {
+        .text(cx + W / 2 - 16, cy + H / 2 - 14, 'esc — close', {
           fontFamily: FG_BODY,
           fontSize: '11px',
           fontStyle: '600',
-          color: '#b9c4cf',
+          color: '#b9e8f7',
         })
         .setOrigin(1, 1),
     );
@@ -735,18 +820,8 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private refreshPicks() {
-    DIFF_ORDER.forEach((d, i) => {
-      const selected = d === this.diff;
-      const chip = this.diffChips[i];
-      (chip as unknown as { __redraw: (s: boolean) => void }).__redraw?.(selected);
-      this.tweens.add({ targets: chip, scale: selected ? 1.12 : 1, duration: 140 });
-    });
-    JOY_ORDER.forEach((j, i) => {
-      const selected = j === this.joy;
-      const chip = this.joyChips[i];
-      if (!chip) return;
-      (chip as unknown as { __redraw: (s: boolean) => void }).__redraw?.(selected);
-      this.tweens.add({ targets: chip, scale: selected ? 1.12 : 1, duration: 140 });
-    });
+    this.diffVal?.setText(DIFFS[this.diff].label);
+    this.joyVal?.setText(JOY_LABEL[this.joy]);
+    savePicks(this.diff, this.joy);
   }
 }
