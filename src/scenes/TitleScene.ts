@@ -697,6 +697,9 @@ export class TitleScene extends Phaser.Scene {
     this.settingsOpen = !this.settingsOpen;
     this.topBar?.setActive(2, this.settingsOpen); // the sliders tab goes pink while its card is open
     const card = this.settingsCard;
+    // kill any in-flight close tween — its onComplete would setVisible(false)
+    // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
+    this.tweens.killTweensOf(card);
     if (this.settingsOpen) {
       card.setVisible(true);
       this.cardZones.forEach((z) => (z.input!.enabled = true));

@@ -347,14 +347,16 @@ export function fgTopBar(
       { x, y: top + bh },
     ];
     const base = pts.map((p) => ({ x: p.x, y: p.y + 2 }));
+    const bx = x; // capture per-button — x is loop-carried; redrawing with the
+    // shared x repaints sheen+icon at the row's far edge ("icon jumps away")
     const draw = (on: boolean) => {
       const fill = on ? FG.pink : FG.cyan; // pink = the active tab, like theirs
       b.clear();
       b.fillStyle(shade(fill, -55), 1).fillPoints(base, true);
       b.fillStyle(fill, 1).fillPoints(pts, true);
       b.lineStyle(2.5, 0xffffff, 0.9).strokePoints(pts, true); // thick white rim like theirs
-      b.fillStyle(0xffffff, 0.18).fillRoundedRect(x + 5, top + 3, w - 10, bh * 0.3, 5);
-      drawFgIcon(b, it.icon, x + w / 2, H / 2, 17);
+      b.fillStyle(0xffffff, 0.18).fillRoundedRect(bx + 5, top + 3, w - 10, bh * 0.3, 5);
+      drawFgIcon(b, it.icon, bx + w / 2, H / 2, 17);
     };
     draw(!!it.active);
     iconBtns.push({ g: b, draw });
