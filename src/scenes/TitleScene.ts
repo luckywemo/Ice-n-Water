@@ -185,6 +185,12 @@ export class TitleScene extends Phaser.Scene {
     const stageZoom = Math.min(width / vw, height / vh);
     this.cameras.main.setZoom(stageZoom);
     this.cameras.main.centerOn(vw / 2, vh / 2);
+    // visible world edges — the stage letterboxes on one axis, so edge-anchored
+    // elements must target the real view edges, not stage 0/vw/vh
+    const visL = vw / 2 - width / (2 * stageZoom);
+    const visR = vw / 2 + width / (2 * stageZoom);
+    const visT = vh / 2 - height / (2 * stageZoom);
+    const visB = vh / 2 + height / (2 * stageZoom);
     let lastW = width;
     let lastH = height;
     this.scale.on('resize', (sz: Phaser.Structs.Size) => {
@@ -292,20 +298,20 @@ export class TitleScene extends Phaser.Scene {
         { text: 'ICE', fx: 'ice', size: 46 },
         { text: "'N'", fx: 'plain', size: 26 },
       ],
-      112,
+      visT + 112,
       extrude,
       Number.MAX_SAFE_INTEGER,
       5,
     );
-    lock1.place(64);
+    lock1.place(visL + 64);
     const lock2 = this.buildLetters(
       [{ text: 'WATER', fx: 'water', size: 62 }],
-      190,
+      visT + 190,
       extrude,
       Number.MAX_SAFE_INTEGER,
       5,
     );
-    lock2.place(54);
+    lock2.place(visL + 54);
     this.lobbyArm = (t0) => {
       lock1.arm(t0);
       lock2.arm(t0 + 160);
@@ -317,7 +323,7 @@ export class TitleScene extends Phaser.Scene {
 
     // SEASON 1-style plain white line under the logo — no plaque
     this.add
-      .text(58, 242, 'SEASON 1 · THE ROAD NORTH', {
+      .text(visL + 58, visT + 242, 'SEASON 1 · THE ROAD NORTH', {
         fontFamily: FG_BODY,
         fontSize: '18px',
         fontStyle: 'italic 800',
@@ -328,7 +334,7 @@ export class TitleScene extends Phaser.Scene {
 
     // --- ROAD PROGRESS (their season-progress block) ---
     this.add
-      .text(58, 282, 'ROAD PROGRESS', {
+      .text(visL + 58, visT + 282, 'ROAD PROGRESS', {
         fontFamily: FG_BODY,
         fontSize: '15px',
         fontStyle: '800',
@@ -336,8 +342,8 @@ export class TitleScene extends Phaser.Scene {
       })
       .setDepth(5)
       .setStroke('#8a6200', 3);
-    fgProgressBar(this, 100, 308, 268, 28, (prog.unlocked - 1) / TOTAL_LEVELS, `${prog.unlocked - 1}/${TOTAL_LEVELS}`);
-    fgHexBadge(this, 92, 322, 24, `${Math.max(1, prog.unlocked - 1)}`);
+    fgProgressBar(this, visL + 100, visT + 308, 268, 28, (prog.unlocked - 1) / TOTAL_LEVELS, `${prog.unlocked - 1}/${TOTAL_LEVELS}`);
+    fgHexBadge(this, visL + 92, visT + 322, 24, `${Math.max(1, prog.unlocked - 1)}`);
 
     // --- podium + 3D hero ---
     const pod = this.add.graphics().setDepth(4);
@@ -375,17 +381,17 @@ export class TitleScene extends Phaser.Scene {
     }
 
     // --- name plate — bottom-left ---
-    const nameT = fgNamePlate(this, 40, vh * 0.9, 240, 48, playerName() || 'your runner', () =>
+    const nameT = fgNamePlate(this, visL + 40, visB - 80, 240, 48, playerName() || 'your runner', () =>
       this.gate(renameRunner),
     );
     this.events.on('runner-renamed', () => nameT.setText(playerName() || 'your runner'));
 
     // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
-    fgKeycapHint(this, vw * 0.83, vh * 0.815, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
+    fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
 
     // --- PLAY! — bottom-right; left edge is the reference's "/" slant,
     // right end runs off the frame edge cropped ---
-    fgButton(this, vw * 0.867, vh * 0.9, 370, 90, 'PLAY!', {
+    fgButton(this, visR - 170, visB - 80, 370, 90, 'PLAY!', {
       icon: 'dot',
       slant: true,
       fontSize: 56,
