@@ -14,6 +14,20 @@ export class Sfx {
   private voicePick: SpeechSynthesisVoice | null = null;
   private voiceBufs = new Map<string, AudioBuffer>();
   private voiceBusy = false;
+  private muted = localStorage.getItem('icenwater_muted') === '1';
+
+  get isMuted() {
+    return this.muted;
+  }
+
+  /** master-bus mute — covers synth sfx, the groove, voice files + browser TTS */
+  toggleMute(): boolean {
+    this.muted = !this.muted;
+    localStorage.setItem('icenwater_muted', this.muted ? '1' : '0');
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+    if (this.muted && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    return this.muted;
+  }
 
   // recorded en-NG neural voices, fetched on demand — two speakers:
   //   Abeo (male)  = the militia captain — barks, taunts, capture calls
@@ -45,7 +59,7 @@ export class Sfx {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.5;
+      this.master.gain.value = this.muted ? 0 : 0.5;
       this.master.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();

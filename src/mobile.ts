@@ -27,6 +27,7 @@ export class TouchControls {
   private sprintBtn!: Phaser.GameObjects.Container;
   private waterBtn!: Phaser.GameObjects.Container;
   private restartBtn!: Phaser.GameObjects.Container;
+  private pauseBtn: Phaser.GameObjects.Container | null = null;
   private hudItems: HudItem[] = [];
   private relayout: () => void = () => {};
 
@@ -36,7 +37,7 @@ export class TouchControls {
 
   constructor(
     scene: Phaser.Scene,
-    cbs: { onWater: () => void; onRestart: () => void },
+    cbs: { onWater: () => void; onRestart: () => void; onPause?: () => void },
     joy: JoyMode = 'floating',
   ) {
     this.scene = scene;
@@ -63,11 +64,14 @@ export class TouchControls {
     this.sprintBtn = this.makeButton(scene, 44, 'RUN', 0xf7bd14, '#17151f');
     this.waterBtn = this.makeButton(scene, 36, 'H₂O', 0x29b6f6);
     this.restartBtn = this.makeButton(scene, 22, '↻', 0x17151f); // beside the HUD panel — minimap owns top-right
+    // pause only exists where a handler is supplied — net play never gets one
+    if (cbs.onPause) this.pauseBtn = this.makeButton(scene, 22, 'II', 0x17151f);
 
     // pin: sprint bottom-right, water just above-left of it, restart top-left
     this.pin(this.sprintBtn, 1, 1, -80, -96);
     this.pin(this.waterBtn, 1, 1, -180, -150);
     this.pin(this.restartBtn, 0, 0, 446, 34);
+    if (this.pauseBtn) this.pin(this.pauseBtn, 0, 0, 502, 34);
 
     this.relayout = () => {
       const w = scene.scale.width;
@@ -119,6 +123,10 @@ export class TouchControls {
         cbs.onRestart();
         this.tapFlash(scene, this.restartBtn);
       }
+      if (this.pauseBtn && this.inside(p, this.pauseBtn, 30)) {
+        cbs.onPause?.();
+        this.tapFlash(scene, this.pauseBtn);
+      }
     });
 
     scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
@@ -163,6 +171,7 @@ export class TouchControls {
     this.sprintBtn.setVisible(on);
     this.waterBtn.setVisible(on);
     this.restartBtn.setVisible(on);
+    this.pauseBtn?.setVisible(on);
   }
 
   private pin<T extends HudItem['obj']>(obj: T, ax: number, ay: number, ox: number, oy: number): T {

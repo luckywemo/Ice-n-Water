@@ -115,6 +115,9 @@ export class GameScene extends Phaser.Scene {
   private lastResult: { won: boolean; survived: number } | null = null;
   private endButtons: Phaser.GameObjects.Container[] = []; // result dashboard
   private endHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
+  private paused = false; // single-player only — net play never pauses
+  private pauseObjs: { destroy: () => void }[] = [];
+  private pauseHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
 
   // adventure objectives — collect tokens / rescue mates beyond raw survival
   private objGot = 0;
@@ -162,6 +165,9 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = null;
     this.endButtons = [];
     this.endHitZones = [];
+    this.paused = false;
+    this.pauseObjs = [];
+    this.pauseHitZones = [];
     this.phase = 'countdown';
     this.countdownLeft = CONFIG.round.countdownSec;
     this.countdownShown = 0;
@@ -234,6 +240,7 @@ export class GameScene extends Phaser.Scene {
             this.transitionTo('game', true);
           }
         },
+        onPause: () => this.togglePause(),
       },
       loadPicks().joy,
     );
@@ -267,6 +274,8 @@ export class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
+    this.input.on('pointerdown', this.onPauseTap, this);
+    this.events.once('shutdown', () => this.input.off('pointerdown', this.onPauseTap, this));
 
     this.cameras.main.fadeIn(280, 0, 0, 0);
 
@@ -856,7 +865,18 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     const now = this.time.now;
 
+    if (this.paused) {
+      if (
+        Phaser.Input.Keyboard.JustDown(this.keys.ESC) ||
+        Phaser.Input.Keyboard.JustDown(this.keys.SPACE)
+      ) {
+        this.resume();
+      }
+      return;
+    }
+
     if (this.phase === 'countdown') {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) return this.togglePause();
       this.countdownLeft -= delta / 1000;
       const shown = Math.ceil(this.countdownLeft);
       if (shown !== this.countdownShown && shown > 0) {
@@ -954,7 +974,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (Phaser.Input.Keyboard.JustDown(this.keys.R)) this.transitionTo('game', true);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.T) || Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) return this.togglePause();
+    if (Phaser.Input.Keyboard.JustDown(this.keys.T)) {
       this.transitionTo(this.level ? 'adventure' : 'title');
     }
     if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.useItem(this.player);
@@ -1546,6 +1567,157 @@ export class GameScene extends Phaser.Scene {
         return;
       }
     }
+  }
+
+  /** same manual hit test for the pause menu's pills */
+  private onPauseTap(p: Phaser.Input.Pointer) {
+    if (!this.paused) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    for (const b of this.pauseHitZones) {
+      const sx = b.ax * w + b.ox;
+      const sy = b.ay * h + b.oy;
+      if (Math.abs(p.x - sx) <= b.bw / 2 + 8 && Math.abs(p.y - sy) <= b.bh / 2 + 8) {
+        b.go();
+        return;
+      }
+    }
+  }
+
+  // ---------- pause — single-player only; net play never freezes ----------
+
+  private togglePause() {
+    if (this.phase === 'over' || this.transitioning || this.paused) return;
+    this.paused = true;
+    this.touch?.setActive(false); // pads off — the menu owns the taps
+    this.physics.pause();
+    this.time.paused = true; // freezes the event clock — no bus/NEPA/rain mid-pause
+    this.tweens.pauseAll(); // entity anims freeze; menu tweens added after are unaffected
+    this.buildPauseMenu();
+  }
+
+  private resume() {
+    if (!this.paused) return;
+    const gone = new Set<unknown>(this.pauseObjs);
+    for (const o of this.pauseObjs) o.destroy();
+    this.pauseObjs = [];
+    this.pauseHitZones = [];
+    this.hudItems = this.hudItems.filter((it) => !gone.has(it.obj));
+    this.paused = false;
+    this.physics.resume();
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.touch?.setActive(true);
+  }
+
+  /** pause card — a menu, so paper card + candy pills (unlike the banner-only result) */
+  private buildPauseMenu() {
+    const W = 330;
+    const H = 340;
+    const cy = -10;
+    const track = <T extends HudItem['obj']>(o: T, ax = 0.5, ay = 0.5, ox = 0, oy = 0): T => {
+      this.pin(o, ax, ay, ox, oy);
+      this.pauseObjs.push(o as unknown as { destroy: () => void });
+      return o;
+    };
+
+    const dim = this.add.graphics().setDepth(40);
+    dim.fillStyle(0x0a1420, 0.62).fillRect(-1600, -1200, 3200, 2400);
+    track(dim);
+    track(panel(this, -W / 2, cy - H / 2, W, H, { depth: 41 }), 0.5, 0.5, 0, 0);
+
+    track(
+      this.add
+        .text(0, 0, 'PAUSED', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '30px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setDepth(42)
+        .setShadow(0, 4, '#9c2160', 0, true, false),
+      0.5, 0.5, 0, cy - H / 2 + 46,
+    );
+    track(
+      this.add
+        .text(0, 0, 'take a breather — the militia can wait', {
+          fontFamily: UI_FONT,
+          fontSize: '12px',
+          fontStyle: '600',
+          color: '#7a8a99',
+        })
+        .setOrigin(0.5)
+        .setDepth(42),
+      0.5, 0.5, 0, cy - H / 2 + 72,
+    );
+
+    const bw = 210;
+    const bh = 46;
+    const lip = 6;
+    const pill = (
+      oy: number,
+      label: string,
+      fill: number,
+      go: () => void,
+      inkText = true,
+    ) => {
+      const c = this.add.container(0, 0).setDepth(42);
+      const g = this.add.graphics();
+      g.fillStyle(shade(fill, -38), 1).fillRoundedRect(-bw / 2, -bh / 2 - 2, bw, bh, bh / 2);
+      g.fillStyle(fill, 1).fillRoundedRect(-bw / 2, -bh / 2 - lip, bw, bh - 2, bh / 2);
+      g.fillStyle(0xffffff, 0.2).fillRoundedRect(-bw / 2 + 7, -bh / 2 - lip + 4, bw - 14, bh * 0.34, bh / 4);
+      const t = this.add
+        .text(0, -lip / 2 - 1, label, {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '15px',
+          color: inkText ? '#1c1626' : '#f5efe0',
+        })
+        .setOrigin(0.5);
+      c.add([g, t]);
+      track(c, 0.5, 0.5, 0, oy);
+      this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy, bw, bh, go });
+    };
+
+    pill(cy - 34, 'RESUME', UI.danfo, () => this.resume());
+    pill(cy + 22, 'RESTART', 0x29b6f6, () => {
+      this.resume();
+      this.transitionTo('game', true);
+    }, false);
+    pill(cy + 78, this.level ? 'QUIT — THE ROAD' : 'QUIT — TITLE', UI.ink, () => {
+      this.resume();
+      this.transitionTo(this.level ? 'adventure' : 'title');
+    }, false);
+
+    // sound toggle — a live chip reflecting sfx mute state
+    const sg = this.add.graphics().setDepth(42);
+    const st = this.add
+      .text(0, -1, '', { fontFamily: DISPLAY_FONT, fontSize: '13px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(42);
+    const sw = 130;
+    const sh = 32;
+    const soy = cy + 128;
+    const drawSound = () => {
+      const on = !sfx.isMuted;
+      sg.clear();
+      sg.fillStyle(0x0a0710, 1).fillRoundedRect(-sw / 2, -sh / 2 + 2, sw, sh, sh / 2);
+      sg.fillStyle(on ? 0x29b6f6 : 0x5a7184, 1).fillRoundedRect(-sw / 2, -sh / 2 - 2, sw, sh - 2, sh / 2);
+      sg.fillStyle(0xffffff, 0.18).fillRoundedRect(-sw / 2 + 6, -sh / 2 - 2 + 3, sw - 12, sh * 0.32, sh / 4);
+      st.setText(on ? 'SOUND ON' : 'SOUND OFF');
+    };
+    drawSound();
+    track(sg, 0.5, 0.5, 0, soy);
+    track(st, 0.5, 0.5, 0, soy - 2);
+    this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy: soy, bw: sw, bh: sh, go: () => { sfx.toggleMute(); drawSound(); } });
+
+    track(
+      this.add
+        .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
+        .setOrigin(1, 1)
+        .setDepth(42),
+      0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
+    );
+    this.relayout(); // pinned post-create — place everything now
   }
 
   /** touch-first result dashboard — big tappable pills under the banner */
