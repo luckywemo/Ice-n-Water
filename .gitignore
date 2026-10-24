@@ -9,7 +9,7 @@ server/node_modules/
 
 # build output
 dist/
-server/dist/
+server/build/
 
 # deployment state
 .vercel/
@@ -33,3 +33,6 @@ Thumbs.db
 
 # design-audit screenshots
 shots/
+# shot probe output + its chrome profile — keep shot.mjs, drop the rest
+.shots/*.png
+.shots/.profile/

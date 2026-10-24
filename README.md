@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>The Nigerian childhood chase game, digitized.</b><br/>
-  Ice &amp; Water · Police &amp; Thief · a 500-level journey from Lagos to Maiduguri
+  Ice &amp; Water — a 500-level journey from Lagos to Maiduguri
 </p>
 
 <p align="center">
@@ -19,14 +19,12 @@
 browser: runners scatter, the militia chase, and a single touch freezes you —
 until a teammate's tap melts you back in.
 
-- **Adventure — The Road North.** 500 procedurally-built levels across 50 real
-  Nigerian towns. Lagos Island → Oshodi → Ibadan → Abuja → Kano → Maiduguri.
-  Fog hides the road ahead; every milestone burns it off. Earn up to 3 stars per
-  level and climb the global leaderboard.
-- **Police &amp; Thief.** Jailbreak rules — get caught and you're in the cell
-  until your crew springs you.
+- **Adventure — a 500-level campaign.** The Road North runs through 50
+  real Nigerian towns. Lagos Island → Oshodi → Ibadan → Abuja → Kano →
+  Maiduguri. Fog hides the road ahead; every milestone burns it off. Earn
+  up to 3 stars per level and climb the global leaderboard.
 - **Online multiplayer.** 4-digit room codes, server-authoritative rounds
-  (Colyseus), up to 8 players.
+  (Colyseus), up to 10 players — ice freezes water, mates thaw the frozen.
 - **Nigerian voice acting.** YarnGPT-generated lines — "UP NEPA!", "I dey
   come!", "Dem don catch am!" — plus danfo, rain and NEPA random events.
 - **Mobile + desktop.** Touch joystick, responsive layout, gamepad-friendly.
