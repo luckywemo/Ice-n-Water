@@ -286,7 +286,7 @@ export class Hero3D {
         mn = Math.min(r, g, b),
         lum = (mx + mn) / 2;
       const sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * lum - 1) || 1);
-      return sat > 0.28 && lum > 0.12 && lum < 0.62;
+      return sat > 0.28 && lum > 0.07 && lum < 0.62;
     };
     // deterministic per-position noise
     const nz = (x: number, y: number, s: number) => {
@@ -347,10 +347,10 @@ export class Hero3D {
         if (!body(x, y)) continue;
         const o = (y * W + x) * 4,
           v = y / H;
-        // their base gradient: top l-8 → bottom l-20 of the body brown
-        ud[o] = 74 - v * 26;
-        ud[o + 1] = 40 - v * 15;
-        ud[o + 2] = 18 - v * 7;
+        // undercoat in the fur's own brown — mild vertical darkening only
+        ud[o] = 112 - v * 48;
+        ud[o + 1] = 62 - v * 27;
+        ud[o + 2] = 30 - v * 13;
         ud[o + 3] = 255;
       }
     uc.putImageData(uimg, 0, 0);
@@ -387,7 +387,7 @@ export class Hero3D {
       const fromCow = Math.atan2(y - cowY, x - cowX);
       const clump = (Math.sin(x * 0.04) + Math.cos(y * 0.035)) * 0.3;
       let an = fromCow + (((down - fromCow + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.5;
-      an += clump * 0.6 + (nz(x, y, 1) - 0.5) * 1.1;
+      an += clump * 0.35 + (nz(x, y, 1) - 0.5) * 0.55;
       return an;
     };
     type Strand = { x: number; y: number; a: number; l: number; c: number; s: number };
@@ -396,9 +396,9 @@ export class Hero3D {
       hi: Strand[] = [],
       fringe: Strand[] = [];
 
-    // interior coat — stride-4 sample of body pixels, layered like theirs
-    for (let y = 4; y < H - 4; y += 4)
-      for (let x = 4; x < W - 4; x += 4) {
+    // interior coat — stride-3 sample of body pixels, layered like theirs
+    for (let y = 4; y < H - 4; y += 3)
+      for (let x = 4; x < W - 4; x += 3) {
         if (!body(x, y)) continue;
         const len = 9 + nz(x, y, 4) * 8;
         const roll = nz(x, y, 6);
@@ -407,14 +407,14 @@ export class Hero3D {
           y,
           a: restAngle(x, y),
           l: len,
-          c: (nz(x, y, 5) - 0.5) * len * 1.1,
+          c: (nz(x, y, 5) - 0.5) * len * 0.7,
           s: nz(x, y, 8),
         };
         (roll < 0.4 ? under : roll < 0.92 ? mid : hi).push(s);
       }
     // fringe — perimeter strands pointing outward
-    for (let y = 5; y < H - 5; y += 6)
-      for (let x = 5; x < W - 5; x += 6) {
+    for (let y = 5; y < H - 5; y += 5)
+      for (let x = 5; x < W - 5; x += 5) {
         if (!body(x, y)) continue;
         if (
           a(x - 6, y) > 100 &&
@@ -428,9 +428,9 @@ export class Hero3D {
         const nl = Math.hypot(nx, ny) || 1;
         const out = Math.atan2(ny / nl, nx / nl);
         let an = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
-        an += (nz(x, y, 3) - 0.5) * 0.8;
+        an += (nz(x, y, 3) - 0.5) * 0.5;
         const len = 9 + nz(x, y, 4) * 8;
-        fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * 1.1, s: nz(x, y, 8) });
+        fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * 0.7, s: nz(x, y, 8) });
       }
 
     ctx.save();
