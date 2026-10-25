@@ -828,6 +828,9 @@ export function promptModal(
   const track = <T extends Phaser.GameObjects.GameObject>(o: T, d = depth): T => {
     (o as { setScrollFactor?: (n: number) => unknown }).setScrollFactor?.(0);
     (o as { setDepth?: (n: number) => unknown }).setDepth?.(d);
+    // laid out in raw screen px on purpose — scenes that wrap chrome in a
+    // stage-coord container must leave these at the display root
+    (o as { setData?: (k: string, v: unknown) => unknown }).setData?.('screenFixed', 1);
     parts.push(o);
     return o;
   };

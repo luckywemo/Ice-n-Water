@@ -46,6 +46,18 @@ export class AdventureScene extends Phaser.Scene {
   private worldW = 0;
   private zoomK = 1; // stage zoom — screen px ÷ zoomK = world px
   private visW = VW; // visible world size after letterboxing
+  // Phaser zooms around the viewport centre, so cam.scroll sits
+  // off *behind* the view's top-left corner: viewLeft = scrollX + offX
+  private offX = 0;
+  private offY = 0;
+  private visL = 0; // view edges in stage coords, incl. letterbox margin
+  private visT = 0;
+  private scrollLo = 0; // allowed scrollX range under the zoomed camera
+  private scrollHi = 0;
+  // all screen-fixed UI rides inside this container — positioned at
+  // (offX, offY) it exactly cancels the centre-zoom shift, so children
+  // keep plain stage coords and land at stage*zoom regardless of scroll
+  private chrome!: Phaser.GameObjects.Container;
   private visH = VH;
   private railY = 0;
   private railX0 = 92; // first card's centre-x in world space
@@ -109,13 +121,42 @@ export class AdventureScene extends Phaser.Scene {
     const zoomK = (this.zoomK = Math.min(width / VW, height / VH));
     this.visW = width / zoomK;
     const visH = (this.visH = height / zoomK);
+    this.offX = (width - this.visW) / 2; // viewLeft = scrollX + offX
+    this.offY = (height - visH) / 2;
+    this.visL = VW / 2 - this.visW / 2;
+    this.visT = VH / 2 - visH / 2;
+    this.chrome = this.add
+      .container(this.offX, this.offY)
+      .setScrollFactor(0)
+      .setDepth(40);
     const cam = this.cameras.main;
     cam.setZoom(zoomK);
     cam.centerOn(VW / 2, VH / 2);
+    // Phaser RESIZE fires after create() as the window settles (mobile URL
+    // bar, orientation) — without this the zoom goes stale and the stage
+    // center-crops. Same approach as the lobby: restart on real resizes.
+    let lastW = width;
+    let lastH = height;
+    const onResize = (sz: Phaser.Structs.Size) => {
+      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
+        lastW = sz.width;
+        lastH = sz.height;
+        this.scene.restart();
+      }
+    };
+    this.scale.on('resize', onResize);
+    // scale listeners are global — they survive restarts; detach on shutdown
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      this.scale.off('resize', onResize),
+    );
 
     // the seasons field — cyan rings radiating behind the podium. No crowns:
     // crowns are the boot tile's flourish, gameplay screens get rings only.
-    fgRings(this, this.visW, visH, VW / 2 + this.visW * 0.12, VH / 2 + visH * 0.02, FG.cyan, 0x1fa9e8).setScrollFactor(0);
+    fgRings(this, this.visW, visH, VW / 2 + this.visW * 0.12, VH / 2 + visH * 0.02, FG.cyan, 0x1fa9e8)
+      .setScrollFactor(0)
+      // pure background — stays at display root UNDER the rail; its
+      // overscan already covers the centre-zoom shift
+      .setData('screenFixed', 1);
 
     this.railY = VH * 0.8;
     this.worldW = this.railX0 + (TOTAL_LEVELS - 1) * CARD_GAP + 140;
@@ -130,8 +171,12 @@ export class AdventureScene extends Phaser.Scene {
       localStorage.setItem(SEEN_KEY, String(ft));
     }
 
-    cam.setBounds(0, 0, this.worldW, VH);
-    cam.scrollY = 0;
+    // bounds must not fight the letterbox: clampX slides the allowed
+    // scrollX range by (visW - width)/2, so bounds x=visL/width=worldW-visL
+    // yield exactly [scrollLo, scrollHi]; y/height pin the centred stage.
+    this.scrollLo = this.visL - this.offX;
+    this.scrollHi = this.worldW - this.visW - this.offX;
+    cam.setBounds(this.visL, this.visT, this.worldW - this.visL, visH);
 
     // ---- seasons chrome: header block + podium bean, both screen-fixed ----
     this.buildHeader(VW, VH);
@@ -195,9 +240,10 @@ export class AdventureScene extends Phaser.Scene {
       {
         label: 'MAP',
         scrollLock: true,
-        // hug the real view edges — the stage letterboxes on one axis
-        xL: VW / 2 - this.visW / 2,
-        xR: VW / 2 + this.visW / 2,
+        // chrome children render at stage*zoom — the view edges in
+        // stage coords are 0..visW (overscan covers the letterbox)
+        xL: 0,
+        xR: this.visW,
       },
     );
 
@@ -210,8 +256,8 @@ export class AdventureScene extends Phaser.Scene {
       this.velX = 0;
       cam.scrollX = Phaser.Math.Clamp(
         cam.scrollX + ((dy || dx) * 0.9) / this.zoomK,
-        0,
-        this.worldW - this.visW,
+        this.scrollLo,
+        this.scrollHi,
       );
     });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
@@ -232,8 +278,8 @@ export class AdventureScene extends Phaser.Scene {
       this.lastMoveT = this.time.now;
       cam.scrollX = Phaser.Math.Clamp(
         this.camStartX - (p.x - this.dragX) / this.zoomK,
-        0,
-        this.worldW - this.visW,
+        this.scrollLo,
+        this.scrollHi,
       );
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
@@ -283,13 +329,17 @@ export class AdventureScene extends Phaser.Scene {
     // anchor keeps the focused card right of the detail card even on narrow screens
     const anchorI = advance !== null ? advance : frontierN - 1;
     const focusX = this.visW * this.focusFrac();
-    const targetX = Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - this.visW);
-    cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : 0;
-    if (!REDUCED_MOTION && advance === null && targetX > 60) {
+    // targetX is the view's LEFT edge in world units — scrollX trails it
+    // by offX under zoom
+    const targetX =
+      Phaser.Math.Clamp(this.cardX(anchorI) - focusX, this.visL, this.worldW - this.visW) -
+      this.offX;
+    cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : this.scrollLo;
+    if (!REDUCED_MOTION && advance === null && targetX + this.offX > 60) {
       this.tweens.add({
         targets: cam,
         scrollX: targetX,
-        duration: Math.min(700 + targetX * 0.16, 2600),
+        duration: Math.min(700 + (targetX + this.offX) * 0.16, 2600),
         ease: 'Cubic.easeInOut',
       });
     }
@@ -305,6 +355,8 @@ export class AdventureScene extends Phaser.Scene {
     if (advance !== null && !data?.board) {
       this.time.delayedCall(REDUCED_MOTION ? 150 : 550, () => this.playAdvance(advance));
     }
+
+    this.collectChrome();
   }
 
   /** slide the frontier marker card `a` → `a+1` along the rail, panning the
@@ -313,7 +365,9 @@ export class AdventureScene extends Phaser.Scene {
     this.marching = true;
     const toX = this.cardX(a); // a+1's card is the new frontier
     const cam = this.cameras.main;
-    const camX = Phaser.Math.Clamp(toX - this.visW * this.focusFrac(), 0, this.worldW - this.visW);
+    const camX =
+      Phaser.Math.Clamp(toX - this.visW * this.focusFrac(), this.visL, this.worldW - this.visW) -
+      this.offX;
     const done = () => {
       this.marching = false;
       sfx.pickup();
@@ -338,7 +392,7 @@ export class AdventureScene extends Phaser.Scene {
     const town = MILESTONE_TOWNS[r];
     this.time.delayedCall(500, () => sfx.pickup());
     const ban = this.add
-      .text(VW / 2, VH * 0.28, `NEW GROUND — ${town.toUpperCase()}`, {
+      .text(this.visW / 2, this.visH * 0.28, `NEW GROUND — ${town.toUpperCase()}`, {
         fontFamily: DISPLAY_FONT,
         fontSize: '30px',
         color: '#e84393', // pink header + deep-pink shadow, like every card
@@ -350,7 +404,7 @@ export class AdventureScene extends Phaser.Scene {
       .setScale(0.8)
       .setShadow(0, 4, '#9c2160', 0, true, false);
     const sub = this.add
-      .text(VW / 2, VH * 0.28 + 40, 'the road opens', {
+      .text(this.visW / 2, this.visH * 0.28 + 40, 'the road opens', {
         fontFamily: UI_FONT,
         fontSize: '15px',
         fontStyle: '600',
@@ -377,21 +431,25 @@ export class AdventureScene extends Phaser.Scene {
     // screen-feel scroll speed — world units stretch under the stage zoom
     const v = ((delta / 1000) * 620) / this.zoomK;
     if (k?.LEFT?.isDown || k?.A?.isDown)
-      cam.scrollX = Phaser.Math.Clamp(cam.scrollX - v, 0, this.worldW - this.visW);
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX - v, this.scrollLo, this.scrollHi);
     if (k?.RIGHT?.isDown || k?.D?.isDown)
-      cam.scrollX = Phaser.Math.Clamp(cam.scrollX + v, 0, this.worldW - this.visW);
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX + v, this.scrollLo, this.scrollHi);
 
     // fling momentum — decays like a real scroll
     if (this.dragX === null && Math.abs(this.velX) > 20) {
       cam.scrollX = Phaser.Math.Clamp(
         cam.scrollX + this.velX * (delta / 1000),
-        0,
-        this.worldW - this.visW,
+        this.scrollLo,
+        this.scrollHi,
       );
       this.velX *= Math.pow(0.92, delta / 16.7); // frame-rate independent decay
     } else if (this.dragX === null) {
       this.velX = 0;
     }
+
+    // late-built chrome (board modal, detail rebuild, reveal banner,
+    // name prompt) joins the container — cheap sweep, never misses
+    this.collectChrome();
   }
 
   /** bake one town's rail segment into a single canvas — the whole 500-card
@@ -615,15 +673,15 @@ export class AdventureScene extends Phaser.Scene {
 
   private showBoard() {
     if (this.boardLayer) return;
-    const width = VW,
-      height = VH;
+    const width = this.visW,
+      height = this.visH;
     const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(60);
     this.boardLayer = layer;
 
     // the seasons underlay — cyan crown field + rings, then a light veil
-    const bg = fgCrownField(this, this.visW, this.visH, VW / 2, VH * 0.45, FG.cyan, 0x1fa9e8, 0x0f7fb8);
+    const bg = fgCrownField(this, width, height, width / 2, height * 0.45, FG.cyan, 0x1fa9e8, 0x0f7fb8);
     const dim = this.add
-      .rectangle(VW / 2, VH / 2, this.visW + 60, this.visH + 60, 0x081420, 0.22)
+      .rectangle(width / 2, height / 2, width + 60, height + 60, 0x081420, 0.22)
       .setInteractive(); // swallow taps — sized to the letterboxed view
     const pw = Math.min(460, width - 40);
     const ph = Math.min(620, height - 40);
@@ -780,13 +838,39 @@ export class AdventureScene extends Phaser.Scene {
     this.boardHit = [];
   }
 
+  /** any root object marked scrollFactor(0) is screen-fixed chrome — move
+   *  it into `chrome` (offset by offX/offY) so the centre-zoom shift cancels
+   *  and plain stage coords land at stage*zoom. Descendants keep sf0 too,
+   *  otherwise their scrollFactor would subtract camera scroll inside the
+   *  container and fixed UI would drift with the rail. */
+  private collectChrome() {
+    const mark = (o: Phaser.GameObjects.GameObject) => {
+      if (o.type === 'DOMElement') return;
+      o.setScrollFactor(0, 0);
+      if (o instanceof Phaser.GameObjects.Container) o.each((c) => mark(c));
+    };
+    for (const o of [...this.children.list]) {
+      if (
+        o === this.chrome ||
+        o.parentContainer !== null ||
+        o.scrollFactorX !== 0 ||
+        o.type === 'DOMElement' ||
+        o.getData?.('screenFixed')
+      )
+        continue;
+      this.chrome.add(o);
+      mark(o);
+    }
+  }
+
   /** manual overlay hit test — board zones win over card zones */
   private onOverlayTap(p: Phaser.Input.Pointer) {
     if (this.marching || this.modalOpen) return;
     // hit rects live in stage coords — worldX folds in zoom + scroll, and
-    // scrollFactor(0) chrome ignores scroll, so un-scroll the pointer
-    const hx = p.worldX - this.cameras.main.scrollX;
-    const hy = p.worldY - this.cameras.main.scrollY;
+    // scrollFactor(0) chrome ignores scroll, so un-scroll the pointer.
+    // offX/offY are the centre-zoom offsets: viewLeft = scroll + off
+    const hx = p.worldX - this.cameras.main.scrollX - this.offX;
+    const hy = p.worldY - this.cameras.main.scrollY - this.offY;
     for (const z of [...this.boardHit, ...this.cardHit]) {
       if (hx >= z.x && hx <= z.x + z.w && hy >= z.y && hy <= z.y + z.h) {
         z.fn();
@@ -1038,7 +1122,9 @@ export class AdventureScene extends Phaser.Scene {
     const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
     const cam = this.cameras.main;
     const focusX = this.visW * this.focusFrac();
-    const targetX = Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.visW);
+    const targetX =
+      Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, this.visL, this.worldW - this.visW) -
+      this.offX;
     this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
     this.selectLevel(frontierN, false);
   }
