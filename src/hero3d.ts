@@ -265,7 +265,7 @@ export class Hero3D {
    *  Call AFTER the WebGL frame is drawn into `ctx`.
    *  `px,py` = pointer in canvas pixels, negative = no petting. */
   drawFur(ctx: CanvasRenderingContext2D, px: number, py: number) {
-    const W = 440,
+    const W = 520,
       H = 540,
       CELLS = 8,
       GW = Math.ceil(W / CELLS),
