@@ -57,6 +57,11 @@ export class AdventureScene extends Phaser.Scene {
   // (offX, offY) it exactly cancels the centre-zoom shift, so children
   // keep plain stage coords and land at stage*zoom regardless of scroll
   private chrome!: Phaser.GameObjects.Container;
+  // the live podium bean — same WebGL + fur pipeline as the lobby
+  private hero3d?: Hero3D;
+  private heroCv?: HTMLCanvasElement;
+  private heroCtx?: CanvasRenderingContext2D;
+  private heroImg?: Phaser.GameObjects.Image;
   private visH = VH;
   private railY = 0;
   private railX0 = 68; // first card's centre-x — viewLeft is 0, so it hugs the screen edge
@@ -446,6 +451,25 @@ export class AdventureScene extends Phaser.Scene {
       this.velX *= Math.pow(0.92, delta / 16.7); // frame-rate independent decay
     } else if (this.dragX === null) {
       this.velX = 0;
+    }
+
+    // live bean — same pipeline as the lobby: WebGL frame + fur composite
+    // re-uploaded each frame; gaze + petting track the pointer
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg) {
+      this.hero3d.update(this.time.now);
+      this.heroCtx.clearRect(0, 0, 520, 540);
+      this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);
+      const b = this.heroImg.getBounds();
+      const p = this.input.activePointer;
+      const px = ((p.x - b.x) / b.width) * 520,
+        py = ((p.y - b.y) / b.height) * 540;
+      const inside = px >= 0 && px < 520 && py >= 0 && py < 540;
+      this.hero3d.setGaze(
+        ((p.x - (b.x + b.width / 2)) / (b.width / 2)) * 0.85,
+        ((p.y - (b.y + b.height / 2)) / (b.height / 2)) * 0.85,
+      );
+      this.hero3d.drawFur(this.heroCtx, inside ? px : -1, inside ? py : -1);
+      (this.textures.get('adv_hero') as Phaser.Textures.CanvasTexture).refresh();
     }
 
     // late-built chrome (board modal, detail rebuild, reveal banner,
@@ -981,24 +1005,27 @@ export class AdventureScene extends Phaser.Scene {
     pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(ox + podX, oy + podTopY, 340, 54);
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(ox + podX, oy + podTopY + 10, 124, 17);
 
-    const hero = new Hero3D(520, 540);
+    const hero = (this.hero3d = new Hero3D(520, 540));
     if (hero.ok && hero.canvas) {
-      hero.update(1.1); // one settled pose — a statue, not a live render
-      const copy = document.createElement('canvas');
+      hero.trickOn = true; // the map bean does the pratfall routine
+      const copy = (this.heroCv = document.createElement('canvas'));
       copy.width = 520;
       copy.height = 540;
-      copy.getContext('2d')!.drawImage(hero.canvas, 0, 0);
+      this.heroCtx = copy.getContext('2d')!;
       if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
       this.textures.addCanvas('adv_hero', copy);
-      this.add
+      this.heroImg = this.add
         .image(ox + podX, oy + podTopY + 34 - 270 * 0.7, 'adv_hero')
         .setOrigin(0.5)
         .setScale(0.7) // feet planted on the podium, head clear of the top bar
         .setScrollFactor(0)
         .setDepth(1)
-        .setData('screenFixed', 1);
-      hero.dispose();
+        .setData('screenFixed', 1)
+        .setInteractive();
+      this.heroImg.on('pointerdown', () => hero.poke());
       this.events.once('shutdown', () => {
+        this.hero3d?.dispose();
+        this.hero3d = undefined;
         if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
       });
     }

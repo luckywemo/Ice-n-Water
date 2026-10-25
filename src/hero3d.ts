@@ -23,11 +23,20 @@ export class Hero3D {
   private footR?: THREE.Group;
   private eyeL?: THREE.Mesh;
   private eyeR?: THREE.Mesh;
+  private dizzyL?: THREE.Group; // X-cross eyes shown while flattened
+  private dizzyR?: THREE.Group;
   // --- animation state ---
   private sq = 0; // jelly: + stretch, − squash
   private sqVel = 0;
   private hopY = 0;
   private hopV = 0;
+  /** enables the pratfall routine — launch, midair backflip, flat splat,
+   *  dizzy eyes, recover. The map statue's signature; lobby leaves it off. */
+  trickOn = false;
+  private tricking = false;
+  private flipX = 0; // airborne backflip angle
+  private dizzyUntil = 0;
+  private nextTrick = 3400;
   private gx = 0; // gaze −1..1
   private gy = 0;
   private blinkUntil = 0;
@@ -199,6 +208,21 @@ export class Hero3D {
     };
     this.eyeL = eye(-0.16);
     this.eyeR = eye(0.16);
+    // dizzy X-eyes — two crossed bars per eye, swapped in while flattened
+    const dizzyEye = (x: number) => {
+      const g = new THREE.Group();
+      g.position.set(x, 1.58, 0.72);
+      for (const rz of [Math.PI / 4, -Math.PI / 4]) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.2, 0.03), dark);
+        b.rotation.z = rz;
+        g.add(b);
+      }
+      g.visible = false;
+      grp.add(g);
+      return g;
+    };
+    this.dizzyL = dizzyEye(-0.16);
+    this.dizzyR = dizzyEye(0.16);
 
     // soft contact shadow — grounds the feet on the podium
     const shC = document.createElement('canvas');
@@ -594,23 +618,47 @@ export class Hero3D {
     }
 
     // scheduled hop — stretch at take-off, squash on landing
-    if (!REDUCED_MOTION && t > this.nextHop) {
+    if (!REDUCED_MOTION && !this.trickOn && t > this.nextHop) {
       this.nextHop = t + 5200 + Math.random() * 5200;
       if (this.hopY === 0) {
         this.hopV = 2.7;
         this.sqVel += 2.2;
       }
     }
+    // the pratfall routine — launch, midair backflip, SPLAT flat on the
+    // podium, X-eyes while it lies there, then it staggers back up
+    if (this.trickOn && !REDUCED_MOTION && t > this.nextTrick) {
+      this.nextTrick = t + 4200 + Math.random() * 4600;
+      if (this.hopY === 0) {
+        this.hopV = 3.6;
+        this.sqVel += 2.4;
+        this.tricking = true;
+      }
+    }
+    if (this.tricking && this.hopY > 0) this.flipX -= 8.73 * dt; // 360° backflip over the 0.72s arc
     if (this.hopV !== 0 || this.hopY > 0) {
       this.hopY += this.hopV * dt;
       this.hopV -= 10 * dt;
       if (this.hopY <= 0) {
         this.hopY = 0;
         // impact squeeze — the fall speed drives how hard it flattens
-        this.sqVel += this.hopV * 1.3;
+        this.sqVel += this.hopV * (this.tricking ? 2.2 : 1.3);
         this.hopV = 0;
+        if (this.tricking) {
+          this.tricking = false;
+          this.flipX = 0;
+          this.dizzyUntil = t + 2100;
+        }
       }
     }
+    const dizzy = t < this.dizzyUntil;
+    // hold the face-plant while dizzy, ease back up in the last beat
+    const splat = dizzy ? Math.min(1, (this.dizzyUntil - t) / 450) : 0;
+    grp.rotation.x = this.flipX - splat * 0.42; // lands on its back — face + dizzy eyes up to camera
+    grp.scale.y *= 1 - splat * 0.22; // extra-flat while it lies there
+    grp.scale.z *= 1 + splat * 0.18;
+    // flip pivots at the feet — translate so it spins around body centre
+    grp.position.z = -1.16 * Math.sin(this.flipX);
 
     // blink — a fast lid dip every 2–5s
     if (t > this.nextBlink) {
@@ -618,8 +666,22 @@ export class Hero3D {
       this.blinkUntil = t + 130;
     }
     const lids = t < this.blinkUntil ? 0.12 : 1.45;
-    if (this.eyeL) this.eyeL.scale.y = lids;
-    if (this.eyeR) this.eyeR.scale.y = lids;
+    if (this.eyeL) {
+      this.eyeL.scale.y = lids;
+      this.eyeL.visible = !dizzy;
+    }
+    if (this.eyeR) {
+      this.eyeR.scale.y = lids;
+      this.eyeR.visible = !dizzy;
+    }
+    if (this.dizzyL) {
+      this.dizzyL.visible = dizzy;
+      this.dizzyL.rotation.z = Math.sin(s * 7) * 0.5; // wobbling crosses
+    }
+    if (this.dizzyR) {
+      this.dizzyR.visible = dizzy;
+      this.dizzyR.rotation.z = -Math.sin(s * 7) * 0.5;
+    }
 
     // gaze — eyes drift, body leans toward the cursor
     if (this.eyeL) {
@@ -636,7 +698,7 @@ export class Hero3D {
     this.yawVel *= Math.exp(-3.5 * dt);
 
     // idle — breathing bob, slow sway, gaze lean, user spin
-    grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY;
+    grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY + 1.16 * (1 - Math.cos(this.flipX));
     grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
     grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
 
