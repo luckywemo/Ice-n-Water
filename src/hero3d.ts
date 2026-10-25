@@ -274,33 +274,69 @@ export class Hero3D {
     const d = ctx.getImageData(0, 0, W, H).data;
     const a = (x: number, y: number) =>
       x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
-    // body test — everything inside the silhouette is furred EXCEPT big
-    // desaturated regions (the pale face, the black eyes, the grey
-    // contact shadow). A pixel is only protected if it's pale/dark-desat
-    // AND still pale ±8px in four directions — that keeps large regions
-    // clean while small specular highlights on the body get furred
-    // instead of leaving face-coloured bald patches.
-    const pale = (x: number, y: number) => {
-      if (a(x, y) < 140) return true;
+    // face mask via flood fill — a local colour test can't separate the
+    // face from big specular sheens, so we flood the pale region from a
+    // seed in the face's expected area. Disconnected highlights stay
+    // furred; the mask is then dilated ~12px so eyes and the face rim
+    // stay covered too. Back view → seed isn't pale → no mask, full fur.
+    const FM = 2,
+      FW = Math.ceil(W / FM),
+      FH = Math.ceil(H / FM);
+    const palePx = (x: number, y: number) => {
+      if (a(x, y) < 140) return false;
       const i = (y * W + x) * 4;
       const r = d[i] / 255,
         g = d[i + 1] / 255,
         b = d[i + 2] / 255;
-      const mx = Math.max(r, g, b),
-        mn = Math.min(r, g, b),
-        lum = (mx + mn) / 2;
-      const sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * lum - 1) || 1);
-      return sat < 0.32 && (lum > 0.5 || lum < 0.14);
+      return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 > 0.68;
     };
-    const body = (x: number, y: number) =>
-      a(x, y) >= 140 &&
-      !(
-        pale(x, y) &&
-        pale(x - 8, y) &&
-        pale(x + 8, y) &&
-        pale(x, y - 8) &&
-        pale(x, y + 8)
-      );
+    const face = new Uint8Array(FW * FH);
+    let seeded = false;
+    const stack: number[] = [];
+    for (const fy of [0.3, 0.34, 0.26, 0.38])
+      for (const fx of [0.5, 0.44, 0.56]) {
+        if (seeded) break;
+        const sx = (W * fx) | 0,
+          sy = (H * fy) | 0;
+        if (!palePx(sx, sy)) continue;
+        seeded = true;
+        stack.push(((sy / FM) | 0) * FW + ((sx / FM) | 0));
+      }
+    const MAXFACE = FW * FH * 0.12; // a real face is ~5% of the canvas
+    let filled = 0,
+      overflow = false;
+    while (stack.length) {
+      const c = stack.pop()!;
+      if (face[c]) continue;
+      face[c] = 1;
+      if (++filled > MAXFACE) {
+        overflow = true;
+        break;
+      }
+      const cx = c % FW,
+        cy = (c / FW) | 0;
+      if (cx > 0 && !face[c - 1] && palePx((cx - 1) * FM + 1, cy * FM + 1)) stack.push(c - 1);
+      if (cx < FW - 1 && !face[c + 1] && palePx((cx + 1) * FM + 1, cy * FM + 1)) stack.push(c + 1);
+      if (cy > 0 && !face[c - FW] && palePx(cx * FM + 1, (cy - 1) * FM + 1)) stack.push(c - FW);
+      if (cy < FH - 1 && !face[c + FW] && palePx(cx * FM + 1, (cy + 1) * FM + 1)) stack.push(c + FW);
+    }
+    // dilate ~12px (6 cells) so the eyes and the face rim stay protected
+    const fd = new Uint8Array(FW * FH);
+    for (let cy = 0; cy < FH && !overflow; cy++)
+      for (let cx = 0; cx < FW; cx++) {
+        if (!face[cy * FW + cx]) continue;
+        for (let dy = -6; dy <= 6; dy++)
+          for (let dx = -6; dx <= 6; dx++) {
+            const nx = cx + dx,
+              ny = cy + dy;
+            if (nx >= 0 && ny >= 0 && nx < FW && ny < FH) fd[ny * FW + nx] = 1;
+          }
+      }
+    const faceAt = (x: number, y: number) =>
+      x < 0 || y < 0 || x >= W || y >= H ? false : fd[((y / FM) | 0) * FW + ((x / FM) | 0)] === 1;
+    const faceInnerAt = (x: number, y: number) =>
+      x < 0 || y < 0 || x >= W || y >= H ? false : face[((y / FM) | 0) * FW + ((x / FM) | 0)] === 1;
+    const body = (x: number, y: number) => a(x, y) >= 140 && !faceAt(x, y);
     // deterministic per-position noise
     const nz = (x: number, y: number, s: number) => {
       const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
@@ -414,11 +450,16 @@ export class Hero3D {
       for (let x = 4; x < W - 4; x += 3) {
         if (!body(x, y)) continue;
         const len = 9 + nz(x, y, 4) * 8;
+        const ang = restAngle(x, y);
+        // skip strands that would stroke into the face region
+        const tx = x + Math.cos(ang) * len,
+          ty = y + Math.sin(ang) * len;
+        if (faceInnerAt(tx, ty)) continue;
         const roll = nz(x, y, 6);
         const s: Strand = {
           x,
           y,
-          a: restAngle(x, y),
+          a: ang,
           l: len,
           c: (nz(x, y, 5) - 0.5) * len * 0.7,
           s: nz(x, y, 8),
