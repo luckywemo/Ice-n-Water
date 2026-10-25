@@ -274,10 +274,14 @@ export class Hero3D {
     const d = ctx.getImageData(0, 0, W, H).data;
     const a = (x: number, y: number) =>
       x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
-    // body test — saturated mid-tone pixels only; pale face, black eyes
-    // and the grey contact shadow are excluded so fur never covers them
-    const body = (x: number, y: number) => {
-      if (a(x, y) < 140) return false;
+    // body test — everything inside the silhouette is furred EXCEPT big
+    // desaturated regions (the pale face, the black eyes, the grey
+    // contact shadow). A pixel is only protected if it's pale/dark-desat
+    // AND still pale ±8px in four directions — that keeps large regions
+    // clean while small specular highlights on the body get furred
+    // instead of leaving face-coloured bald patches.
+    const pale = (x: number, y: number) => {
+      if (a(x, y) < 140) return true;
       const i = (y * W + x) * 4;
       const r = d[i] / 255,
         g = d[i + 1] / 255,
@@ -286,8 +290,17 @@ export class Hero3D {
         mn = Math.min(r, g, b),
         lum = (mx + mn) / 2;
       const sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * lum - 1) || 1);
-      return sat > 0.28 && lum > 0.07 && lum < 0.62;
+      return sat < 0.32 && (lum > 0.5 || lum < 0.14);
     };
+    const body = (x: number, y: number) =>
+      a(x, y) >= 140 &&
+      !(
+        pale(x, y) &&
+        pale(x - 8, y) &&
+        pale(x + 8, y) &&
+        pale(x, y - 8) &&
+        pale(x, y + 8)
+      );
     // deterministic per-position noise
     const nz = (x: number, y: number, s: number) => {
       const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
