@@ -961,12 +961,11 @@ export class AdventureScene extends Phaser.Scene {
    *  three.js cost on this screen (the title lobby keeps the live one) */
   private buildPodium(width: number, height: number) {
     const podX = width * 0.66; // stage is always 1280 wide now
-    const podTopY = height * 0.5;
-    // the pillar ends just above the rail's top edge — bean and rail get
-    // their own zones instead of the column running through the cards
-    const railTop = this.railY - BADGE_H - CARD_H / 2 - 6;
+    const podTopY = height * 0.66;
+    // full-height column — the pillar runs down through the rail to the
+    // stage bottom; the rail cards draw in front of it
     const pod = this.add.graphics().setScrollFactor(0).setDepth(1);
-    pod.fillStyle(FG.podiumSide, 1).fillRect(podX - 170, podTopY, 340, railTop - podTopY);
+    pod.fillStyle(FG.podiumSide, 1).fillRect(podX - 170, podTopY, 340, height - podTopY + 80);
     pod.fillStyle(FG.podiumTop, 1).fillEllipse(podX, podTopY, 340, 54);
     pod.fillStyle(0xffffff, 0.34).fillEllipse(podX, podTopY - 4, 288, 34);
     pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(podX, podTopY, 340, 54);
