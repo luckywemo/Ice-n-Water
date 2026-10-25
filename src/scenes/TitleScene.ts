@@ -40,6 +40,8 @@ export class TitleScene extends Phaser.Scene {
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroGaze?: { x: number; y: number };
+  private heroGazeP = { x: 0, y: 0 };
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
@@ -879,11 +881,14 @@ export class TitleScene extends Phaser.Scene {
       if (d.img.scene) d.img.setAlpha(IceFxPipeline.cycle(this.time.now, d.born));
     }
     const p = this.input.activePointer;
-    if (p)
-      this.hero3d?.setGaze(
-        (p.x - this.scale.width / 2) / (this.scale.width / 2),
-        (p.y - this.scale.height / 2) / (this.scale.height / 2),
-      );
+    if (p && (p.x !== 0 || p.y !== 0) && (p.x !== this.heroGazeP.x || p.y !== this.heroGazeP.y)) {
+      this.heroGazeP = { x: p.x, y: p.y };
+      this.heroGaze = {
+        x: (p.x - this.scale.width / 2) / (this.scale.width / 2),
+        y: (p.y - this.scale.height / 2) / (this.scale.height / 2),
+      };
+    }
+    if (this.heroGaze) this.hero3d?.setGaze(this.heroGaze.x, this.heroGaze.y);
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
       // same-task read after render — the webgl buffer is still valid

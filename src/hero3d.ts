@@ -5,6 +5,7 @@
 // an offscreen canvas that the scene wraps in a Phaser texture.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 import { REDUCED_MOTION } from './ui';
 
 const BODY = 0x8a4f24; // glossy milk-chocolate brown
@@ -16,11 +17,10 @@ export class Hero3D {
   private scene?: THREE.Scene;
   private camera?: THREE.PerspectiveCamera;
   private group?: THREE.Group;
-  private torso?: THREE.Mesh;
-  private armL?: THREE.Mesh;
-  private armR?: THREE.Mesh;
+  private mc?: MarchingCubes;
   private eyeL?: THREE.Mesh;
   private eyeR?: THREE.Mesh;
+  private armLag = 0; // smoothed arm droop, lags the squash spring
   // --- animation state ---
   private sq = 0; // jelly: + stretch, − squash
   private sqVel = 0;
@@ -92,37 +92,22 @@ export class Hero3D {
     const skin = mat(SKIN, 0.38);
     const dark = mat(DARK, 0.25);
 
-    // feet — molded rounded shoes in the same body material, toes angled out
-    const foot = (x: number, ry: number) => {
-      const f = mesh(new THREE.SphereGeometry(0.2, 18, 14), body, x, 0.12, 0.12);
-      f.scale.set(1.0, 0.55, 1.55);
-      f.rotation.y = ry;
-      return f;
-    };
-    foot(-0.27, 0.22);
-    foot(0.27, -0.22);
+    // the bean — one fused metaball surface: torso + belly + crown +
+    // arm chains + hands with finger nubs + feet, all one continuous
+    // skin. Rebuilt per-frame in update() so squash jiggles organically.
+    this.mc = new MarchingCubes(48, body, false, false, 80000);
+    this.mc.isolation = 80;
+    // MC emits verts in a [-1,1] box — scale is half-extents
+    this.mc.scale.set(0.82, 1.15, 0.78);
+    this.mc.position.set(0, 1.08, 0);
+    grp.add(this.mc);
+    this.buildBody();
 
-    // the bean — one tall capsule body, belly-forward like the reference
-    this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
-    this.torso.scale.set(1, 1, 0.95);
-
-    // droopy arms — longer capsules hanging from the shoulders, tipped with
-    // a slightly larger rounded hand nub that merges into the silhouette
-    const arm = (side: -1 | 1) => {
-      const a = mesh(new THREE.CapsuleGeometry(0.15, 0.6, 6, 16), body, side * 0.64, 1.14, 0.03);
-      a.rotation.z = side * 0.24;
-      a.rotation.x = -0.06;
-      mesh(new THREE.SphereGeometry(0.165, 14, 12), body, side * 0.75, 0.68, 0.06);
-      return a;
-    };
-    this.armL = arm(-1);
-    this.armR = arm(1);
-
-    // face oval — big pale patch high on the front, proud of the surface
-    mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.5).scale.set(0.86, 1.05, 0.38);
+    // face oval — pale patch in the upper third, ~55% of body width
+    mesh(new THREE.SphereGeometry(0.44, 30, 24), skin, 0, 1.55, 0.58).scale.set(0.52, 0.68, 0.28);
     // eyes — two tall thin dark ovals, close-set
     const eye = (x: number) => {
-      const m = mesh(new THREE.SphereGeometry(0.07, 14, 12), dark, x, 1.58, 0.66);
+      const m = mesh(new THREE.SphereGeometry(0.065, 14, 12), dark, x, 1.55, 0.7);
       m.scale.set(0.55, 1.45, 0.45);
       return m;
     };
@@ -174,6 +159,34 @@ export class Hero3D {
     this.ok = true;
   }
 
+  /** Rebuild the metaball field — positions live in [0,1] field space */
+  private buildBody() {
+    const mc = this.mc;
+    if (!mc) return;
+    mc.reset();
+    const b = (x: number, y: number, z: number, s: number) => mc.addBall(x, y, z, s, 14);
+    const lag = this.armLag * 0.05; // arms trail the squash a beat
+    // torso — a fat vertical chain; the base blob clips the field floor
+    // flat, and two foot nubs poke out at the front like the reference
+    b(0.5, 0.14, 0.52, 2.1); // flat base
+    b(0.5, 0.32, 0.52, 2.6); // belly
+    b(0.5, 0.5, 0.5, 2.6); // core
+    b(0.5, 0.65, 0.5, 2.3); // chest
+    b(0.5, 0.77, 0.5, 1.7); // crown cap
+    for (const sx of [-1, 1] as const) {
+      b(0.5 + sx * 0.3, 0.66 + lag, 0.5, 0.9); // shoulder
+      b(0.5 + sx * 0.37, 0.5 + lag * 1.6, 0.51, 0.75); // upper arm
+      b(0.5 + sx * 0.41, 0.36 + lag * 2.2, 0.52, 0.6); // wrist
+      b(0.5 + sx * 0.425, 0.28 + lag * 2.6, 0.53, 0.5); // hand
+      b(0.5 + sx * 0.45, 0.245 + lag * 2.8, 0.55, 0.22); // finger nubs
+      b(0.5 + sx * 0.425, 0.225 + lag * 2.8, 0.56, 0.22);
+      b(0.5 + sx * 0.4, 0.245 + lag * 2.8, 0.55, 0.22);
+      b(0.5 + sx * 0.2, 0.05, 0.6, 0.5); // foot
+      b(0.5 + sx * 0.2, 0.035, 0.68, 0.3); // toe
+    }
+    mc.update();
+  }
+
   update(t: number) {
     if (!this.renderer || !this.scene || !this.camera || !this.group) return;
     const dt = this.lastT < 0 ? 0.016 : Math.min(0.05, (t - this.lastT) / 1000);
@@ -187,8 +200,8 @@ export class Hero3D {
     this.sqVel += (-170 * this.sq - 11 * this.sqVel) * dt;
     this.sq = Math.max(-0.38, Math.min(0.5, this.sq + this.sqVel * dt));
     grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
-    if (this.armL) this.armL.rotation.z = -0.24 + this.sq * 0.55;
-    if (this.armR) this.armR.rotation.z = 0.24 - this.sq * 0.55;
+    this.armLag += (this.sq - this.armLag) * Math.min(1, dt * 7);
+    this.buildBody();
 
     // scheduled hop — stretch at take-off, squash on landing
     if (!REDUCED_MOTION && t > this.nextHop) {
@@ -219,12 +232,12 @@ export class Hero3D {
 
     // gaze — eyes drift, body leans toward the cursor
     if (this.eyeL) {
-      this.eyeL.position.x = -0.16 + this.gx * 0.07;
-      this.eyeL.position.y = 1.58 + this.gy * 0.05;
+      this.eyeL.position.x = -0.1 + this.gx * 0.04;
+      this.eyeL.position.y = 1.55 + this.gy * 0.04;
     }
     if (this.eyeR) {
-      this.eyeR.position.x = 0.16 + this.gx * 0.07;
-      this.eyeR.position.y = 1.58 + this.gy * 0.05;
+      this.eyeR.position.x = 0.1 + this.gx * 0.04;
+      this.eyeR.position.y = 1.55 + this.gy * 0.04;
     }
 
     // idle — breathing bob, slow sway, gaze lean
