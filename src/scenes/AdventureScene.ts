@@ -151,8 +151,9 @@ export class AdventureScene extends Phaser.Scene {
     // the seasons field — cyan rings radiating behind the podium. No crowns:
     // crowns are the boot tile's flourish, gameplay screens get rings only.
     // the spiral field emanates from behind the bean — its rings' centre
-    // sits at the podium statue's mid-body (podX, podTopY - 155)
-    fgRings(this, this.visW, visH, VW * 0.66, VH * 0.66 - 150, FG.cyan, 0x1fa9e8)
+    // sits at the statue's mid-body. Like the podium it's a root-level
+    // sf0 object, so the drawn centre takes +off to cancel centre-zoom
+    fgRings(this, this.visW, visH, VW * 0.66 + this.offX, VH * 0.66 - 150 + this.offY, FG.cyan, 0x1fa9e8)
       .setScrollFactor(0)
       // pure background — stays at display root UNDER the rail; its
       // overscan already covers the centre-zoom shift
