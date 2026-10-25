@@ -246,90 +246,161 @@ export class Hero3D {
     this.ok = true;
   }
 
-  // --- pettable 2D fur fringe (FeralUI-style, ported to canvas) ---
-  // bend state lives in a coarse grid keyed by canvas position so it
-  // survives the per-frame strand rebuild and springs back smoothly
-  private furBend = new Map<number, { x: number; y: number }>();
+  // --- pettable 2D fur coat (ported from feral-fur, MIT) ---
+  // Their model: strands carry angle + curl + bend-spring; the pointer
+  // pushes bend perpendicular to the strand direction, projected from
+  // pointer velocity. Bend state lives in a coarse grid that survives
+  // the per-frame strand rebuild and springs back (SPRING 0.1/DAMP 0.88).
+  private furBend = new Map<number, { x: number; y: number; vx: number; vy: number }>();
+  private furLastP = { x: -1, y: -1 };
 
-  /** Draw strand fur along the bean's rendered silhouette.
-   *  Call AFTER the WebGL frame is composited into `ctx`.
-   *  `px,py` = pointer position in canvas pixels, negative = no petting. */
+  /** Draw the fur coat over the composited bean frame.
+   *  Call AFTER the WebGL frame is drawn into `ctx`.
+   *  `px,py` = pointer in canvas pixels, negative = no petting. */
   drawFur(ctx: CanvasRenderingContext2D, px: number, py: number) {
     const W = 440,
       H = 540,
       CELLS = 8,
-      GW = Math.ceil(W / CELLS);
+      GW = Math.ceil(W / CELLS),
+      R = 52,
+      R2 = R * R;
     const d = ctx.getImageData(0, 0, W, H).data;
     const a = (x: number, y: number) =>
       x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
 
-    // pet impulse — bend grid cells away from the pointer
-    if (px >= 0) {
+    // pointer velocity — their push is velocity-projected, not positional
+    let pvx = 0,
+      pvy = 0;
+    if (px >= 0 && this.furLastP.x >= 0) {
+      pvx = px - this.furLastP.x;
+      pvy = py - this.furLastP.y;
+    }
+    this.furLastP = { x: px, y: py };
+
+    if ((pvx || pvy) && px >= 0) {
       const gx = Math.floor(px / CELLS),
         gy = Math.floor(py / CELLS);
-      for (let cy = gy - 6; cy <= gy + 6; cy++)
-        for (let cx = gx - 6; cx <= gx + 6; cx++) {
+      for (let cy = gy - 7; cy <= gy + 7; cy++)
+        for (let cx = gx - 7; cx <= gx + 7; cx++) {
           const mx = cx * CELLS + CELLS / 2 - px,
             my = cy * CELLS + CELLS / 2 - py;
-          const dd = Math.hypot(mx, my);
-          if (dd > 48 || dd < 0.5) continue;
-          const k = (1 - dd / 48) * 0.9;
+          const d2 = mx * mx + my * my;
+          if (d2 > R2) continue;
+          const g = 1 - d2 / R2;
           const key = cy * GW + cx;
-          const b = this.furBend.get(key) ?? { x: 0, y: 0 };
-          b.x += (mx / dd) * k * 3;
-          b.y += (my / dd) * k * 3;
+          const b = this.furBend.get(key) ?? { x: 0, y: 0, vx: 0, vy: 0 };
+          b.vx += pvx * g * 0.35;
+          b.vy += pvy * g * 0.35;
           this.furBend.set(key, b);
         }
     }
-    // spring decay + prune
+    // spring: v += -SPRING*b; v *= DAMP; b += v — then prune settled cells
     for (const [k, b] of this.furBend) {
-      b.x *= 0.86;
-      b.y *= 0.86;
-      if (b.x * b.x + b.y * b.y < 0.01) this.furBend.delete(k);
+      b.vx += -0.1 * b.x;
+      b.vy += -0.1 * b.y;
+      b.vx *= 0.88;
+      b.vy *= 0.88;
+      b.x += b.vx;
+      b.y += b.vy;
+      if (b.x * b.x + b.y * b.y + b.vx * b.vx + b.vy * b.vy < 0.004)
+        this.furBend.delete(k);
     }
+
+    // deterministic per-position noise
+    const nz = (x: number, y: number, s: number) => {
+      const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    // their rest angle: cowlick origin blends toward straight-down + clump
+    const cowX = W * 0.5,
+      cowY = H * 0.3,
+      down = Math.PI / 2;
+    const restAngle = (x: number, y: number) => {
+      const fromCow = Math.atan2(y - cowY, x - cowX);
+      const clump = (Math.sin(x * 0.04) + Math.cos(y * 0.035)) * 0.3;
+      let a = fromCow + (((down - fromCow + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.5;
+      a += clump * 0.6 + (nz(x, y, 1) - 0.5) * 1.1;
+      return a;
+    };
 
     ctx.save();
     ctx.lineCap = 'round';
-    const STEP = 7;
+    const strands: { x: number; y: number; a: number; l: number; c: number; hi: boolean }[] = [];
+    const STEP = 6;
     for (let y = 5; y < H - 5; y += STEP)
       for (let x = 5; x < W - 5; x += STEP) {
         if (a(x, y) < 140) continue;
-        // edge strand = inside pixel with a transparent-ish neighbour
-        if (
-          a(x - 6, y) > 100 &&
-          a(x + 6, y) > 100 &&
-          a(x, y - 6) > 100 &&
-          a(x, y + 6) > 100
-        )
-          continue;
-        // outward normal from the alpha gradient + jitter so strands
-        // lie in a direction, not a comb
-        let nx = a(x - 6, y) - a(x + 6, y);
-        let ny = a(x, y - 6) - a(x, y + 6);
-        const l = Math.hypot(nx, ny) || 1;
-        nx /= l;
-        ny /= l;
-        const jig = (((x * 31 + y * 17) % 100) / 100 - 0.5) * 1.4;
-        const ca = Math.cos(jig),
-          sa = Math.sin(jig);
-        const jx = nx * ca - ny * sa,
-          jy = nx * sa + ny * ca;
-        const b = this.furBend.get(Math.floor(y / CELLS) * GW + Math.floor(x / CELLS));
-        const bx = b ? b.x : 0,
-          by = b ? b.y : 0;
-        const len = 7 + ((x * 7 + y * 13) % 7); // deterministic variance
-        const mx = x + jx * len * 0.5 + bx * 0.6,
-          my = y + jy * len * 0.5 + by * 0.6;
-        const tx = x + jx * len + bx,
-          ty = y + jy * len + by;
-        const sh = 85 + ((x * 11 + y * 5) % 45);
-        ctx.strokeStyle = `rgba(${sh},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.7)`;
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.quadraticCurveTo(mx, my, tx, ty);
+        const near =
+          a(x - 6, y) < 110 ||
+          a(x + 6, y) < 110 ||
+          a(x, y - 6) < 110 ||
+          a(x, y + 6) < 110;
+        // interior ring strands also sprout within ~2 strand-lengths of edge
+        const ring =
+          !near &&
+          (a(x - 14, y) < 110 ||
+            a(x + 14, y) < 110 ||
+            a(x, y - 14) < 110 ||
+            a(x, y + 14) < 110) &&
+          nz(x, y, 2) < 0.35;
+        if (!near && !ring) continue;
+        let ang: number;
+        if (near) {
+          let nx = a(x - 6, y) - a(x + 6, y);
+          let ny = a(x, y - 6) - a(x, y + 6);
+          const l = Math.hypot(nx, ny) || 1;
+          nx /= l;
+          ny /= l;
+          const out = Math.atan2(ny, nx);
+          // blend 25% toward down like their fringe pass, + mess jitter
+          ang = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
+          ang += (nz(x, y, 3) - 0.5) * 0.8;
+        } else {
+          ang = restAngle(x, y);
+        }
+        const len = (near ? 9 : 8) + nz(x, y, 4) * 8;
+        strands.push({
+          x,
+          y,
+          a: ang,
+          l: len,
+          c: (nz(x, y, 5) - 0.5) * len * 1.1, // perpendicular curl
+          hi: nz(x, y, 6) < 0.12, // sparse highlight layer
+        });
+      }
+
+    // pass 1 — roots, brown coat; pass 2 — lit tips on the outer half
+    for (let pass = 0; pass < 2; pass++) {
+      for (const s of strands) {
+        const b = this.furBend.get(
+          Math.floor(s.y / CELLS) * GW + Math.floor(s.x / CELLS),
+        );
+        const bx = b?.x ?? 0;
+        const by = b?.y ?? 0;
+        const ca = s.a + (bx * -Math.sin(s.a) + by * Math.cos(s.a)) * 0.04;
+        const pnx = -Math.sin(s.a),
+          pny = Math.cos(s.a);
+        const cxp = s.x + Math.cos(s.a) * s.l * 0.55 + pnx * s.c + bx * 0.5;
+        const cyp = s.y + Math.sin(s.a) * s.l * 0.55 + pny * s.c + by * 0.5;
+        const tx = s.x + Math.cos(ca) * s.l + bx,
+          ty = s.y + Math.sin(ca) * s.l + by;
+        if (pass === 0) {
+          const sh = 88 + nz(s.x, s.y, 7) * 30;
+          ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},${s.hi ? 0.5 : 0.8})`;
+          ctx.lineWidth = s.hi ? 0.8 : 1.3;
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+        } else {
+          const sh = s.hi ? 165 : 125 + nz(s.x, s.y, 8) * 25;
+          ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},${s.hi ? 0.55 : 0.45})`;
+          ctx.lineWidth = s.hi ? 0.7 : 1.0;
+          ctx.beginPath();
+          ctx.moveTo((s.x + 2 * cxp + tx) / 4, (s.y + 2 * cyp + ty) / 4);
+        }
+        ctx.quadraticCurveTo(cxp, cyp, tx, ty);
         ctx.stroke();
       }
+    }
     ctx.restore();
   }
 
