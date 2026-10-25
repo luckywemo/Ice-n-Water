@@ -127,7 +127,6 @@ export class Hero3D {
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
       root.position.set(side * 0.68, 1.42, -0.04);
-      root.rotation.y = side * 0.35; // blade stays on the body's side plane
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(1.1, 1, 0.4);
