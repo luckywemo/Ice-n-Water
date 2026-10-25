@@ -63,11 +63,11 @@ export class DropScene extends Phaser.Scene {
     // the bean, mid-dive — deep + high camera on a tall buffer: spread
     // flippers and trailing feet keep full margins, and the top-down
     // angle keeps the face readable in the belly-first posture
-    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 3.1, 0.85));
+    const hero = (this.hero3d = new Hero3D(760, 700, 6.5, 3.1, 0.85));
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
       const cv = (this.heroCv = document.createElement('canvas'));
-      cv.width = 560;
+      cv.width = 760;
       cv.height = 700;
       this.heroCtx = cv.getContext('2d')!;
       this.textures.addCanvas('drop_hero', cv);
@@ -145,7 +145,7 @@ export class DropScene extends Phaser.Scene {
     }
     if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx) {
       this.hero3d.update(this.time.now);
-      this.heroCtx.clearRect(0, 0, 560, 700);
+      this.heroCtx.clearRect(0, 0, 760, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);
       this.hero3d.drawFur(this.heroCtx, -1, -1);
       (this.textures.get('drop_hero') as Phaser.Textures.CanvasTexture).refresh();
