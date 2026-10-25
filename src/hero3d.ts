@@ -564,9 +564,10 @@ export class Hero3D {
     const idle = REDUCED_MOTION ? 0 : 1;
 
     // jelly spring — squash(−)/stretch(+), roughly volume-preserving; the
-    // group's origin sits at the feet so the plant stays grounded
-    this.sqVel += (-170 * this.sq - 11 * this.sqVel) * dt;
-    this.sq = Math.max(-0.38, Math.min(0.5, this.sq + this.sqVel * dt));
+    // group's origin sits at the feet so the plant stays grounded. Low
+    // damping lets a hard landing ring: squash → rebound stretch → settle
+    this.sqVel += (-170 * this.sq - 8 * this.sqVel) * dt;
+    this.sq = Math.max(-0.45, Math.min(0.5, this.sq + this.sqVel * dt));
     grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
 
     // flippers — idle wave, hard flap while airborne, elbow trails a beat
@@ -605,7 +606,8 @@ export class Hero3D {
       this.hopV -= 10 * dt;
       if (this.hopY <= 0) {
         this.hopY = 0;
-        this.sqVel += this.hopV * 0.85;
+        // impact squeeze — the fall speed drives how hard it flattens
+        this.sqVel += this.hopV * 1.3;
         this.hopV = 0;
       }
     }
