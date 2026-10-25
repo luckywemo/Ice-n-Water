@@ -71,7 +71,7 @@ export class DropScene extends Phaser.Scene {
       cv.height = 700;
       this.heroCtx = cv.getContext('2d')!;
       this.textures.addCanvas('drop_hero', cv);
-      this.heroImg = this.add.image(VW / 2, 330, 'drop_hero').setScale(0.62);
+      this.heroImg = this.add.image(VW / 2, 345, 'drop_hero').setScale(0.78);
     }
 
     // what's next — big chunky label under the bean, FG-counter style
