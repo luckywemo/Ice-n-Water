@@ -50,7 +50,6 @@ export class AdventureScene extends Phaser.Scene {
   // off *behind* the view's top-left corner: viewLeft = scrollX + offX
   private offX = 0;
   private offY = 0;
-  private visL = 0; // view edges in stage coords, incl. letterbox margin
   private visT = 0;
   private scrollLo = 0; // allowed scrollX range under the zoomed camera
   private scrollHi = 0;
@@ -60,7 +59,7 @@ export class AdventureScene extends Phaser.Scene {
   private chrome!: Phaser.GameObjects.Container;
   private visH = VH;
   private railY = 0;
-  private railX0 = 92; // first card's centre-x in world space
+  private railX0 = 68; // first card's centre-x — viewLeft is 0, so it hugs the screen edge
   private stripImgs: Phaser.GameObjects.Image[] = [];
   private selected = 0; // rail selection — 0-based level index
   private selRing?: Phaser.GameObjects.Graphics;
@@ -123,7 +122,6 @@ export class AdventureScene extends Phaser.Scene {
     const visH = (this.visH = height / zoomK);
     this.offX = (width - this.visW) / 2; // viewLeft = scrollX + offX
     this.offY = (height - visH) / 2;
-    this.visL = VW / 2 - this.visW / 2;
     this.visT = VH / 2 - visH / 2;
     this.chrome = this.add
       .container(this.offX, this.offY)
@@ -172,11 +170,12 @@ export class AdventureScene extends Phaser.Scene {
     }
 
     // bounds must not fight the letterbox: clampX slides the allowed
-    // scrollX range by (visW - width)/2, so bounds x=visL/width=worldW-visL
-    // yield exactly [scrollLo, scrollHi]; y/height pin the centred stage.
-    this.scrollLo = this.visL - this.offX;
+    // scrollX range by (visW - width)/2 — x=0/width=worldW anchors the
+    // rail's start flush to the screen's left edge at min scroll; the
+    // y/height pair pins the vertically-centred stage.
+    this.scrollLo = -this.offX; // viewLeft = 0 — rail starts at screen edge
     this.scrollHi = this.worldW - this.visW - this.offX;
-    cam.setBounds(this.visL, this.visT, this.worldW - this.visL, visH);
+    cam.setBounds(0, this.visT, this.worldW, visH);
 
     // ---- seasons chrome: header block + podium bean, both screen-fixed ----
     this.buildHeader(VW, VH);
@@ -332,8 +331,7 @@ export class AdventureScene extends Phaser.Scene {
     // targetX is the view's LEFT edge in world units — scrollX trails it
     // by offX under zoom
     const targetX =
-      Phaser.Math.Clamp(this.cardX(anchorI) - focusX, this.visL, this.worldW - this.visW) -
-      this.offX;
+      Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - this.visW) - this.offX;
     cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : this.scrollLo;
     if (!REDUCED_MOTION && advance === null && targetX + this.offX > 60) {
       this.tweens.add({
@@ -366,7 +364,7 @@ export class AdventureScene extends Phaser.Scene {
     const toX = this.cardX(a); // a+1's card is the new frontier
     const cam = this.cameras.main;
     const camX =
-      Phaser.Math.Clamp(toX - this.visW * this.focusFrac(), this.visL, this.worldW - this.visW) -
+      Phaser.Math.Clamp(toX - this.visW * this.focusFrac(), 0, this.worldW - this.visW) -
       this.offX;
     const done = () => {
       this.marching = false;
@@ -844,16 +842,19 @@ export class AdventureScene extends Phaser.Scene {
    *  otherwise their scrollFactor would subtract camera scroll inside the
    *  container and fixed UI would drift with the rail. */
   private collectChrome() {
+    type SF = Phaser.GameObjects.Components.ScrollFactor;
+    const sf = (o: Phaser.GameObjects.GameObject) => o as unknown as SF;
     const mark = (o: Phaser.GameObjects.GameObject) => {
       if (o.type === 'DOMElement') return;
-      o.setScrollFactor(0, 0);
-      if (o instanceof Phaser.GameObjects.Container) o.each((c) => mark(c));
+      sf(o).setScrollFactor(0, 0);
+      if (o instanceof Phaser.GameObjects.Container)
+        o.each((c: Phaser.GameObjects.GameObject) => mark(c));
     };
     for (const o of [...this.children.list]) {
       if (
         o === this.chrome ||
         o.parentContainer !== null ||
-        o.scrollFactorX !== 0 ||
+        sf(o).scrollFactorX !== 0 ||
         o.type === 'DOMElement' ||
         o.getData?.('screenFixed')
       )
@@ -1123,7 +1124,7 @@ export class AdventureScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const focusX = this.visW * this.focusFrac();
     const targetX =
-      Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, this.visL, this.worldW - this.visW) -
+      Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.visW) -
       this.offX;
     this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
     this.selectLevel(frontierN, false);
