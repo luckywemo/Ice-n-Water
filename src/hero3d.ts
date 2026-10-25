@@ -9,7 +9,7 @@ import { REDUCED_MOTION } from './ui';
 
 const BODY = 0x8a4f24; // glossy milk-chocolate brown
 const SKIN = 0xecc98e; // warm pale tan face oval
-const DARK = 0x160c08; // eyes
+const DARK = 0x0d0805; // eyes — near-black pills
 
 export class Hero3D {
   private renderer?: THREE.WebGLRenderer;
@@ -205,12 +205,9 @@ export class Hero3D {
 
     // face oval — big pale patch high on the front, proud of the surface
     mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.55).scale.set(0.86, 1.05, 0.38);
-    // eyes — two tall thin dark ovals, close-set
-    const eye = (x: number) => {
-      const m = mesh(new THREE.SphereGeometry(0.07, 14, 12), dark, x, 1.58, 0.72);
-      m.scale.set(0.55, 1.45, 0.45);
-      return m;
-    };
+    // eyes — two black pills, close-set
+    const eye = (x: number) =>
+      mesh(new THREE.CapsuleGeometry(0.05, 0.12, 6, 14), dark, x, 1.58, 0.72);
     this.eyeL = eye(-0.16);
     this.eyeR = eye(0.16);
     // dizzy X-eyes — two crossed bars per eye, swapped in while flattened
@@ -677,7 +674,7 @@ export class Hero3D {
       this.nextBlink = t + 2200 + Math.random() * 3400;
       this.blinkUntil = t + 130;
     }
-    const lids = t < this.blinkUntil ? 0.12 : 1.45;
+    const lids = t < this.blinkUntil ? 0.12 : 1;
     if (this.eyeL) {
       this.eyeL.scale.y = lids;
       this.eyeL.visible = !dizzy;
