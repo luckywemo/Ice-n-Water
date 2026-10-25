@@ -150,7 +150,9 @@ export class AdventureScene extends Phaser.Scene {
 
     // the seasons field — cyan rings radiating behind the podium. No crowns:
     // crowns are the boot tile's flourish, gameplay screens get rings only.
-    fgRings(this, this.visW, visH, VW / 2 + this.visW * 0.12, VH / 2 + visH * 0.02, FG.cyan, 0x1fa9e8)
+    // the spiral field emanates from behind the bean — its rings' centre
+    // sits at the podium statue's mid-body (podX, podTopY - 155)
+    fgRings(this, this.visW, visH, VW * 0.66, VH * 0.66 - 150, FG.cyan, 0x1fa9e8)
       .setScrollFactor(0)
       // pure background — stays at display root UNDER the rail; its
       // overscan already covers the centre-zoom shift
@@ -962,14 +964,21 @@ export class AdventureScene extends Phaser.Scene {
   private buildPodium(width: number, height: number) {
     const podX = width * 0.66; // stage is always 1280 wide now
     const podTopY = height * 0.66;
-    // full-height column — the pillar runs down through the rail to the
-    // stage bottom; the rail cards draw in front of it
-    const pod = this.add.graphics().setScrollFactor(0).setDepth(1);
-    pod.fillStyle(FG.podiumSide, 1).fillRect(podX - 170, podTopY, 340, height - podTopY + 80);
-    pod.fillStyle(FG.podiumTop, 1).fillEllipse(podX, podTopY, 340, 54);
-    pod.fillStyle(0xffffff, 0.34).fillEllipse(podX, podTopY - 4, 288, 34);
-    pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(podX, podTopY, 340, 54);
-    pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
+    // the podium lives BEHIND the rail — root-level sf0 at depth 1 (rail
+    // strips are depth 2), positioned at stage+off so the centre-zoom
+    // shift cancels and stage coords still land at stage*zoom
+    const ox = this.offX,
+      oy = this.offY;
+    const pod = this.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(1)
+      .setData('screenFixed', 1);
+    pod.fillStyle(FG.podiumSide, 1).fillRect(ox + podX - 170, oy + podTopY, 340, height - podTopY + 80);
+    pod.fillStyle(FG.podiumTop, 1).fillEllipse(ox + podX, oy + podTopY, 340, 54);
+    pod.fillStyle(0xffffff, 0.34).fillEllipse(ox + podX, oy + podTopY - 4, 288, 34);
+    pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(ox + podX, oy + podTopY, 340, 54);
+    pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(ox + podX, oy + podTopY + 10, 124, 17);
 
     const hero = new Hero3D(520, 540);
     if (hero.ok && hero.canvas) {
@@ -981,11 +990,12 @@ export class AdventureScene extends Phaser.Scene {
       if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
       this.textures.addCanvas('adv_hero', copy);
       this.add
-        .image(podX, podTopY + 34 - 270 * 0.7, 'adv_hero')
+        .image(ox + podX, oy + podTopY + 34 - 270 * 0.7, 'adv_hero')
         .setOrigin(0.5)
         .setScale(0.7) // feet planted on the podium, head clear of the top bar
         .setScrollFactor(0)
-        .setDepth(1);
+        .setDepth(1)
+        .setData('screenFixed', 1);
       hero.dispose();
       this.events.once('shutdown', () => {
         if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
