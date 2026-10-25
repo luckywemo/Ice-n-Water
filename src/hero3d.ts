@@ -348,9 +348,9 @@ export class Hero3D {
         const o = (y * W + x) * 4,
           v = y / H;
         // undercoat in the fur's own brown — mild vertical darkening only
-        ud[o] = 112 - v * 48;
-        ud[o + 1] = 62 - v * 27;
-        ud[o + 2] = 30 - v * 13;
+        ud[o] = 96 - v * 40;
+        ud[o + 1] = 52 - v * 22;
+        ud[o + 2] = 25 - v * 11;
         ud[o + 3] = 255;
       }
     uc.putImageData(uimg, 0, 0);
@@ -457,40 +457,40 @@ export class Hero3D {
 
     // undercoat strands — darkest, thickest
     for (const s of under) {
-      const sh = 52 + s.s * 26;
+      const sh = 42 + s.s * 22;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.6)`;
       ctx.lineWidth = 1.6 + s.s * 1.0;
       stroke(s, false);
     }
     // mid coat + lit tips on the outer half
     for (const s of mid) {
-      const sh = 95 + s.s * 30;
+      const sh = 78 + s.s * 26;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},0.85)`;
       ctx.lineWidth = 0.9 + s.s * 0.6;
       stroke(s, false);
     }
     for (const s of mid) {
-      const sh = 140 + s.s * 35;
+      const sh = 115 + s.s * 30;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.5)`;
       ctx.lineWidth = (0.9 + s.s * 0.6) * 0.8;
       stroke(s, true);
     }
     // sparse highlights
     for (const s of hi) {
-      const sh = 165 + s.s * 30;
+      const sh = 140 + s.s * 28;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.62) | 0},${(sh * 0.36) | 0},0.55)`;
       ctx.lineWidth = 0.7 + s.s * 0.4;
       stroke(s, false);
     }
     // fringe last so it pokes past the silhouette
     for (const s of fringe) {
-      const sh = 100 + s.s * 40;
+      const sh = 84 + s.s * 32;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.56) | 0},${(sh * 0.3) | 0},0.8)`;
       ctx.lineWidth = 1.1;
       stroke(s, false);
     }
     for (const s of fringe) {
-      const sh = 150 + s.s * 30;
+      const sh = 120 + s.s * 28;
       ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.45)`;
       ctx.lineWidth = 0.9;
       stroke(s, true);
