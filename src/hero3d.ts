@@ -68,7 +68,12 @@ export class Hero3D {
     return this.renderer?.domElement;
   }
 
-  constructor(w: number, h: number) {
+  private W = 520;
+  private H = 540;
+
+  constructor(w: number, h: number, camZ = 5.0) {
+    this.W = w;
+    this.H = h;
     try {
       // own offscreen canvas — the scene reads it into a canvas texture
       this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -263,8 +268,9 @@ export class Hero3D {
     scene.add(rim);
 
     this.camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 20);
-    // framed with hop headroom — crown + ~0.4 hop lift stays in view
-    this.camera.position.set(0, 1.3, 5.0);
+    // framed with hop headroom — crown + hop lift stays in view; the map's
+    // pratfall passes camZ>5 for flip + splat headroom on a taller buffer
+    this.camera.position.set(0, 1.3, camZ);
     this.camera.lookAt(0, 1.3, 0);
 
     this.ok = true;
@@ -289,8 +295,8 @@ export class Hero3D {
    *  Call AFTER the WebGL frame is drawn into `ctx`.
    *  `px,py` = pointer in canvas pixels, negative = no petting. */
   drawFur(ctx: CanvasRenderingContext2D, px: number, py: number) {
-    const W = 520,
-      H = 540,
+    const W = this.W,
+      H = this.H,
       CELLS = 8,
       GW = Math.ceil(W / CELLS),
       R = 52,

@@ -457,13 +457,13 @@ export class AdventureScene extends Phaser.Scene {
     // re-uploaded each frame; gaze + petting track the pointer
     if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg) {
       this.hero3d.update(this.time.now);
-      this.heroCtx.clearRect(0, 0, 520, 540);
+      this.heroCtx.clearRect(0, 0, 560, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);
       const b = this.heroImg.getBounds();
       const p = this.input.activePointer;
-      const px = ((p.x - b.x) / b.width) * 520,
-        py = ((p.y - b.y) / b.height) * 540;
-      const inside = px >= 0 && px < 520 && py >= 0 && py < 540;
+      const px = ((p.x - b.x) / b.width) * 560,
+        py = ((p.y - b.y) / b.height) * 700;
+      const inside = px >= 0 && px < 560 && py >= 0 && py < 700;
       this.hero3d.setGaze(
         ((p.x - (b.x + b.width / 2)) / (b.width / 2)) * 0.85,
         ((p.y - (b.y + b.height / 2)) / (b.height / 2)) * 0.85,
@@ -1005,17 +1005,22 @@ export class AdventureScene extends Phaser.Scene {
     pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(ox + podX, oy + podTopY, 340, 54);
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(ox + podX, oy + podTopY + 10, 124, 17);
 
-    const hero = (this.hero3d = new Hero3D(520, 540));
+    // bigger buffer + deeper camera than the lobby — the pratfall launches
+    // ~0.65 world-units and flips around the body centre, so the frame
+    // needs real headroom (visible world top 3.29) and flap room (±1.59)
+    const hero = (this.hero3d = new Hero3D(560, 700, 6.5));
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
       const copy = (this.heroCv = document.createElement('canvas'));
-      copy.width = 520;
-      copy.height = 540;
+      copy.width = 560;
+      copy.height = 700;
       this.heroCtx = copy.getContext('2d')!;
       if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
       this.textures.addCanvas('adv_hero', copy);
+      // feet sit ~20% up the taller buffer, not ~11% — lift compensates so
+      // they stay planted on the podium top (lands the bean at podTop-155)
       this.heroImg = this.add
-        .image(ox + podX, oy + podTopY + 34 - 270 * 0.7, 'adv_hero')
+        .image(ox + podX, oy + podTopY + 34 - 350 * 0.7 + 56, 'adv_hero')
         .setOrigin(0.5)
         .setScale(0.7) // feet planted on the podium, head clear of the top bar
         .setScrollFactor(0)
