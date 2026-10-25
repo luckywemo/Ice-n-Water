@@ -126,7 +126,7 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.72, 1.42, -0.02);
+      root.position.set(side * 0.65, 1.42, 0.0);
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(0.38, 1, 1.15); // broad face pressed to the body's side
