@@ -370,7 +370,7 @@ export class TitleScene extends Phaser.Scene {
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 238, 'hero_live')
+        .image(podX, podTopY - 180, 'hero_live')
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)

@@ -126,7 +126,7 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.62, 1.42, -0.02);
+      root.position.set(side * 0.72, 1.42, -0.02);
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(0.38, 1, 1.15); // broad face pressed to the body's side
@@ -194,8 +194,9 @@ export class Hero3D {
     scene.add(rim);
 
     this.camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 20);
-    this.camera.position.set(0, 1.12, 4.45);
-    this.camera.lookAt(0, 1.08, 0);
+    // framed with hop headroom — crown + ~0.4 hop lift stays in view
+    this.camera.position.set(0, 1.3, 5.0);
+    this.camera.lookAt(0, 1.3, 0);
 
     this.ok = true;
   }
