@@ -320,23 +320,26 @@ export class Hero3D {
       if (cy > 0 && !face[c - FW] && palePx(cx * FM + 1, (cy - 1) * FM + 1)) stack.push(c - FW);
       if (cy < FH - 1 && !face[c + FW] && palePx(cx * FM + 1, (cy + 1) * FM + 1)) stack.push(c + FW);
     }
-    // dilate ~12px (6 cells) so the eyes and the face rim stay protected
-    const fd = new Uint8Array(FW * FH);
-    for (let cy = 0; cy < FH && !overflow; cy++)
-      for (let cx = 0; cx < FW; cx++) {
-        if (!face[cy * FW + cx]) continue;
-        for (let dy = -6; dy <= 6; dy++)
-          for (let dx = -6; dx <= 6; dx++) {
-            const nx = cx + dx,
-              ny = cy + dy;
-            if (nx >= 0 && ny >= 0 && nx < FW && ny < FH) fd[ny * FW + nx] = 1;
-          }
-      }
-    const faceAt = (x: number, y: number) =>
-      x < 0 || y < 0 || x >= W || y >= H ? false : fd[((y / FM) | 0) * FW + ((x / FM) | 0)] === 1;
-    const faceInnerAt = (x: number, y: number) =>
+    // dilate the mask ~8px (4 cells) just to swallow the eyes — roots and
+    // undercoat are banned inside the true face only; strands that would
+    // stroke into it are culled on their tips, so the rim stays furred
+    const fd = overflow ? face : new Uint8Array(FW * FH);
+    if (!overflow)
+      for (let cy = 0; cy < FH; cy++)
+        for (let cx = 0; cx < FW; cx++) {
+          if (!face[cy * FW + cx]) continue;
+          for (let dy = -4; dy <= 4; dy++)
+            for (let dx = -4; dx <= 4; dx++) {
+              const nx = cx + dx,
+                ny = cy + dy;
+              if (nx >= 0 && ny >= 0 && nx < FW && ny < FH) fd[ny * FW + nx] = 1;
+            }
+        }
+    const faceCoreAt = (x: number, y: number) =>
       x < 0 || y < 0 || x >= W || y >= H ? false : face[((y / FM) | 0) * FW + ((x / FM) | 0)] === 1;
-    const body = (x: number, y: number) => a(x, y) >= 140 && !faceAt(x, y);
+    const faceRingAt = (x: number, y: number) =>
+      x < 0 || y < 0 || x >= W || y >= H ? false : fd[((y / FM) | 0) * FW + ((x / FM) | 0)] === 1;
+    const body = (x: number, y: number) => a(x, y) >= 140 && !faceCoreAt(x, y);
     // deterministic per-position noise
     const nz = (x: number, y: number, s: number) => {
       const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
@@ -454,7 +457,7 @@ export class Hero3D {
         // skip strands that would stroke into the face region
         const tx = x + Math.cos(ang) * len,
           ty = y + Math.sin(ang) * len;
-        if (faceInnerAt(tx, ty)) continue;
+        if (faceRingAt(tx, ty)) continue;
         const roll = nz(x, y, 6);
         const s: Strand = {
           x,
