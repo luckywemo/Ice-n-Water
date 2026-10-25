@@ -126,16 +126,16 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.68, 1.42, -0.04);
+      root.position.set(side * 0.62, 1.42, -0.02);
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
-      upper.scale.set(1.1, 1, 0.4);
+      upper.scale.set(0.38, 1, 1.15); // broad face pressed to the body's side
       root.add(upper);
       const elbow = new THREE.Group();
       elbow.position.y = -0.46;
       const tip = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.3, 6, 14), body);
       tip.position.y = -0.18;
-      tip.scale.set(1.05, 1, 0.36);
+      tip.scale.set(0.34, 1, 1.1);
       elbow.add(tip);
       root.add(elbow);
       grp.add(root);
@@ -218,11 +218,11 @@ export class Hero3D {
     const flap = Math.sin(s * 3.4) * 0.1 * idle + (this.hopY > 0 ? Math.sin(s * 18) * 0.45 : 0);
     const bend = Math.sin(s * 3.4 - 0.7) * 0.18 * idle + (this.hopY > 0 ? Math.sin(s * 18 - 0.8) * 0.3 : 0);
     if (this.flipL) {
-      this.flipL.root.rotation.z = -0.55 - flap + this.sq * 0.35;
+      this.flipL.root.rotation.z = -0.18 - flap + this.sq * 0.3;
       this.flipL.elbow.rotation.z = -bend;
     }
     if (this.flipR) {
-      this.flipR.root.rotation.z = 0.55 + flap - this.sq * 0.35;
+      this.flipR.root.rotation.z = 0.18 + flap - this.sq * 0.3;
       this.flipR.elbow.rotation.z = bend;
     }
 
