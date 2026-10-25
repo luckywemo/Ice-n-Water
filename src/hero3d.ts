@@ -658,11 +658,17 @@ export class Hero3D {
       }
     }
     const dizzy = t < this.dizzyUntil;
-    // hold the face-plant while dizzy, ease back up in the last beat
-    const splat = dizzy ? Math.min(1, (this.dizzyUntil - t) / 450) : 0;
-    grp.rotation.x = this.flipX - splat * 0.42; // lands on its back — face + dizzy eyes up to camera
-    grp.scale.y *= 1 - splat * 0.22; // extra-flat while it lies there
-    grp.scale.z *= 1 + splat * 0.18;
+    // lie flat for a beat, then stagger back up — X-eyes stay through the
+    // whole get-up and a breath after it's standing again
+    const splatT = this.dizzyUntil - t;
+    const splat = dizzy ? Math.min(1, Math.max(0, (splatT - 300) / 1100)) : 0;
+    // rotation.x −66°: flat on its back, feet toward camera, face tilted
+    // up enough that the X-eyes still read
+    grp.rotation.x = this.flipX - splat * 1.15;
+    // lying flat → world-Y thinness comes from local Z; squash it into a
+    // pancake and let it spread sideways under the impact
+    grp.scale.z *= 1 - splat * 0.2;
+    grp.scale.x *= 1 + splat * 0.12;
     // flip pivots at the feet — translate so it spins around body centre
     grp.position.z = -1.16 * Math.sin(this.flipX);
 
