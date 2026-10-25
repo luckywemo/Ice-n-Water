@@ -30,6 +30,11 @@ const TOWN_H = 30; // town label below each strip's milestone card
 const STRIP_W = CARD_PAD * 2 + (COLS - 1) * CARD_GAP + CARD_W;
 const STRIP_H = BADGE_H + CARD_H + TOWN_H;
 
+// same virtual stage as the lobby — the whole scene composes at 1280×800
+// and letterboxes uniformly on any window instead of laying out in raw px
+const VW = 1280;
+const VH = 800;
+
 /**
  * The journey map — 500 tier cards on a horizontal rail through 50 Nigerian
  * towns, styled on the seasons/progress screen. Cards bake into per-town
@@ -39,6 +44,9 @@ const STRIP_H = BADGE_H + CARD_H + TOWN_H;
 export class AdventureScene extends Phaser.Scene {
   private prog: AdventureProgress = adventureProgress();
   private worldW = 0;
+  private zoomK = 1; // stage zoom — screen px ÷ zoomK = world px
+  private visW = VW; // visible world size after letterboxing
+  private visH = VH;
   private railY = 0;
   private railX0 = 92; // first card's centre-x in world space
   private stripImgs: Phaser.GameObjects.Image[] = [];
@@ -94,11 +102,22 @@ export class AdventureScene extends Phaser.Scene {
     this.stripImgs = [];
     this.cameras.main.setBackgroundColor(FG.cyan);
     this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
+
+    // the lobby's virtual stage — uniform zoom, centred, letterboxed. The
+    // rail lives in world space past the stage edge; fixed chrome uses
+    // stage coords + scrollFactor(0), same as TitleScene.
+    const zoomK = (this.zoomK = Math.min(width / VW, height / VH));
+    this.visW = width / zoomK;
+    const visH = (this.visH = height / zoomK);
+    const cam = this.cameras.main;
+    cam.setZoom(zoomK);
+    cam.centerOn(VW / 2, VH / 2);
+
     // the seasons field — cyan rings radiating behind the podium. No crowns:
     // crowns are the boot tile's flourish, gameplay screens get rings only.
-    fgRings(this, width, height, width * 0.62, height * 0.52, FG.cyan, 0x1fa9e8).setScrollFactor(0);
+    fgRings(this, this.visW, visH, VW / 2 + this.visW * 0.12, VH / 2 + visH * 0.02, FG.cyan, 0x1fa9e8).setScrollFactor(0);
 
-    this.railY = height * 0.8;
+    this.railY = VH * 0.8;
     this.worldW = this.railX0 + (TOTAL_LEVELS - 1) * CARD_GAP + 140;
 
     // did we just push the frontier into a new town? its name gets a banner
@@ -111,13 +130,12 @@ export class AdventureScene extends Phaser.Scene {
       localStorage.setItem(SEEN_KEY, String(ft));
     }
 
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, this.worldW, height);
+    cam.setBounds(0, 0, this.worldW, VH);
     cam.scrollY = 0;
 
     // ---- seasons chrome: header block + podium bean, both screen-fixed ----
-    this.buildHeader(width, height);
-    this.buildPodium(width, height);
+    this.buildHeader(VW, VH);
+    this.buildPodium(VW, VH);
 
     // ---- the rail: one baked strip per town — 10 tier cards + town label ----
     for (let r = 0; r < TOTAL_MILESTONES; r++) this.bakeStrip(r);
@@ -161,7 +179,7 @@ export class AdventureScene extends Phaser.Scene {
     // crown/star counters. scrollLock keeps it pinned while the rail moves.
     fgTopBar(
       this,
-      width,
+      VW,
       [
         { icon: 'back', onDown: () => this.gated(() => this.toTitle()) },
         { icon: 'edit', onDown: () => this.gated(() => this.renameRunner()) },
@@ -174,7 +192,13 @@ export class AdventureScene extends Phaser.Scene {
         { icon: 'online', onDown: () => this.gated(() => this.toLobby()) },
       ],
       { crown: loadStats().wins, star: totalStars(this.prog) },
-      { label: 'MAP', scrollLock: true },
+      {
+        label: 'MAP',
+        scrollLock: true,
+        // hug the real view edges — the stage letterboxes on one axis
+        xL: VW / 2 - this.visW / 2,
+        xR: VW / 2 + this.visW / 2,
+      },
     );
 
     // keep the board warm — name changes & best runs post once per session
@@ -185,9 +209,9 @@ export class AdventureScene extends Phaser.Scene {
       if (this.boardLayer || this.marching) return;
       this.velX = 0;
       cam.scrollX = Phaser.Math.Clamp(
-        cam.scrollX + (dy || dx) * 0.9,
+        cam.scrollX + ((dy || dx) * 0.9) / this.zoomK,
         0,
-        this.worldW - this.scale.width,
+        this.worldW - this.visW,
       );
     });
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
@@ -203,13 +227,13 @@ export class AdventureScene extends Phaser.Scene {
       if (this.boardLayer || this.marching) return;
       if (this.dragX === null || !p.isDown) return;
       const dt = Math.max(1, this.time.now - this.lastMoveT);
-      this.velX = (-(p.x - this.lastMoveX) / dt) * 1000; // px per second
+      this.velX = (-(p.x - this.lastMoveX) / dt) * 1000 / this.zoomK; // world px/s
       this.lastMoveX = p.x;
       this.lastMoveT = this.time.now;
       cam.scrollX = Phaser.Math.Clamp(
-        this.camStartX - (p.x - this.dragX),
+        this.camStartX - (p.x - this.dragX) / this.zoomK,
         0,
-        this.worldW - this.scale.width,
+        this.worldW - this.visW,
       );
     });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
@@ -219,13 +243,13 @@ export class AdventureScene extends Phaser.Scene {
       this.tapStart = null;
       if (!t || this.boardLayer || this.marching) return;
       if (Math.abs(p.x - t.x) > 10 || Math.abs(p.y - t.y) > 10) return;
-      const wx = p.x + cam.scrollX;
+      const wx = p.worldX; // worldX already folds in zoom + scroll
       const i = Math.round((wx - this.railX0) / CARD_GAP);
       if (
         i >= 0 &&
         i < TOTAL_LEVELS &&
         Math.abs(wx - this.cardX(i)) <= CARD_W / 2 + 8 &&
-        Math.abs(p.y - this.railY) <= CARD_H / 2 + 14
+        Math.abs(p.worldY - this.railY) <= CARD_H / 2 + 14
       ) {
         this.selectLevel(i + 1, true);
       }
@@ -258,8 +282,8 @@ export class AdventureScene extends Phaser.Scene {
     // after a clear we open right on the frontier instead — the march needs it.
     // anchor keeps the focused card right of the detail card even on narrow screens
     const anchorI = advance !== null ? advance : frontierN - 1;
-    const focusX = width * this.focusFrac();
-    const targetX = Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - width);
+    const focusX = this.visW * this.focusFrac();
+    const targetX = Phaser.Math.Clamp(this.cardX(anchorI) - focusX, 0, this.worldW - this.visW);
     cam.scrollX = REDUCED_MOTION || advance !== null ? targetX : 0;
     if (!REDUCED_MOTION && advance === null && targetX > 60) {
       this.tweens.add({
@@ -289,7 +313,7 @@ export class AdventureScene extends Phaser.Scene {
     this.marching = true;
     const toX = this.cardX(a); // a+1's card is the new frontier
     const cam = this.cameras.main;
-    const camX = Phaser.Math.Clamp(toX - this.scale.width * this.focusFrac(), 0, this.worldW - this.scale.width);
+    const camX = Phaser.Math.Clamp(toX - this.visW * this.focusFrac(), 0, this.worldW - this.visW);
     const done = () => {
       this.marching = false;
       sfx.pickup();
@@ -311,11 +335,10 @@ export class AdventureScene extends Phaser.Scene {
    *  locked content stays visible by design */
   private playReveal() {
     const r = this.revealIdx;
-    const { width, height } = this.scale;
     const town = MILESTONE_TOWNS[r];
     this.time.delayedCall(500, () => sfx.pickup());
     const ban = this.add
-      .text(width / 2, height * 0.28, `NEW GROUND — ${town.toUpperCase()}`, {
+      .text(VW / 2, VH * 0.28, `NEW GROUND — ${town.toUpperCase()}`, {
         fontFamily: DISPLAY_FONT,
         fontSize: '30px',
         color: '#e84393', // pink header + deep-pink shadow, like every card
@@ -327,7 +350,7 @@ export class AdventureScene extends Phaser.Scene {
       .setScale(0.8)
       .setShadow(0, 4, '#9c2160', 0, true, false);
     const sub = this.add
-      .text(width / 2, height * 0.28 + 40, 'the road opens', {
+      .text(VW / 2, VH * 0.28 + 40, 'the road opens', {
         fontFamily: UI_FONT,
         fontSize: '15px',
         fontStyle: '600',
@@ -351,18 +374,19 @@ export class AdventureScene extends Phaser.Scene {
   update(_t: number, delta: number) {
     const cam = this.cameras.main;
     const k = this.keys;
-    const v = (delta / 1000) * 620;
+    // screen-feel scroll speed — world units stretch under the stage zoom
+    const v = ((delta / 1000) * 620) / this.zoomK;
     if (k?.LEFT?.isDown || k?.A?.isDown)
-      cam.scrollX = Phaser.Math.Clamp(cam.scrollX - v, 0, this.worldW - this.scale.width);
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX - v, 0, this.worldW - this.visW);
     if (k?.RIGHT?.isDown || k?.D?.isDown)
-      cam.scrollX = Phaser.Math.Clamp(cam.scrollX + v, 0, this.worldW - this.scale.width);
+      cam.scrollX = Phaser.Math.Clamp(cam.scrollX + v, 0, this.worldW - this.visW);
 
     // fling momentum — decays like a real scroll
     if (this.dragX === null && Math.abs(this.velX) > 20) {
       cam.scrollX = Phaser.Math.Clamp(
         cam.scrollX + this.velX * (delta / 1000),
         0,
-        this.worldW - this.scale.width,
+        this.worldW - this.visW,
       );
       this.velX *= Math.pow(0.92, delta / 16.7); // frame-rate independent decay
     } else if (this.dragX === null) {
@@ -591,16 +615,16 @@ export class AdventureScene extends Phaser.Scene {
 
   private showBoard() {
     if (this.boardLayer) return;
-    const { width, height } = this.scale;
+    const width = VW,
+      height = VH;
     const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(60);
     this.boardLayer = layer;
 
     // the seasons underlay — cyan crown field + rings, then a light veil
-    const bg = fgCrownField(this, width, height, width / 2, height * 0.45, FG.cyan, 0x1fa9e8, 0x0f7fb8);
+    const bg = fgCrownField(this, this.visW, this.visH, VW / 2, VH * 0.45, FG.cyan, 0x1fa9e8, 0x0f7fb8);
     const dim = this.add
-      .rectangle(-width, -height, width * 3, height * 3, 0x081420, 0.22)
-      .setOrigin(0)
-      .setInteractive(); // swallow taps — overscan covers camera-zoom margins
+      .rectangle(VW / 2, VH / 2, this.visW + 60, this.visH + 60, 0x081420, 0.22)
+      .setInteractive(); // swallow taps — sized to the letterboxed view
     const pw = Math.min(460, width - 40);
     const ph = Math.min(620, height - 40);
     const px = (width - pw) / 2;
@@ -759,22 +783,26 @@ export class AdventureScene extends Phaser.Scene {
   /** manual overlay hit test — board zones win over card zones */
   private onOverlayTap(p: Phaser.Input.Pointer) {
     if (this.marching || this.modalOpen) return;
+    // hit rects live in stage coords — worldX folds in zoom + scroll, and
+    // scrollFactor(0) chrome ignores scroll, so un-scroll the pointer
+    const hx = p.worldX - this.cameras.main.scrollX;
+    const hy = p.worldY - this.cameras.main.scrollY;
     for (const z of [...this.boardHit, ...this.cardHit]) {
-      if (p.x >= z.x && p.x <= z.x + z.w && p.y >= z.y && p.y <= z.y + z.h) {
+      if (hx >= z.x && hx <= z.x + z.w && hy >= z.y && hy <= z.y + z.h) {
         z.fn();
         return;
       }
     }
   }
 
-  /** left column width — header + detail card share it, ~half the viewport */
+  /** left column width — header + detail card share it, ~half the view */
   private colW(): number {
-    return Math.min(500, this.scale.width * 0.48);
+    return Math.min(500, this.visW * 0.48);
   }
 
   /** camera anchor keeps the focused card clear of the left column */
   private focusFrac(): number {
-    return Math.min(0.72, Math.max(0.42, (34 + this.colW() + 60) / this.scale.width));
+    return Math.min(0.72, Math.max(0.42, (34 + this.colW() + 60) / this.visW));
   }
 
   /** seasons header — wordmark stack + hex level badge + angled progress bar
@@ -847,7 +875,7 @@ export class AdventureScene extends Phaser.Scene {
   /** magenta podium + a one-shot bean render — static texture, zero per-frame
    *  three.js cost on this screen (the title lobby keeps the live one) */
   private buildPodium(width: number, height: number) {
-    const podX = width < 640 ? width - 130 : width * 0.66;
+    const podX = width * 0.66; // stage is always 1280 wide now
     const podTopY = height * 0.66;
     const pod = this.add.graphics().setScrollFactor(0).setDepth(1);
     pod.fillStyle(FG.podiumSide, 1).fillRect(podX - 170, podTopY, 340, height - podTopY + 80);
@@ -856,11 +884,11 @@ export class AdventureScene extends Phaser.Scene {
     pod.lineStyle(4, FG.pinkDeep, 0.5).strokeEllipse(podX, podTopY, 340, 54);
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
 
-    const hero = new Hero3D(440, 540);
+    const hero = new Hero3D(520, 540);
     if (hero.ok && hero.canvas) {
       hero.update(1.1); // one settled pose — a statue, not a live render
       const copy = document.createElement('canvas');
-      copy.width = 440;
+      copy.width = 520;
       copy.height = 540;
       copy.getContext('2d')!.drawImage(hero.canvas, 0, 0);
       if (this.textures.exists('adv_hero')) this.textures.remove('adv_hero');
@@ -890,7 +918,7 @@ export class AdventureScene extends Phaser.Scene {
    *  town, status chip, stats and the PLAY pill, wired to the selection */
   private buildDetail() {
     this.detailLayer?.destroy();
-    const { width, height } = this.scale;
+    const height = VH; // stage coords — the card is screen-fixed
     const n = this.selected + 1;
     const def = levelDef(n);
     const stars = this.prog.stars[n] ?? 0;
@@ -1006,8 +1034,8 @@ export class AdventureScene extends Phaser.Scene {
   private focusFrontier() {
     const frontierN = Math.min(this.prog.unlocked, TOTAL_LEVELS);
     const cam = this.cameras.main;
-    const focusX = this.scale.width * this.focusFrac();
-    const targetX = Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.scale.width);
+    const focusX = this.visW * this.focusFrac();
+    const targetX = Phaser.Math.Clamp(this.cardX(frontierN - 1) - focusX, 0, this.worldW - this.visW);
     this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
     this.selectLevel(frontierN, false);
   }
