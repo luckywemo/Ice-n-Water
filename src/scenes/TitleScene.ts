@@ -42,6 +42,7 @@ export class TitleScene extends Phaser.Scene {
   private heroImg?: Phaser.GameObjects.Image;
   private heroGaze?: { x: number; y: number };
   private heroGazeP = { x: 0, y: 0 };
+  private heroDragX?: number;
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
@@ -374,7 +375,17 @@ export class TitleScene extends Phaser.Scene {
         .setDepth(6)
         .setAlpha(0)
         .setInteractive({ useHandCursor: true });
-      this.heroImg.on('pointerdown', () => this.hero3d?.poke());
+      this.heroImg.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        this.hero3d?.poke();
+        this.heroDragX = p.x;
+      });
+      this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+        if (this.heroDragX !== undefined && p.isDown) {
+          this.hero3d?.spin(p.x - this.heroDragX);
+          this.heroDragX = p.x;
+        }
+      });
+      this.input.on('pointerup', () => (this.heroDragX = undefined));
     } else {
       // no WebGL for three — fall back to the baked sprite
       const heroImg = this.add

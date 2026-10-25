@@ -32,7 +32,14 @@ export class Hero3D {
   private nextBlink = 2400;
   private nextHop = 5200;
   private lastT = -1;
+  private yaw = 0; // user spin
+  private yawVel = 0;
   ok = false;
+
+  /** drag-to-rotate — pixel delta feeds spin velocity */
+  spin(dx: number) {
+    this.yawVel += dx * 0.008;
+  }
 
   /** cursor follow — normalized −1..1 from screen centre */
   setGaze(x: number, y: number) {
@@ -106,13 +113,14 @@ export class Hero3D {
     this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
     this.torso.scale.set(1, 1, 0.95);
 
-    // droopy arms — longer capsules hanging from the shoulders, tipped with
-    // a slightly larger rounded hand nub that merges into the silhouette
+    // penguin flippers — flat tapered blades angled out from the
+    // shoulders, swept slightly back, no separate hand
     const arm = (side: -1 | 1) => {
-      const a = mesh(new THREE.CapsuleGeometry(0.15, 0.6, 6, 16), body, side * 0.64, 1.14, 0.03);
-      a.rotation.z = side * 0.24;
+      const a = mesh(new THREE.CapsuleGeometry(0.16, 0.62, 6, 16), body, side * 0.68, 1.08, -0.02);
+      a.scale.set(1.15, 1, 0.35);
+      a.rotation.z = side * 0.5;
+      a.rotation.y = side * -0.18;
       a.rotation.x = -0.06;
-      mesh(new THREE.SphereGeometry(0.165, 14, 12), body, side * 0.75, 0.68, 0.06);
       return a;
     };
     this.armL = arm(-1);
@@ -187,8 +195,8 @@ export class Hero3D {
     this.sqVel += (-170 * this.sq - 11 * this.sqVel) * dt;
     this.sq = Math.max(-0.38, Math.min(0.5, this.sq + this.sqVel * dt));
     grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
-    if (this.armL) this.armL.rotation.z = -0.24 + this.sq * 0.55;
-    if (this.armR) this.armR.rotation.z = 0.24 - this.sq * 0.55;
+    if (this.armL) this.armL.rotation.z = -0.5 + this.sq * 0.55;
+    if (this.armR) this.armR.rotation.z = 0.5 - this.sq * 0.55;
 
     // scheduled hop — stretch at take-off, squash on landing
     if (!REDUCED_MOTION && t > this.nextHop) {
@@ -227,9 +235,13 @@ export class Hero3D {
       this.eyeR.position.y = 1.58 + this.gy * 0.05;
     }
 
-    // idle — breathing bob, slow sway, gaze lean
+    // drag spin — velocity decays smoothly
+    this.yaw += this.yawVel;
+    this.yawVel *= Math.exp(-3.5 * dt);
+
+    // idle — breathing bob, slow sway, gaze lean, user spin
     grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY;
-    grp.rotation.y = Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
+    grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
     grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
 
     this.renderer.render(this.scene, this.camera);
