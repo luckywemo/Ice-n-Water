@@ -101,15 +101,16 @@ export class Hero3D {
     const skin = mat(SKIN, 0.38);
     const dark = mat(DARK, 0.25);
 
-    // feet — pivoted groups at the hip so they can waddle and kick
+    // feet — pivoted groups at the hip; each foot is a flat forward-
+    // pointing shoe, toes angled slightly out
     const footG = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.27, 0.32, 0.06);
-      const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.22, 6, 14), body);
-      f.scale.set(1.0, 1, 1.3);
-      f.position.set(0, -0.22, 0.05);
-      f.rotation.x = Math.PI / 2 - 0.18;
-      f.rotation.y = side * -0.22;
+      root.position.set(side * 0.27, 0.32, 0.04);
+      root.rotation.y = side * 0.18; // toes out
+      const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.3, 6, 14), body);
+      f.rotation.x = Math.PI / 2; // capsule axis points forward (+z)
+      f.scale.set(1.05, 1, 0.55); // flatten vertically (local z → world y)
+      f.position.set(0, -0.22, 0.1);
       root.add(f);
       grp.add(root);
       return root;
@@ -125,7 +126,8 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.66, 1.42, 0.02);
+      root.position.set(side * 0.68, 1.42, -0.04);
+      root.rotation.y = side * 0.35; // blade stays on the body's side plane
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(1.1, 1, 0.4);
