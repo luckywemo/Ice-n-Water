@@ -92,8 +92,8 @@ export class DropScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setAlpha(alpha)
         .setShadow(0, size * 0.08, 'rgba(10,60,90,0.35)', 6);
-    mk(672, 58, big);
-    mk(728, 24, small, 0.95);
+    mk(575, 58, big);
+    mk(632, 24, small, 0.95);
 
     this.add
       .text(34, VH - 34, 'the militia is waiting…', {
