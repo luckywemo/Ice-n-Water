@@ -9,7 +9,7 @@ import { REDUCED_MOTION } from './ui';
 
 const BODY = 0x8a4f24; // glossy milk-chocolate brown
 const SKIN = 0xecc98e; // warm pale tan face oval
-const DARK = 0x0d0805; // eyes — near-black pills
+const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 
 export class Hero3D {
   private renderer?: THREE.WebGLRenderer;
@@ -113,7 +113,9 @@ export class Hero3D {
 
     const body = mat(BODY, 0.3);
     const skin = mat(SKIN, 0.38);
-    const dark = mat(DARK, 0.25);
+    // ojos: MeshBasic — las luces cálidas de la escena teñían de marrón
+    // cualquier material iluminado; el basic rinde negro plano siempre
+    const dark = new THREE.MeshBasicMaterial({ color: DARK });
 
     // feet — pivoted groups at the hip; each foot is a flat forward-
     // pointing shoe, toes angled slightly out
@@ -347,9 +349,22 @@ export class Hero3D {
       if (cy > 0 && !face[c - FW] && palePx(cx * FM + 1, (cy - 1) * FM + 1)) stack.push(c - FW);
       if (cy < FH - 1 && !face[c + FW] && palePx(cx * FM + 1, (cy + 1) * FM + 1)) stack.push(c + FW);
     }
-    // dilate the mask ~8px (4 cells) just to swallow the eyes — roots and
-    // undercoat are banned inside the true face only; strands that would
-    // stroke into it are culled on their tips, so the rim stays furred
+    // hole-fill: the flood only marks pale cells, so dark eyes are unmarked
+    // islands inside the face and fur roots on them — fill every row
+    // between its leftmost and rightmost face cell
+    if (!overflow)
+      for (let cy = 0; cy < FH; cy++) {
+        let lo = -1,
+          hi = -1;
+        for (let cx = 0; cx < FW; cx++)
+          if (face[cy * FW + cx]) {
+            if (lo < 0) lo = cx;
+            hi = cx;
+          }
+        for (let cx = lo; lo >= 0 && cx <= hi; cx++) face[cy * FW + cx] = 1;
+      }
+    // dilate the mask ~8px (4 cells) — strands that would stroke into the
+    // face rim are culled on their tips, so the rim stays furred
     const fd = overflow ? face : new Uint8Array(FW * FH);
     if (!overflow)
       for (let cy = 0; cy < FH; cy++)
