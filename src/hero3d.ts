@@ -695,7 +695,7 @@ export class Hero3D {
     const splat = dizzy ? Math.min(1, Math.max(0, (splatT - 300) / 1100)) : 0;
     // rotation.x −66°: flat on its back, feet toward camera, face tilted
     // up enough that the X-eyes still read
-    grp.rotation.x = this.flipX - splat * 1.15 + (this.skydiving ? 0.36 : 0); // belly tips down — the high camera keeps the face readable
+    grp.rotation.x = this.flipX - splat * 1.15 + (this.skydiving ? 0.22 : 0); // belly tips down — the high camera keeps the face readable
     // lying flat → world-Y thinness comes from local Z; squash it into a
     // pancake and let it spread sideways under the impact
     grp.scale.z *= 1 - splat * 0.2;

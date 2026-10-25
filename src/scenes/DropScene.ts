@@ -63,7 +63,7 @@ export class DropScene extends Phaser.Scene {
     // the bean, mid-dive — deep + high camera on a tall buffer: spread
     // flippers and trailing feet keep full margins, and the top-down
     // angle keeps the face readable in the belly-first posture
-    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 2.45, 1.05));
+    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 3.1, 0.85));
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
       const cv = (this.heroCv = document.createElement('canvas'));
@@ -71,7 +71,7 @@ export class DropScene extends Phaser.Scene {
       cv.height = 700;
       this.heroCtx = cv.getContext('2d')!;
       this.textures.addCanvas('drop_hero', cv);
-      this.heroImg = this.add.image(VW / 2, 345, 'drop_hero').setScale(0.78);
+      this.heroImg = this.add.image(VW / 2, 290, 'drop_hero').setScale(1);
     }
 
     // what's next — big chunky label under the bean, FG-counter style
@@ -92,8 +92,8 @@ export class DropScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setAlpha(alpha)
         .setShadow(0, size * 0.08, 'rgba(10,60,90,0.35)', 6);
-    mk(560, 58, big);
-    mk(618, 24, small, 0.95);
+    mk(672, 58, big);
+    mk(728, 24, small, 0.95);
 
     this.add
       .text(34, VH - 34, 'the militia is waiting…', {
