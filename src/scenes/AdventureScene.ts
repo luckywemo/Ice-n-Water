@@ -1149,7 +1149,7 @@ export class AdventureScene extends Phaser.Scene {
     sfx.shortWhistle();
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('game', { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) }),
+      this.scene.start('drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } }),
     );
   }
 

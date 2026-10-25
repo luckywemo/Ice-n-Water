@@ -228,7 +228,7 @@ export class TitleScene extends Phaser.Scene {
       savePicks(this.diff, this.joy);
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('game', { difficulty: this.diff }),
+        this.scene.start('drop', { game: { difficulty: this.diff } }),
       );
     };
     const toOnline = () => {
