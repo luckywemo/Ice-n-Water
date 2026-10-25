@@ -246,6 +246,93 @@ export class Hero3D {
     this.ok = true;
   }
 
+  // --- pettable 2D fur fringe (FeralUI-style, ported to canvas) ---
+  // bend state lives in a coarse grid keyed by canvas position so it
+  // survives the per-frame strand rebuild and springs back smoothly
+  private furBend = new Map<number, { x: number; y: number }>();
+
+  /** Draw strand fur along the bean's rendered silhouette.
+   *  Call AFTER the WebGL frame is composited into `ctx`.
+   *  `px,py` = pointer position in canvas pixels, negative = no petting. */
+  drawFur(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    const W = 440,
+      H = 540,
+      CELLS = 8,
+      GW = Math.ceil(W / CELLS);
+    const d = ctx.getImageData(0, 0, W, H).data;
+    const a = (x: number, y: number) =>
+      x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
+
+    // pet impulse — bend grid cells away from the pointer
+    if (px >= 0) {
+      const gx = Math.floor(px / CELLS),
+        gy = Math.floor(py / CELLS);
+      for (let cy = gy - 6; cy <= gy + 6; cy++)
+        for (let cx = gx - 6; cx <= gx + 6; cx++) {
+          const mx = cx * CELLS + CELLS / 2 - px,
+            my = cy * CELLS + CELLS / 2 - py;
+          const dd = Math.hypot(mx, my);
+          if (dd > 48 || dd < 0.5) continue;
+          const k = (1 - dd / 48) * 0.9;
+          const key = cy * GW + cx;
+          const b = this.furBend.get(key) ?? { x: 0, y: 0 };
+          b.x += (mx / dd) * k * 3;
+          b.y += (my / dd) * k * 3;
+          this.furBend.set(key, b);
+        }
+    }
+    // spring decay + prune
+    for (const [k, b] of this.furBend) {
+      b.x *= 0.86;
+      b.y *= 0.86;
+      if (b.x * b.x + b.y * b.y < 0.01) this.furBend.delete(k);
+    }
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    const STEP = 7;
+    for (let y = 5; y < H - 5; y += STEP)
+      for (let x = 5; x < W - 5; x += STEP) {
+        if (a(x, y) < 140) continue;
+        // edge strand = inside pixel with a transparent-ish neighbour
+        if (
+          a(x - 6, y) > 100 &&
+          a(x + 6, y) > 100 &&
+          a(x, y - 6) > 100 &&
+          a(x, y + 6) > 100
+        )
+          continue;
+        // outward normal from the alpha gradient + jitter so strands
+        // lie in a direction, not a comb
+        let nx = a(x - 6, y) - a(x + 6, y);
+        let ny = a(x, y - 6) - a(x, y + 6);
+        const l = Math.hypot(nx, ny) || 1;
+        nx /= l;
+        ny /= l;
+        const jig = (((x * 31 + y * 17) % 100) / 100 - 0.5) * 1.4;
+        const ca = Math.cos(jig),
+          sa = Math.sin(jig);
+        const jx = nx * ca - ny * sa,
+          jy = nx * sa + ny * ca;
+        const b = this.furBend.get(Math.floor(y / CELLS) * GW + Math.floor(x / CELLS));
+        const bx = b ? b.x : 0,
+          by = b ? b.y : 0;
+        const len = 7 + ((x * 7 + y * 13) % 7); // deterministic variance
+        const mx = x + jx * len * 0.5 + bx * 0.6,
+          my = y + jy * len * 0.5 + by * 0.6;
+        const tx = x + jx * len + bx,
+          ty = y + jy * len + by;
+        const sh = 85 + ((x * 11 + y * 5) % 45);
+        ctx.strokeStyle = `rgba(${sh},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.7)`;
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(mx, my, tx, ty);
+        ctx.stroke();
+      }
+    ctx.restore();
+  }
+
   update(t: number) {
     if (!this.renderer || !this.scene || !this.camera || !this.group) return;
     const dt = this.lastT < 0 ? 0.016 : Math.min(0.05, (t - this.lastT) / 1000);

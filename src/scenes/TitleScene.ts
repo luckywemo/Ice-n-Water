@@ -905,6 +905,12 @@ export class TitleScene extends Phaser.Scene {
       // same-task read after render — the webgl buffer is still valid
       this.heroCtx.clearRect(0, 0, 440, 540);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
+      // pettable strand fringe along the rendered silhouette
+      if (this.heroImg && !REDUCED_MOTION) {
+        const lx = p ? p.worldX - this.heroImg.x + 220 : -1;
+        const ly = p ? p.worldY - this.heroImg.y + 270 : -1;
+        this.hero3d?.drawFur(this.heroCtx, lx, ly);
+      }
       this.heroTex.refresh();
     }
   }
