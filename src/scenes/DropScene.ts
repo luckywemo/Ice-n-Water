@@ -60,8 +60,9 @@ export class DropScene extends Phaser.Scene {
       this.streaks.push(r);
     }
 
-    // the bean, mid-dive — live WebGL + fur pipeline, same as lobby/map
-    const hero = (this.hero3d = new Hero3D(520, 540));
+    // the bean, mid-dive — camera sits high and looks down so the
+    // belly-first posture still shows the face, same trick as theirs
+    const hero = (this.hero3d = new Hero3D(520, 540, 5.0, 1.95, 1.05));
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
       const cv = (this.heroCv = document.createElement('canvas'));

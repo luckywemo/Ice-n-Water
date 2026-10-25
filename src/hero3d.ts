@@ -74,7 +74,7 @@ export class Hero3D {
   private W = 520;
   private H = 540;
 
-  constructor(w: number, h: number, camZ = 5.0) {
+  constructor(w: number, h: number, camZ = 5.0, camY = 1.3, lookY = 1.3) {
     this.W = w;
     this.H = h;
     try {
@@ -272,8 +272,8 @@ export class Hero3D {
     this.camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 20);
     // framed with hop headroom — crown + hop lift stays in view; the map's
     // pratfall passes camZ>5 for flip + splat headroom on a taller buffer
-    this.camera.position.set(0, 1.3, camZ);
-    this.camera.lookAt(0, 1.3, 0);
+    this.camera.position.set(0, camY, camZ);
+    this.camera.lookAt(0, lookY, 0);
 
     this.ok = true;
   }
@@ -626,9 +626,9 @@ export class Hero3D {
         this.flipR.root.rotation.z = 1.3 - wind;
         this.flipR.elbow.rotation.z = 0.1;
       }
-      // feet trail up behind the dive
-      if (this.footL) this.footL.rotation.x = 0.55;
-      if (this.footR) this.footR.rotation.x = 0.55;
+      // feet trail up behind the dive — the leaner it gets the higher they kick
+      if (this.footL) this.footL.rotation.x = 0.9;
+      if (this.footR) this.footR.rotation.x = 0.9;
     } else {
       // flippers — idle wave, hard flap while airborne, elbow trails a beat
       const flap = Math.sin(s * 3.4) * 0.1 * idle + (this.hopY > 0 ? Math.sin(s * 18) * 0.45 : 0);
@@ -695,7 +695,7 @@ export class Hero3D {
     const splat = dizzy ? Math.min(1, Math.max(0, (splatT - 300) / 1100)) : 0;
     // rotation.x −66°: flat on its back, feet toward camera, face tilted
     // up enough that the X-eyes still read
-    grp.rotation.x = this.flipX - splat * 1.15 + (this.skydiving ? 0.16 : 0); // belly tips toward camera in a dive
+    grp.rotation.x = this.flipX - splat * 1.15 + (this.skydiving ? 0.36 : 0); // belly tips down — the high camera keeps the face readable
     // lying flat → world-Y thinness comes from local Z; squash it into a
     // pancake and let it spread sideways under the impact
     grp.scale.z *= 1 - splat * 0.2;
