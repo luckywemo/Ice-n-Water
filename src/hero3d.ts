@@ -17,8 +17,10 @@ export class Hero3D {
   private camera?: THREE.PerspectiveCamera;
   private group?: THREE.Group;
   private torso?: THREE.Mesh;
-  private armL?: THREE.Mesh;
-  private armR?: THREE.Mesh;
+  private flipL?: { root: THREE.Group; elbow: THREE.Group };
+  private flipR?: { root: THREE.Group; elbow: THREE.Group };
+  private footL?: THREE.Group;
+  private footR?: THREE.Group;
   private eyeL?: THREE.Mesh;
   private eyeR?: THREE.Mesh;
   // --- animation state ---
@@ -99,32 +101,47 @@ export class Hero3D {
     const skin = mat(SKIN, 0.38);
     const dark = mat(DARK, 0.25);
 
-    // feet — molded rounded shoes in the same body material, toes angled out
-    const foot = (x: number, ry: number) => {
-      const f = mesh(new THREE.SphereGeometry(0.2, 18, 14), body, x, 0.12, 0.12);
-      f.scale.set(1.0, 0.55, 1.55);
-      f.rotation.y = ry;
-      return f;
+    // feet — pivoted groups at the hip so they can waddle and kick
+    const footG = (side: -1 | 1) => {
+      const root = new THREE.Group();
+      root.position.set(side * 0.27, 0.32, 0.06);
+      const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.22, 6, 14), body);
+      f.scale.set(1.0, 1, 1.3);
+      f.position.set(0, -0.22, 0.05);
+      f.rotation.x = Math.PI / 2 - 0.18;
+      f.rotation.y = side * -0.22;
+      root.add(f);
+      grp.add(root);
+      return root;
     };
-    foot(-0.27, 0.22);
-    foot(0.27, -0.22);
+    this.footL = footG(-1);
+    this.footR = footG(1);
 
     // the bean — one tall capsule body, belly-forward like the reference
     this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
     this.torso.scale.set(1, 1, 0.95);
 
-    // penguin flippers — flat tapered blades angled out from the
-    // shoulders, swept slightly back, no separate hand
-    const arm = (side: -1 | 1) => {
-      const a = mesh(new THREE.CapsuleGeometry(0.16, 0.62, 6, 16), body, side * 0.68, 1.08, -0.02);
-      a.scale.set(1.15, 1, 0.35);
-      a.rotation.z = side * 0.5;
-      a.rotation.y = side * -0.18;
-      a.rotation.x = -0.06;
-      return a;
+    // penguin flippers — detached two-segment blades: shoulder pivot +
+    // elbow joint so the tip bends. Held just off the body surface.
+    const flipper = (side: -1 | 1) => {
+      const root = new THREE.Group();
+      root.position.set(side * 0.66, 1.42, 0.02);
+      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
+      upper.position.y = -0.22;
+      upper.scale.set(1.1, 1, 0.4);
+      root.add(upper);
+      const elbow = new THREE.Group();
+      elbow.position.y = -0.46;
+      const tip = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.3, 6, 14), body);
+      tip.position.y = -0.18;
+      tip.scale.set(1.05, 1, 0.36);
+      elbow.add(tip);
+      root.add(elbow);
+      grp.add(root);
+      return { root, elbow };
     };
-    this.armL = arm(-1);
-    this.armR = arm(1);
+    this.flipL = flipper(-1);
+    this.flipR = flipper(1);
 
     // face oval — big pale patch high on the front, proud of the surface
     mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.5).scale.set(0.86, 1.05, 0.38);
@@ -195,8 +212,29 @@ export class Hero3D {
     this.sqVel += (-170 * this.sq - 11 * this.sqVel) * dt;
     this.sq = Math.max(-0.38, Math.min(0.5, this.sq + this.sqVel * dt));
     grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
-    if (this.armL) this.armL.rotation.z = -0.5 + this.sq * 0.55;
-    if (this.armR) this.armR.rotation.z = 0.5 - this.sq * 0.55;
+
+    // flippers — idle wave, hard flap while airborne, elbow trails a beat
+    const flap = Math.sin(s * 3.4) * 0.1 * idle + (this.hopY > 0 ? Math.sin(s * 18) * 0.45 : 0);
+    const bend = Math.sin(s * 3.4 - 0.7) * 0.18 * idle + (this.hopY > 0 ? Math.sin(s * 18 - 0.8) * 0.3 : 0);
+    if (this.flipL) {
+      this.flipL.root.rotation.z = -0.55 - flap + this.sq * 0.35;
+      this.flipL.elbow.rotation.z = -bend;
+    }
+    if (this.flipR) {
+      this.flipR.root.rotation.z = 0.55 + flap - this.sq * 0.35;
+      this.flipR.elbow.rotation.z = bend;
+    }
+
+    // feet — alternating waddle wiggle; toes kick down mid-hop
+    const kick = this.hopY > 0 ? 0.55 : 0;
+    if (this.footL) {
+      this.footL.rotation.z = -Math.sin(s * 1.8) * 0.1 * idle;
+      this.footL.rotation.x = -kick - Math.sin(s * 2.2) * 0.05 * idle;
+    }
+    if (this.footR) {
+      this.footR.rotation.z = Math.sin(s * 1.8 + 1.2) * 0.1 * idle;
+      this.footR.rotation.x = -kick - Math.sin(s * 2.2 + 0.9) * 0.05 * idle;
+    }
 
     // scheduled hop — stretch at take-off, squash on landing
     if (!REDUCED_MOTION && t > this.nextHop) {
