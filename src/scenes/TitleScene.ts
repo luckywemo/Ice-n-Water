@@ -40,6 +40,9 @@ export class TitleScene extends Phaser.Scene {
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroGaze?: { x: number; y: number };
+  private heroGazeP = { x: 0, y: 0 };
+  private heroDragX?: number;
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
@@ -355,22 +358,34 @@ export class TitleScene extends Phaser.Scene {
     // contact shadow the hero stands in
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
 
-    this.hero3d = new Hero3D(440, 540);
+    this.hero3d = new Hero3D(520, 540);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
       // and kills scene boot. Blit three's frame into a plain 2d canvas instead.
       this.heroSrc = this.hero3d.canvas;
       const copy = document.createElement('canvas');
-      copy.width = 440;
+      copy.width = 520;
       copy.height = 540;
       this.heroCtx = copy.getContext('2d')!;
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 244, 'hero_live')
+        .image(podX, podTopY - 240, 'hero_live')
         .setOrigin(0.5)
         .setDepth(6)
-        .setAlpha(0);
+        .setAlpha(0)
+        .setInteractive({ useHandCursor: true });
+      this.heroImg.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        this.hero3d?.poke();
+        this.heroDragX = p.x;
+      });
+      this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+        if (this.heroDragX !== undefined && p.isDown) {
+          this.hero3d?.spin(p.x - this.heroDragX);
+          this.heroDragX = p.x;
+        }
+      });
+      this.input.on('pointerup', () => (this.heroDragX = undefined));
     } else {
       // no WebGL for three — fall back to the baked sprite
       const heroImg = this.add
@@ -876,11 +891,26 @@ export class TitleScene extends Phaser.Scene {
     for (const d of this.iceDecos) {
       if (d.img.scene) d.img.setAlpha(IceFxPipeline.cycle(this.time.now, d.born));
     }
+    const p = this.input.activePointer;
+    if (p && (p.x !== 0 || p.y !== 0) && (p.x !== this.heroGazeP.x || p.y !== this.heroGazeP.y)) {
+      this.heroGazeP = { x: p.x, y: p.y };
+      this.heroGaze = {
+        x: (p.x - this.scale.width / 2) / (this.scale.width / 2),
+        y: (p.y - this.scale.height / 2) / (this.scale.height / 2),
+      };
+    }
+    if (this.heroGaze) this.hero3d?.setGaze(this.heroGaze.x, this.heroGaze.y);
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
       // same-task read after render — the webgl buffer is still valid
-      this.heroCtx.clearRect(0, 0, 440, 540);
+      this.heroCtx.clearRect(0, 0, 520, 540);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
+      // pettable strand fringe along the rendered silhouette
+      if (this.heroImg && !REDUCED_MOTION) {
+        const lx = p ? p.worldX - this.heroImg.x + 260 : -1;
+        const ly = p ? p.worldY - this.heroImg.y + 270 : -1;
+        this.hero3d?.drawFur(this.heroCtx, lx, ly);
+      }
       this.heroTex.refresh();
     }
   }

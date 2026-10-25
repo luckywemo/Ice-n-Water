@@ -379,15 +379,19 @@ export function fgTopBar(
     x += w + gap;
   });
 
-  // counters — each in a dark inset chip: crown + wins, star + total stars
+  // counters — each in a dark inset chip: icon left, number right, with
+  // real padding so neither hugs the edge and the two sit apart
   const chip = (
     iconX: number,
     val: number,
     drawIcon: (ig: Phaser.GameObjects.Graphics, cx: number, cy: number) => void,
     rx: number,
   ) => {
+    const pad = 13,
+      iconR = 11,
+      gapX = 12;
     const t = scene.add
-      .text(rx, H / 2 + 1, `${val}`, {
+      .text(rx - pad, H / 2 + 1, `${val}`, {
         fontFamily: FG_BODY,
         fontSize: '17px',
         fontStyle: '800',
@@ -395,14 +399,14 @@ export function fgTopBar(
       })
       .setOrigin(1, 0.5)
       .setDepth(31);
-    const cx = rx - t.width - 30;
-    const cw = rx - cx;
+    const cw = pad + iconR * 2 + gapX + t.width + pad;
+    const cx = rx - cw;
     g.fillStyle(0x000000, 0.4);
     g.fillRoundedRect(cx, H / 2 - 15, cw, 30, 8);
     g.lineStyle(2, 0xffffff, 0.55);
     g.strokeRoundedRect(cx + 1, H / 2 - 14, cw - 2, 28, 8);
     const ig = scene.add.graphics().setDepth(31);
-    drawIcon(ig, cx + 17, H / 2);
+    drawIcon(ig, cx + pad + iconR, H / 2);
     ui.push(t);
     ui.push(ig);
     return cx;
@@ -824,6 +828,9 @@ export function promptModal(
   const track = <T extends Phaser.GameObjects.GameObject>(o: T, d = depth): T => {
     (o as { setScrollFactor?: (n: number) => unknown }).setScrollFactor?.(0);
     (o as { setDepth?: (n: number) => unknown }).setDepth?.(d);
+    // laid out in raw screen px on purpose — scenes that wrap chrome in a
+    // stage-coord container must leave these at the display root
+    (o as { setData?: (k: string, v: unknown) => unknown }).setData?.('screenFixed', 1);
     parts.push(o);
     return o;
   };
