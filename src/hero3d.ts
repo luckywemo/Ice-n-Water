@@ -246,13 +246,20 @@ export class Hero3D {
     this.ok = true;
   }
 
-  // --- pettable 2D fur coat (ported from feral-fur, MIT) ---
-  // Their model: strands carry angle + curl + bend-spring; the pointer
-  // pushes bend perpendicular to the strand direction, projected from
-  // pointer velocity. Bend state lives in a coarse grid that survives
-  // the per-frame strand rebuild and springs back (SPRING 0.1/DAMP 0.88).
+  // --- pettable 2D fur coat (faithful port of feral-fur, MIT) ---
+  // Their structure: dark undercoat gradient inside the silhouette +
+  // blots + sheen, then three strand layers (thick undercoat, mid coat
+  // with lit-tip second pass, sparse highlights) + perimeter fringe.
+  // Strands carry curl + a bend spring; pointer velocity pushes bend
+  // perpendicular to the strand direction. Bend state lives in a coarse
+  // grid that survives the per-frame rebuild and springs back
+  // (SPRING 0.1 / DAMP 0.88). The face is kept by masking interior fur
+  // to body-coloured pixels (saturated mid-brown) — pale face and dark
+  // desaturated eyes are skipped automatically.
   private furBend = new Map<number, { x: number; y: number; vx: number; vy: number }>();
   private furLastP = { x: -1, y: -1 };
+  private furCv: HTMLCanvasElement | null = null;
+  private furCvCtx: CanvasRenderingContext2D | null = null;
 
   /** Draw the fur coat over the composited bean frame.
    *  Call AFTER the WebGL frame is drawn into `ctx`.
@@ -267,6 +274,25 @@ export class Hero3D {
     const d = ctx.getImageData(0, 0, W, H).data;
     const a = (x: number, y: number) =>
       x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
+    // body test — saturated mid-tone pixels only; pale face, black eyes
+    // and the grey contact shadow are excluded so fur never covers them
+    const body = (x: number, y: number) => {
+      if (a(x, y) < 140) return false;
+      const i = (y * W + x) * 4;
+      const r = d[i] / 255,
+        g = d[i + 1] / 255,
+        b = d[i + 2] / 255;
+      const mx = Math.max(r, g, b),
+        mn = Math.min(r, g, b),
+        lum = (mx + mn) / 2;
+      const sat = mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * lum - 1) || 1);
+      return sat > 0.28 && lum > 0.12 && lum < 0.62;
+    };
+    // deterministic per-position noise
+    const nz = (x: number, y: number, s: number) => {
+      const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
 
     // pointer velocity — their push is velocity-projected, not positional
     let pvx = 0,
@@ -306,100 +332,168 @@ export class Hero3D {
         this.furBend.delete(k);
     }
 
-    // deterministic per-position noise
-    const nz = (x: number, y: number, s: number) => {
-      const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
-      return h - Math.floor(h);
-    };
-    // their rest angle: cowlick origin blends toward straight-down + clump
+    // ---- undercoat: dark gradient inside body pixels + blots + sheen ----
+    if (!this.furCv) {
+      this.furCv = document.createElement('canvas');
+      this.furCv.width = W;
+      this.furCv.height = H;
+      this.furCvCtx = this.furCv.getContext('2d', { willReadFrequently: true });
+    }
+    const uc = this.furCvCtx!;
+    const uimg = uc.createImageData(W, H);
+    const ud = uimg.data;
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        if (!body(x, y)) continue;
+        const o = (y * W + x) * 4,
+          v = y / H;
+        // their base gradient: top l-8 → bottom l-20 of the body brown
+        ud[o] = 74 - v * 26;
+        ud[o + 1] = 40 - v * 15;
+        ud[o + 2] = 18 - v * 7;
+        ud[o + 3] = 255;
+      }
+    uc.putImageData(uimg, 0, 0);
+    uc.globalCompositeOperation = 'source-atop';
+    // blots — their coat depth patches
+    for (let i = 0; i < 16; i++) {
+      const bx = W * nz(i, 9, 11),
+        by = H * nz(i, 13, 12);
+      if (!body(bx | 0, by | 0)) continue;
+      const r = 14 + nz(i, 7, 13) * 22,
+        dark = nz(i, 5, 14) < 0.68;
+      const rg = uc.createRadialGradient(bx, by, 0, bx, by, r);
+      rg.addColorStop(
+        0,
+        dark ? 'rgba(28,12,4,0.16)' : 'rgba(255,214,160,0.10)',
+      );
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      uc.fillStyle = rg;
+      uc.fillRect(bx - r, by - r, r * 2, r * 2);
+    }
+    const rg = uc.createRadialGradient(W / 2, H * 0.42, 20, W / 2, H * 0.42, W * 0.55);
+    rg.addColorStop(0, 'rgba(255,255,255,0.14)');
+    rg.addColorStop(1, 'rgba(255,255,255,0)');
+    uc.fillStyle = rg;
+    uc.fillRect(0, 0, W, H);
+    uc.globalCompositeOperation = 'source-over';
+    ctx.drawImage(this.furCv!, 0, 0);
+
+    // ---- strands ----
     const cowX = W * 0.5,
       cowY = H * 0.3,
       down = Math.PI / 2;
     const restAngle = (x: number, y: number) => {
       const fromCow = Math.atan2(y - cowY, x - cowX);
       const clump = (Math.sin(x * 0.04) + Math.cos(y * 0.035)) * 0.3;
-      let a = fromCow + (((down - fromCow + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.5;
-      a += clump * 0.6 + (nz(x, y, 1) - 0.5) * 1.1;
-      return a;
+      let an = fromCow + (((down - fromCow + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.5;
+      an += clump * 0.6 + (nz(x, y, 1) - 0.5) * 1.1;
+      return an;
     };
+    type Strand = { x: number; y: number; a: number; l: number; c: number; s: number };
+    const under: Strand[] = [],
+      mid: Strand[] = [],
+      hi: Strand[] = [],
+      fringe: Strand[] = [];
+
+    // interior coat — stride-4 sample of body pixels, layered like theirs
+    for (let y = 4; y < H - 4; y += 4)
+      for (let x = 4; x < W - 4; x += 4) {
+        if (!body(x, y)) continue;
+        const len = 9 + nz(x, y, 4) * 8;
+        const roll = nz(x, y, 6);
+        const s: Strand = {
+          x,
+          y,
+          a: restAngle(x, y),
+          l: len,
+          c: (nz(x, y, 5) - 0.5) * len * 1.1,
+          s: nz(x, y, 8),
+        };
+        (roll < 0.4 ? under : roll < 0.92 ? mid : hi).push(s);
+      }
+    // fringe — perimeter strands pointing outward
+    for (let y = 5; y < H - 5; y += 6)
+      for (let x = 5; x < W - 5; x += 6) {
+        if (!body(x, y)) continue;
+        if (
+          a(x - 6, y) > 100 &&
+          a(x + 6, y) > 100 &&
+          a(x, y - 6) > 100 &&
+          a(x, y + 6) > 100
+        )
+          continue;
+        let nx = a(x - 6, y) - a(x + 6, y),
+          ny = a(x, y - 6) - a(x, y + 6);
+        const nl = Math.hypot(nx, ny) || 1;
+        const out = Math.atan2(ny / nl, nx / nl);
+        let an = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
+        an += (nz(x, y, 3) - 0.5) * 0.8;
+        const len = 9 + nz(x, y, 4) * 8;
+        fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * 1.1, s: nz(x, y, 8) });
+      }
 
     ctx.save();
     ctx.lineCap = 'round';
-    const strands: { x: number; y: number; a: number; l: number; c: number; hi: boolean }[] = [];
-    const STEP = 6;
-    for (let y = 5; y < H - 5; y += STEP)
-      for (let x = 5; x < W - 5; x += STEP) {
-        if (a(x, y) < 140) continue;
-        const near =
-          a(x - 6, y) < 110 ||
-          a(x + 6, y) < 110 ||
-          a(x, y - 6) < 110 ||
-          a(x, y + 6) < 110;
-        // interior ring strands also sprout within ~2 strand-lengths of edge
-        const ring =
-          !near &&
-          (a(x - 14, y) < 110 ||
-            a(x + 14, y) < 110 ||
-            a(x, y - 14) < 110 ||
-            a(x, y + 14) < 110) &&
-          nz(x, y, 2) < 0.35;
-        if (!near && !ring) continue;
-        let ang: number;
-        if (near) {
-          let nx = a(x - 6, y) - a(x + 6, y);
-          let ny = a(x, y - 6) - a(x, y + 6);
-          const l = Math.hypot(nx, ny) || 1;
-          nx /= l;
-          ny /= l;
-          const out = Math.atan2(ny, nx);
-          // blend 25% toward down like their fringe pass, + mess jitter
-          ang = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
-          ang += (nz(x, y, 3) - 0.5) * 0.8;
-        } else {
-          ang = restAngle(x, y);
-        }
-        const len = (near ? 9 : 8) + nz(x, y, 4) * 8;
-        strands.push({
-          x,
-          y,
-          a: ang,
-          l: len,
-          c: (nz(x, y, 5) - 0.5) * len * 1.1, // perpendicular curl
-          hi: nz(x, y, 6) < 0.12, // sparse highlight layer
-        });
-      }
+    const stroke = (s: Strand, tip: boolean) => {
+      const b = this.furBend.get(
+        Math.floor(s.y / CELLS) * GW + Math.floor(s.x / CELLS),
+      );
+      const bx = b?.x ?? 0,
+        by = b?.y ?? 0;
+      const ba = s.a + (bx * -Math.sin(s.a) + by * Math.cos(s.a)) * 0.04;
+      const pnx = -Math.sin(s.a),
+        pny = Math.cos(s.a);
+      const cxp = s.x + Math.cos(s.a) * s.l * 0.55 + pnx * s.c + bx * 0.5;
+      const cyp = s.y + Math.sin(s.a) * s.l * 0.55 + pny * s.c + by * 0.5;
+      const tx = s.x + Math.cos(ba) * s.l + bx,
+        ty = s.y + Math.sin(ba) * s.l + by;
+      ctx.beginPath();
+      if (tip) ctx.moveTo((s.x + 2 * cxp + tx) / 4, (s.y + 2 * cyp + ty) / 4);
+      else ctx.moveTo(s.x, s.y);
+      ctx.quadraticCurveTo(cxp, cyp, tx, ty);
+      ctx.stroke();
+    };
 
-    // pass 1 — roots, brown coat; pass 2 — lit tips on the outer half
-    for (let pass = 0; pass < 2; pass++) {
-      for (const s of strands) {
-        const b = this.furBend.get(
-          Math.floor(s.y / CELLS) * GW + Math.floor(s.x / CELLS),
-        );
-        const bx = b?.x ?? 0;
-        const by = b?.y ?? 0;
-        const ca = s.a + (bx * -Math.sin(s.a) + by * Math.cos(s.a)) * 0.04;
-        const pnx = -Math.sin(s.a),
-          pny = Math.cos(s.a);
-        const cxp = s.x + Math.cos(s.a) * s.l * 0.55 + pnx * s.c + bx * 0.5;
-        const cyp = s.y + Math.sin(s.a) * s.l * 0.55 + pny * s.c + by * 0.5;
-        const tx = s.x + Math.cos(ca) * s.l + bx,
-          ty = s.y + Math.sin(ca) * s.l + by;
-        if (pass === 0) {
-          const sh = 88 + nz(s.x, s.y, 7) * 30;
-          ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},${s.hi ? 0.5 : 0.8})`;
-          ctx.lineWidth = s.hi ? 0.8 : 1.3;
-          ctx.beginPath();
-          ctx.moveTo(s.x, s.y);
-        } else {
-          const sh = s.hi ? 165 : 125 + nz(s.x, s.y, 8) * 25;
-          ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},${s.hi ? 0.55 : 0.45})`;
-          ctx.lineWidth = s.hi ? 0.7 : 1.0;
-          ctx.beginPath();
-          ctx.moveTo((s.x + 2 * cxp + tx) / 4, (s.y + 2 * cyp + ty) / 4);
-        }
-        ctx.quadraticCurveTo(cxp, cyp, tx, ty);
-        ctx.stroke();
-      }
+    // undercoat strands — darkest, thickest
+    for (const s of under) {
+      const sh = 52 + s.s * 26;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.6)`;
+      ctx.lineWidth = 1.6 + s.s * 1.0;
+      stroke(s, false);
+    }
+    // mid coat + lit tips on the outer half
+    for (const s of mid) {
+      const sh = 95 + s.s * 30;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},0.85)`;
+      ctx.lineWidth = 0.9 + s.s * 0.6;
+      stroke(s, false);
+    }
+    for (const s of mid) {
+      const sh = 140 + s.s * 35;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.5)`;
+      ctx.lineWidth = (0.9 + s.s * 0.6) * 0.8;
+      stroke(s, true);
+    }
+    // sparse highlights
+    for (const s of hi) {
+      const sh = 165 + s.s * 30;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.62) | 0},${(sh * 0.36) | 0},0.55)`;
+      ctx.lineWidth = 0.7 + s.s * 0.4;
+      stroke(s, false);
+    }
+    // fringe last so it pokes past the silhouette
+    for (const s of fringe) {
+      const sh = 100 + s.s * 40;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.56) | 0},${(sh * 0.3) | 0},0.8)`;
+      ctx.lineWidth = 1.1;
+      stroke(s, false);
+    }
+    for (const s of fringe) {
+      const sh = 150 + s.s * 30;
+      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.45)`;
+      ctx.lineWidth = 0.9;
+      stroke(s, true);
     }
     ctx.restore();
   }
