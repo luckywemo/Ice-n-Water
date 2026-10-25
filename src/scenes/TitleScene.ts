@@ -372,7 +372,7 @@ export class TitleScene extends Phaser.Scene {
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 321, 'hero_live') // taller buffer — feet now sit ~20% up from the bottom
+        .image(podX, podTopY - 205, 'hero_live') // feet planted on the podium face
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
