@@ -122,6 +122,51 @@ export class Hero3D {
     this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
     this.torso.scale.set(1, 1, 0.95);
 
+    // shell fur — N copies of the torso displaced along normals with a
+    // strand-dot alpha texture; alphaTest rises per shell so the coat
+    // thins toward the tips like real hair
+    {
+      const fc = document.createElement('canvas');
+      fc.width = fc.height = 128;
+      const fg = fc.getContext('2d')!;
+      for (let i = 0; i < 2400; i++) {
+        fg.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.65})`;
+        fg.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
+      }
+      const furTex = new THREE.CanvasTexture(fc);
+      furTex.wrapS = furTex.wrapT = THREE.RepeatWrapping;
+      const src = this.torso.geometry as THREE.BufferGeometry;
+      const pos = src.attributes.position as THREE.BufferAttribute;
+      const nor = src.attributes.normal as THREE.BufferAttribute;
+      const SHELLS = 12;
+      for (let i = 1; i <= SHELLS; i++) {
+        const t = i / SHELLS;
+        const g = src.clone();
+        const gp = g.attributes.position as THREE.BufferAttribute;
+        const gn = g.attributes.normal as THREE.BufferAttribute;
+        for (let v = 0; v < gp.count; v++)
+          gp.setXYZ(
+            v,
+            pos.getX(v) + gn.getX(v) * 0.04 * t,
+            pos.getY(v) + gn.getY(v) * 0.04 * t,
+            pos.getZ(v) + gn.getZ(v) * 0.04 * t,
+          );
+        const m = new THREE.Mesh(
+          g,
+          new THREE.MeshStandardMaterial({
+            color: BODY,
+            roughness: 1,
+            alphaMap: furTex,
+            alphaTest: 0.08 + t * 0.6,
+            side: THREE.FrontSide,
+          }),
+        );
+        m.position.copy(this.torso.position);
+        m.scale.copy(this.torso.scale);
+        grp.add(m);
+      }
+    }
+
     // penguin flippers — detached two-segment blades: shoulder pivot +
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
@@ -145,10 +190,10 @@ export class Hero3D {
     this.flipR = flipper(1);
 
     // face oval — big pale patch high on the front, proud of the surface
-    mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.5).scale.set(0.86, 1.05, 0.38);
+    mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.55).scale.set(0.86, 1.05, 0.38);
     // eyes — two tall thin dark ovals, close-set
     const eye = (x: number) => {
-      const m = mesh(new THREE.SphereGeometry(0.07, 14, 12), dark, x, 1.58, 0.66);
+      const m = mesh(new THREE.SphereGeometry(0.07, 14, 12), dark, x, 1.58, 0.72);
       m.scale.set(0.55, 1.45, 0.45);
       return m;
     };
