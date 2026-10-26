@@ -23,6 +23,7 @@ export class DropScene extends Phaser.Scene {
   private heroCv?: HTMLCanvasElement;
   private heroCtx?: CanvasRenderingContext2D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroLastT = 0; // 30fps throttle on the composite
   private streaks: Phaser.GameObjects.Rectangle[] = [];
   private gone = false;
 
@@ -143,7 +144,9 @@ export class DropScene extends Phaser.Scene {
         r.x = -300 + Math.random() * (VW + 600);
       }
     }
-    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx) {
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.time.now - this.heroLastT >= 33) {
+      // 30fps — the dive is slow; 60 would just double canvas churn
+      this.heroLastT = this.time.now;
       this.hero3d.update(this.time.now);
       this.heroCtx.clearRect(0, 0, 760, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);

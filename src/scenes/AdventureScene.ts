@@ -62,6 +62,7 @@ export class AdventureScene extends Phaser.Scene {
   private heroCv?: HTMLCanvasElement;
   private heroCtx?: CanvasRenderingContext2D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroLastT = 0; // 30fps throttle on the composite
   private visH = VH;
   private railY = 0;
   private railX0 = 68; // first card's centre-x — viewLeft is 0, so it hugs the screen edge
@@ -454,8 +455,9 @@ export class AdventureScene extends Phaser.Scene {
     }
 
     // live bean — same pipeline as the lobby: WebGL frame + fur composite
-    // re-uploaded each frame; gaze + petting track the pointer
-    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg) {
+    // re-uploaded at 30fps; full-rate would churn ~120MB/s of canvas work
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg && this.time.now - this.heroLastT >= 33) {
+      this.heroLastT = this.time.now;
       this.hero3d.update(this.time.now);
       this.heroCtx.clearRect(0, 0, 560, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);

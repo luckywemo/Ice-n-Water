@@ -46,6 +46,7 @@ export class TitleScene extends Phaser.Scene {
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
+  private heroLastT = 0; // 30fps throttle on the fur composite
   private started = false;
   private splash?: Phaser.GameObjects.Container;
   private settingsCard?: Phaser.GameObjects.Container;
@@ -372,7 +373,7 @@ export class TitleScene extends Phaser.Scene {
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 205, 'hero_live') // feet planted on the podium face
+        .image(podX, podTopY - 240, 'hero_live') // feet planted on the podium face
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
@@ -902,8 +903,13 @@ export class TitleScene extends Phaser.Scene {
       };
     }
     if (this.heroGaze) this.hero3d?.setGaze(this.heroGaze.x, this.heroGaze.y);
+    // 30fps is plenty for fur + idle anims — halves the per-frame
+    // getImageData readback, strand strokes, and GPU texture upload
+    if (this.time.now - this.heroLastT < 33) return;
+    this.heroLastT = this.time.now;
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
+      /* rest of the hero composite — nothing else lives below */
       // same-task read after render — the webgl buffer is still valid
       this.heroCtx.clearRect(0, 0, 640, 700);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
