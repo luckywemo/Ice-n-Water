@@ -11,6 +11,17 @@ const BODY = 0x8a4f24; // glossy milk-chocolate brown
 const SKIN = 0xecc98e; // warm pale tan face oval
 const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 
+// model vocabulary — the shared skeleton gets dressed differently:
+// shape reshapes the torso capsule (+ fur shells + face/limb placement),
+// gear bolts a head-mounted extra onto the crown. Pickable cast lives
+// in characters.ts.
+export type BeanShape = 'bean' | 'round' | 'tall';
+export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown';
+export interface BeanModel {
+  shape?: BeanShape;
+  gear?: BeanGear;
+}
+
 export class Hero3D {
   private renderer?: THREE.WebGLRenderer;
   private scene?: THREE.Scene;
@@ -28,6 +39,14 @@ export class Hero3D {
   private eyeR?: THREE.Mesh;
   private dizzyL?: THREE.Group; // X-cross eyes shown while flattened
   private dizzyR?: THREE.Group;
+  private eyeXs = 0.16; // shape-dependent eye placement — gaze/pose resets use these
+  private eyeZs = 0.72;
+  private faceMesh?: THREE.Mesh;
+  private shadowMesh?: THREE.Mesh;
+  private shellMeshes: THREE.Mesh[] = [];
+  private gearParts: THREE.Object3D[] = [];
+  private gearCv?: HTMLCanvasElement;
+  private gearCtx?: CanvasRenderingContext2D;
   // --- animation state ---
   private sq = 0; // jelly: + stretch, − squash
   private sqVel = 0;
@@ -74,7 +93,7 @@ export class Hero3D {
   private W = 520;
   private H = 540;
 
-  constructor(w: number, h: number, camZ = 5.0) {
+  constructor(w: number, h: number, camZ = 5.0, model: BeanModel = {}) {
     this.W = w;
     this.H = h;
     try {
@@ -114,6 +133,17 @@ export class Hero3D {
       return o;
     };
 
+    // body silhouette — 'round' is the chubby low-rider, 'tall' the lanky
+    // runner. Every placement that touches the skin (face, eyes, flippers,
+    // feet, gear) derives from these scales.
+    const shape = model.shape ?? 'bean';
+    const shX = shape === 'round' ? 1.22 : shape === 'tall' ? 0.8 : 1;
+    const shY = shape === 'round' ? 0.9 : shape === 'tall' ? 1.1 : 1;
+    const shZ = shape === 'round' ? 1.18 : shape === 'tall' ? 0.78 : 0.95;
+    const faceZ = 0.55 * (shZ / 0.95); // keep the face proud of the surface
+    const eyeZ = 0.72 * (shZ / 0.95);
+    const eyeX = 0.16 * (shape === 'tall' ? 0.8 : 1);
+
     const body = (this.bodyMat = mat(BODY, 0.3));
     const skin = (this.skinMat = mat(SKIN, 0.38));
     // ojos: MeshBasic — las luces cálidas de la escena teñían de marrón
@@ -124,7 +154,7 @@ export class Hero3D {
     // pointing shoe, toes angled slightly out
     const footG = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.27, 0.32, 0.04);
+      root.position.set(side * 0.27 * shX, 0.32, 0.04);
       root.rotation.y = side * 0.18; // toes out
       const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.3, 6, 14), body);
       f.rotation.x = Math.PI / 2; // capsule axis points forward (+z)
@@ -139,7 +169,7 @@ export class Hero3D {
 
     // the bean — one tall capsule body, belly-forward like the reference
     this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
-    this.torso.scale.set(1, 1, 0.95);
+    this.torso.scale.set(shX, shY, shZ);
 
     // shell fur — N copies of the torso displaced along normals with a
     // strand-dot alpha texture; alphaTest rises per shell so the coat
@@ -181,6 +211,7 @@ export class Hero3D {
         const m = new THREE.Mesh(g, shellMat);
         m.position.copy(this.torso.position);
         m.scale.copy(this.torso.scale);
+        this.shellMeshes.push(m);
         grp.add(m);
       }
     }
@@ -189,7 +220,7 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.65, 1.42, 0.0);
+      root.position.set(side * 0.65 * shX, 1.42, 0.0);
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(0.38, 1, 1.15); // broad face pressed to the body's side
@@ -208,16 +239,17 @@ export class Hero3D {
     this.flipR = flipper(1);
 
     // face oval — big pale patch high on the front, proud of the surface
-    mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.55).scale.set(0.86, 1.05, 0.38);
+    this.faceMesh = mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, faceZ);
+    this.faceMesh.scale.set(0.86 * shX, 1.05, 0.38);
     // eyes — two black pills, close-set
     const eye = (x: number) =>
-      mesh(new THREE.CapsuleGeometry(0.05, 0.12, 6, 14), dark, x, 1.58, 0.72);
-    this.eyeL = eye(-0.16);
-    this.eyeR = eye(0.16);
+      mesh(new THREE.CapsuleGeometry(0.05, 0.12, 6, 14), dark, x, 1.58, eyeZ);
+    this.eyeL = eye(-eyeX);
+    this.eyeR = eye(eyeX);
     // dizzy X-eyes — two crossed bars per eye, swapped in while flattened
     const dizzyEye = (x: number) => {
       const g = new THREE.Group();
-      g.position.set(x, 1.58, 0.72);
+      g.position.set(x, 1.58, eyeZ);
       for (const rz of [Math.PI / 4, -Math.PI / 4]) {
         const b = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.2, 0.03), dark);
         b.rotation.z = rz;
@@ -227,8 +259,105 @@ export class Hero3D {
       grp.add(g);
       return g;
     };
-    this.dizzyL = dizzyEye(-0.16);
-    this.dizzyR = dizzyEye(0.16);
+    this.dizzyL = dizzyEye(-eyeX);
+    this.dizzyR = dizzyEye(eyeX);
+    this.eyeXs = eyeX;
+    this.eyeZs = eyeZ;
+
+    // --- gear — head-mounted extras, one per model. Lives in grp so it
+    // rides every squash/splat/spin automatically. ---
+    {
+      const topY = 1.16 + 1.07 * shY; // crown of the torso capsule
+      const gear = model.gear ?? 'none';
+      if (gear === 'cap' || gear === 'hardhat') {
+        const hatMat =
+          gear === 'cap' ? mat(0x23262e, 0.55) : mat(0xffc400, 0.4); // conductor dark / site yellow
+        const dome = mesh(
+          new THREE.SphereGeometry(0.36, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+          hatMat,
+          0,
+          topY - 0.16,
+          0.02,
+        );
+        dome.scale.set(shX * 1.05, 0.8, shZ * 1.05);
+        this.gearParts.push(dome);
+        if (gear === 'cap') {
+          // brim — half-disc sticking forward like a baseball cap
+          const brim = mesh(
+            new THREE.CylinderGeometry(0.36, 0.36, 0.045, 24, 1, false, 0, Math.PI),
+            hatMat,
+            0,
+            topY - 0.13,
+            0.14,
+          );
+          brim.rotation.y = -Math.PI / 2; // flat edge faces back, bill out +z
+          brim.scale.z = shZ;
+          this.gearParts.push(brim);
+        } else {
+          // helmet — full brim ring all the way round
+          const rim = mesh(
+            new THREE.CylinderGeometry(0.44, 0.44, 0.035, 24),
+            hatMat,
+            0,
+            topY - 0.15,
+            0.01,
+          );
+          rim.scale.set(shX, 1, shZ);
+          this.gearParts.push(rim);
+        }
+      } else if (gear === 'band') {
+        // sweatband — FRONT ARC only (arc=π sweeps local +x→+y→−x = world
+        // +x→+z→−x after rotation.x): a full ring's back half would stamp
+        // over the face during the gear re-draw
+        const band = mesh(
+          new THREE.TorusGeometry(0.58, 0.06, 10, 36, Math.PI),
+          mat(0xd23b3b, 0.6),
+          0,
+          1.85 + (shY - 1) * 0.4,
+          0.02,
+        );
+        band.rotation.x = Math.PI / 2;
+        band.scale.set(shX, shZ, 1); // z of the ring plane
+        this.gearParts.push(band);
+      } else if (gear === 'spikes') {
+        // mohawk — five coat-coloured cones fanned LEFT-TO-RIGHT across the
+        // crown so the whole row reads from the front view
+        for (let i = 0; i < 5; i++) {
+          const x = -0.3 + i * 0.15;
+          const spike = mesh(
+            new THREE.ConeGeometry(0.095, 0.46 - Math.abs(i - 2) * 0.07, 10),
+            body,
+            x * shX,
+            topY - 0.12 - Math.abs(x) * 0.35,
+            0.02,
+          );
+          spike.rotation.z = -x * 0.9; // fan outward along the crown curve
+          this.gearParts.push(spike);
+        }
+      } else if (gear === 'crown') {
+        // the Oba's crown — small gold circlet, five points
+        const gold = new THREE.MeshStandardMaterial({
+          color: 0xf6c90e,
+          metalness: 0.75,
+          roughness: 0.3,
+        });
+        const circlet = mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.14, 16), gold, 0, topY - 0.02, 0);
+        circlet.rotation.z = 0.1; // worn at a jaunty tilt
+        this.gearParts.push(circlet);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          this.gearParts.push(
+            mesh(
+              new THREE.ConeGeometry(0.032, 0.11, 8),
+              gold,
+              Math.cos(a) * 0.165,
+              topY + 0.1,
+              Math.sin(a) * 0.165 + 0.02,
+            ),
+          );
+        }
+      }
+    }
 
     // soft contact shadow — grounds the feet on the podium
     const shC = document.createElement('canvas');
@@ -250,6 +379,7 @@ export class Hero3D {
     );
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.set(0, 0.005, 0.15);
+    this.shadowMesh = shadow;
     grp.add(shadow);
 
     // environment reflections — the toy-render sheen lives here
@@ -600,6 +730,8 @@ export class Hero3D {
       stroke(s, true);
     }
     ctx.restore();
+    // gear stays vinyl-clean — re-stamp it over the finished coat
+    if (this.gearCv) ctx.drawImage(this.gearCv, 0, 0);
   }
 
   update(t: number) {
@@ -714,11 +846,11 @@ export class Hero3D {
 
     // gaze — eyes drift, body leans toward the cursor
     if (this.eyeL) {
-      this.eyeL.position.x = -0.16 + this.gx * 0.07;
+      this.eyeL.position.x = -this.eyeXs + this.gx * 0.07;
       this.eyeL.position.y = 1.58 + this.gy * 0.05;
     }
     if (this.eyeR) {
-      this.eyeR.position.x = 0.16 + this.gx * 0.07;
+      this.eyeR.position.x = this.eyeXs + this.gx * 0.07;
       this.eyeR.position.y = 1.58 + this.gy * 0.05;
     }
 
@@ -730,6 +862,39 @@ export class Hero3D {
     grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY + 1.16 * (1 - Math.cos(this.flipX));
     grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
     grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
+
+    // gear pass — render gear alone into a side canvas so drawFur can
+    // re-stamp it AFTER the strand pass (fur must not grow on hats)
+    if (this.gearParts.length) {
+      const hidden = (
+        [
+          this.torso,
+          ...this.shellMeshes,
+          this.faceMesh,
+          this.eyeL,
+          this.eyeR,
+          this.dizzyL,
+          this.dizzyR,
+          this.flipL?.root,
+          this.flipR?.root,
+          this.footL,
+          this.footR,
+          this.shadowMesh,
+        ] as (THREE.Object3D | undefined)[]
+      ).filter((o): o is THREE.Object3D => !!o);
+      const was = hidden.map((o) => o.visible);
+      for (const o of hidden) o.visible = false;
+      this.renderer.render(this.scene, this.camera);
+      if (!this.gearCv) {
+        this.gearCv = document.createElement('canvas');
+        this.gearCv.width = this.W;
+        this.gearCv.height = this.H;
+        this.gearCtx = this.gearCv.getContext('2d')!;
+      }
+      this.gearCtx!.clearRect(0, 0, this.W, this.H);
+      this.gearCtx!.drawImage(this.renderer.domElement, 0, 0);
+      hidden.forEach((o, i) => (o.visible = was[i]));
+    }
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -757,8 +922,8 @@ export class Hero3D {
    *  reads, crown shows, feet ground the pose */
   bakeCam() {
     if (!this.camera) return;
-    this.camera.position.set(0, 2.7, 4.4);
-    this.camera.lookAt(0, 1.05, 0);
+    this.camera.position.set(0, 2.95, 4.5);
+    this.camera.lookAt(0, 1.15, 0);
     this.camera.updateProjectionMatrix();
   }
 
@@ -787,12 +952,12 @@ export class Hero3D {
     if (this.eyeL) {
       this.eyeL.visible = !eyesFlat;
       this.eyeL.scale.y = 1;
-      this.eyeL.position.set(-0.16, 1.58, 0.72);
+      this.eyeL.position.set(-this.eyeXs, 1.58, this.eyeZs);
     }
     if (this.eyeR) {
       this.eyeR.visible = !eyesFlat;
       this.eyeR.scale.y = 1;
-      this.eyeR.position.set(0.16, 1.58, 0.72);
+      this.eyeR.position.set(this.eyeXs, 1.58, this.eyeZs);
     }
     if (this.dizzyL) {
       this.dizzyL.visible = eyesFlat;

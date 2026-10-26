@@ -288,7 +288,9 @@ export class GameScene extends Phaser.Scene {
     // baked bean sheets — the 3D lobby rig pre-posed into sprite frames.
     // First entry pays a few hundred ms; sheets persist in the texture
     // manager for every later level. No WebGL → flat circles stay.
-    this.sheetPlayer = bakeBeanSheet(this, 'bean-you', currentChar()) ? 'bean-you' : null;
+    const me = currentChar();
+    const youKey = `bean-you-${me.id}`; // per-character key — a swapped pick can't reuse a stale sheet
+    this.sheetPlayer = bakeBeanSheet(this, youKey, me) ? youKey : null;
     this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
     this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
       ? 'bean-militia'

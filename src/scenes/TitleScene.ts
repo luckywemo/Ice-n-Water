@@ -361,11 +361,11 @@ export class TitleScene extends Phaser.Scene {
     // contact shadow the hero stands in
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
 
-    this.hero3d = new Hero3D(520, 540);
     this.charIdx = Math.max(
       0,
       CHARACTERS.findIndex((c) => c.id === currentChar().id),
     );
+    this.hero3d = new Hero3D(520, 540, 5, CHARACTERS[this.charIdx]);
     if (this.hero3d.ok) this.hero3d.setVariant(currentChar().body, currentChar().skin);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
@@ -482,7 +482,18 @@ export class TitleScene extends Phaser.Scene {
     const ch = CHARACTERS[this.charIdx];
     this.charName?.setText(ch.name);
     setChar(ch.id);
-    this.hero3d?.setVariant(ch.body, ch.skin);
+    // shape/gear change the mesh itself — retint can't do it, so the rig
+    // is rebuilt and the frame-blit picks up the new canvas automatically
+    if (this.hero3d) {
+      this.hero3d.dispose();
+      this.hero3d = new Hero3D(520, 540, 5, ch);
+      if (this.hero3d.ok) {
+        this.hero3d.setVariant(ch.body, ch.skin);
+        this.heroSrc = this.hero3d.canvas;
+      } else {
+        this.heroSrc = undefined;
+      }
+    }
     this.hero3d?.poke(); // little bounce so the swap feels alive
     sfx.pickup();
   }

@@ -1009,10 +1009,10 @@ export class AdventureScene extends Phaser.Scene {
     // bigger buffer + deeper camera than the lobby — the pratfall launches
     // ~0.65 world-units and flips around the body centre, so the frame
     // needs real headroom (visible world top 3.29) and flap room (±1.59)
-    const hero = (this.hero3d = new Hero3D(560, 700, 6.5));
+    const pc = currentChar();
+    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, pc));
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
-      const pc = currentChar();
       hero.setVariant(pc.body, pc.skin); // the statue wears your picked coat
       const copy = (this.heroCv = document.createElement('canvas'));
       copy.width = 560;

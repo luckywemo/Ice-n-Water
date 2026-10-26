@@ -12,7 +12,7 @@ const TOTAL = 14;
 
 export function bakeBeanSheet(scene: Phaser.Scene, key: string, def: CharDef): boolean {
   if (scene.textures.exists(key)) return true;
-  const hero = new Hero3D(SIZE * 2, SIZE * 2, 5);
+  const hero = new Hero3D(SIZE * 2, SIZE * 2, 5, def);
   if (!hero.ok || !hero.canvas) {
     hero.dispose();
     return false; // no WebGL — callers fall back to the flat sprites
