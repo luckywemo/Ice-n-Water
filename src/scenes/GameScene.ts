@@ -1699,10 +1699,14 @@ export class GameScene extends Phaser.Scene {
     this.reinforced = true;
     for (let i = 0; i < this.reinforceCount; i++) {
       const p = this.randomFreePos(CONFIG.arena.wall + 40, this.arenaW * 0.4);
-      const c = this.physics.add.sprite(p.x, p.y, 'chaser');
-      (c.body as Body).setCircle(CONFIG.chaser.radius + 2);
+      const c = this.physics.add.sprite(p.x, p.y, this.sheetMilitia ?? 'chaser');
+      this.dressBean(c, this.sheetMilitia);
+      if (!this.sheetMilitia) (c.body as Body).setCircle(CONFIG.chaser.radius + 2);
       this.chasers.push(c);
-      this.cState.set(c, this.freshChaser(c));
+      const cst = this.freshChaser(c);
+      cst.sheet = this.sheetMilitia ?? undefined;
+      this.cState.set(c, cst);
+      if (this.sheetMilitia) c.play(this.sheetMilitia + '-idle');
       this.collideWithWorld(c);
       this.burst(p.x, p.y, CONFIG.colors.chaser, 20, 260);
     }
