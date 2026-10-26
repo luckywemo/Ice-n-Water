@@ -40,7 +40,6 @@ shots/
 # generated promo media — captured locally, never pushed
 twitter/*.png
 twitter/*.gif
-logo.png
 cover.png
 cover-new.png
 image_*.png

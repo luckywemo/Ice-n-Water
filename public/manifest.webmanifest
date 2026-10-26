@@ -11,7 +11,7 @@
   "icons": [
     {
       "src": "favicon.png",
-      "sizes": "230x230",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
     }
