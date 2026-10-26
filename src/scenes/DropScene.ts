@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Hero3D } from '../hero3d';
 import { DISPLAY_FONT, UI_FONT, REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT } from '../fgui';
-import { DIFFS, Difficulty } from '../meta';
+import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
 import { currentChar } from '../characters';
 
@@ -24,6 +24,8 @@ export class DropScene extends Phaser.Scene {
   private heroCv?: HTMLCanvasElement;
   private heroCtx?: CanvasRenderingContext2D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroLastT = 0; // throttle on the composite
+  private heroMs = 33; // ms between composites — the Bean FPS pick
   private streaks: Phaser.GameObjects.Rectangle[] = [];
   private gone = false;
 
@@ -33,6 +35,7 @@ export class DropScene extends Phaser.Scene {
 
   create(data: DropData) {
     const gameData = data?.game ?? (data as DropData['game']) ?? {};
+    this.heroMs = perfInterval(); // re-read per create — the pick can change
     const W = this.scale.width,
       H = this.scale.height;
     const zoom = Math.min(W / VW, H / VH);
@@ -66,6 +69,7 @@ export class DropScene extends Phaser.Scene {
     // angle keeps the face readable in the belly-first posture
     const pc = currentChar(); // the skydiver wears your picked bean
     const hero = (this.hero3d = new Hero3D(760, 700, 6.5, 3.1, 0.85, pc));
+    hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
       hero.setVariant(pc.body, pc.skin);
@@ -146,7 +150,9 @@ export class DropScene extends Phaser.Scene {
         r.x = -300 + Math.random() * (VW + 600);
       }
     }
-    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx) {
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.time.now - this.heroLastT >= this.heroMs) {
+      // the dive is slow — the user's Bean FPS pick is plenty
+      this.heroLastT = this.time.now;
       this.hero3d.update(this.time.now);
       this.heroCtx.clearRect(0, 0, 760, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);

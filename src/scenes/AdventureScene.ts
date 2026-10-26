@@ -5,7 +5,7 @@ import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
-import { loadStats } from '../meta';
+import { loadStats, perfInterval, furQuality } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -63,6 +63,8 @@ export class AdventureScene extends Phaser.Scene {
   private heroCv?: HTMLCanvasElement;
   private heroCtx?: CanvasRenderingContext2D;
   private heroImg?: Phaser.GameObjects.Image;
+  private heroLastT = 0; // throttle on the composite
+  private heroMs = 33; // ms between composites — the Bean FPS pick
   private visH = VH;
   private railY = 0;
   private railX0 = 68; // first card's centre-x — viewLeft is 0, so it hugs the screen edge
@@ -117,6 +119,7 @@ export class AdventureScene extends Phaser.Scene {
     this.boardHit = [];
     this.marching = false;
     this.stripImgs = [];
+    this.heroMs = perfInterval(); // re-read per create — the pick can change
     this.cameras.main.setBackgroundColor(FG.cyan);
     this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
 
@@ -455,8 +458,9 @@ export class AdventureScene extends Phaser.Scene {
     }
 
     // live bean — same pipeline as the lobby: WebGL frame + fur composite
-    // re-uploaded each frame; gaze + petting track the pointer
-    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg) {
+    // re-uploaded at the user's Bean FPS; full-rate churns ~120MB/s of canvas
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg && this.time.now - this.heroLastT >= this.heroMs) {
+      this.heroLastT = this.time.now;
       this.hero3d.update(this.time.now);
       this.heroCtx.clearRect(0, 0, 560, 700);
       this.heroCtx.drawImage(this.hero3d.canvas, 0, 0);
@@ -543,6 +547,13 @@ export class AdventureScene extends Phaser.Scene {
       const isFrontier = n === frontierN;
       const isMilestone = n % COLS === 0;
 
+      // claimed cards shrink — the rail reads "done = past, next = ahead"
+      if (done) {
+        ctx.save();
+        ctx.translate(cx, cardCy);
+        ctx.scale(0.8, 0.8);
+        ctx.translate(-cx, -cardCy);
+      }
       // drop base — the thick solid "card on a coaster" shadow from the ref
       ctx.fillStyle = 'rgba(12,10,22,0.55)';
       ctx.beginPath();
@@ -687,6 +698,7 @@ export class AdventureScene extends Phaser.Scene {
         ctx.fillStyle = open ? '#1c2a3a' : '#5a6978';
         ctx.fillText(label, cx, ty + 12);
       }
+      if (done) ctx.restore();
     }
     tex.refresh();
     this.stripImgs[r] = this.add
@@ -1011,6 +1023,7 @@ export class AdventureScene extends Phaser.Scene {
     // needs real headroom (visible world top 3.29) and flap room (±1.59)
     const pc = currentChar();
     const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 1.3, 1.3, pc));
+    hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
       hero.setVariant(pc.body, pc.skin); // the statue wears your picked coat

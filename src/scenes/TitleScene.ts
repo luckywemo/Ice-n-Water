@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { TouchControls } from '../mobile';
@@ -35,9 +35,11 @@ const TILTS = [-0.07, 0.04, -0.03, 0.06, -0.05, 0.03, -0.06, 0.05, -0.02, 0.04, 
 export class TitleScene extends Phaser.Scene {
   private diff: Difficulty = 'normal';
   private joy: JoyMode = 'floating';
+  private perf: PerfMode = 'balanced';
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
+  private perfVal?: Phaser.GameObjects.Text;
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
@@ -47,6 +49,8 @@ export class TitleScene extends Phaser.Scene {
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
+  private heroLastT = 0; // throttle on the fur composite
+  private heroMs = 33; // ms between composites — user-tuned in settings
   private started = false;
   private splash?: Phaser.GameObjects.Container;
   private settingsCard?: Phaser.GameObjects.Container;
@@ -172,9 +176,12 @@ export class TitleScene extends Phaser.Scene {
     const picks = loadPicks();
     this.diff = picks.difficulty;
     this.joy = picks.joy;
+    this.perf = picks.perf;
+    this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
     this.soundVal = undefined;
+    this.perfVal = undefined;
     this.iceDecos = [];
     this.lobbyArm = undefined;
     this.lobbyDrop = undefined;
@@ -228,7 +235,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy);
+      savePicks(this.diff, this.joy, this.perf);
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.start('drop', { game: { difficulty: this.diff } }),
@@ -368,6 +375,7 @@ export class TitleScene extends Phaser.Scene {
       CHARACTERS.findIndex((c) => c.id === currentChar().id),
     );
     this.hero3d = new Hero3D(640, 700, 6.5, 1.3, 1.3, CHARACTERS[this.charIdx]);
+    this.hero3d.furQ = FUR_Q[this.perf]; // the Bean FPS pick carries the coat
     if (this.hero3d.ok) this.hero3d.setVariant(currentChar().body, currentChar().skin);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
@@ -380,7 +388,7 @@ export class TitleScene extends Phaser.Scene {
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 205, 'hero_live') // feet planted on the podium face
+        .image(podX, podTopY - 240, 'hero_live') // feet planted on the podium face
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
@@ -618,7 +626,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 430 : 510;
+    const H = isTouch ? 476 : 556;
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -856,6 +864,14 @@ export class TitleScene extends Phaser.Scene {
       const off = sfx.toggleMute();
       this.soundVal?.setText(off ? 'OFF' : 'ON');
     });
+    y += 46;
+    this.perfVal = selector(y, 'Bean FPS', () => PERF_LABEL[this.perf], (dir) => {
+      const i = PERF_ORDER.indexOf(this.perf);
+      this.perf = PERF_ORDER[(i + dir + PERF_ORDER.length) % PERF_ORDER.length];
+      this.heroMs = PERF_MS[this.perf];
+      if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
+      this.refreshPicks();
+    });
     if (isTouch) {
       y += 46;
       this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
@@ -963,8 +979,13 @@ export class TitleScene extends Phaser.Scene {
       };
     }
     if (this.heroGaze) this.hero3d?.setGaze(this.heroGaze.x, this.heroGaze.y);
+    // fur + idle anims need no more than the user's Bean FPS pick — the
+    // throttle halves the getImageData readback, strokes, and texture upload
+    if (this.time.now - this.heroLastT < this.heroMs) return;
+    this.heroLastT = this.time.now;
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
+      /* rest of the hero composite — nothing else lives below */
       // same-task read after render — the webgl buffer is still valid
       this.heroCtx.clearRect(0, 0, 640, 700);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
@@ -987,6 +1008,7 @@ export class TitleScene extends Phaser.Scene {
   private refreshPicks() {
     this.diffVal?.setText(DIFFS[this.diff].label);
     this.joyVal?.setText(JOY_LABEL[this.joy]);
-    savePicks(this.diff, this.joy);
+    this.perfVal?.setText(PERF_LABEL[this.perf]);
+    savePicks(this.diff, this.joy, this.perf);
   }
 }
