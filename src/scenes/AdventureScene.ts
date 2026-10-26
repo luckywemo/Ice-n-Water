@@ -547,6 +547,13 @@ export class AdventureScene extends Phaser.Scene {
       const isFrontier = n === frontierN;
       const isMilestone = n % COLS === 0;
 
+      // claimed cards shrink — the rail reads "done = past, next = ahead"
+      if (done) {
+        ctx.save();
+        ctx.translate(cx, cardCy);
+        ctx.scale(0.8, 0.8);
+        ctx.translate(-cx, -cardCy);
+      }
       // drop base — the thick solid "card on a coaster" shadow from the ref
       ctx.fillStyle = 'rgba(12,10,22,0.55)';
       ctx.beginPath();
@@ -691,6 +698,7 @@ export class AdventureScene extends Phaser.Scene {
         ctx.fillStyle = open ? '#1c2a3a' : '#5a6978';
         ctx.fillText(label, cx, ty + 12);
       }
+      if (done) ctx.restore();
     }
     tex.refresh();
     this.stripImgs[r] = this.add
