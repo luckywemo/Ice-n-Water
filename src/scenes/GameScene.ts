@@ -129,6 +129,7 @@ export class GameScene extends Phaser.Scene {
   private nextEventAt = 0;
   private lastEvent: EventKind | null = null;
   private slipperyUntil = 0;
+  private helpUntil = 0; // COME SAVE ME ping — brave mates come running
   private nepaUntil = 0;
   private playerLight: Phaser.GameObjects.Light | null = null;
   private chaserLights: Phaser.GameObjects.Light[] = [];
@@ -1459,7 +1460,7 @@ export class GameScene extends Phaser.Scene {
 
     if (st.isPlayer) {
       this.playerFreezes++;
-      this.showBanner('FROZEN!', 'Your crew can still rescue you...');
+      this.showBanner('FROZEN!', 'press E / H2O — call your crew!');
       this.shake(180, 0.009);
     }
 
@@ -1787,12 +1788,20 @@ export class GameScene extends Phaser.Scene {
         r,
       );
       const wantsRescue = Math.random() < (p?.rescue ?? 0.7);
+      // COME SAVE ME — brave mates punch straight through to you and only
+      // break off when a militia is basically on top of them
+      const answeringCall =
+        this.time.now < this.helpUntil &&
+        this.rState.get(this.player)!.frozen &&
+        (p?.rescue ?? 0) >= 0.5;
 
-      if (chaserDist < CONFIG.ai.fleeRadius * (p?.fleeMult ?? 1) && chaser) {
+      if (chaserDist < (answeringCall ? 70 : CONFIG.ai.fleeRadius * (p?.fleeMult ?? 1)) && chaser) {
         st.aiDir
           .set(r.x - chaser.x, r.y - chaser.y)
           .normalize()
           .rotate(Phaser.Math.FloatBetween(-0.45, 0.45));
+      } else if (answeringCall) {
+        st.aiDir.set(this.player.x - r.x, this.player.y - r.y).normalize();
       } else if (frozenAlly && wantsRescue) {
         st.aiDir.set(frozenAlly.x - r.x, frozenAlly.y - r.y).normalize();
       } else if (p?.seeksItems && this.seekItem(r, st)) {
@@ -2010,7 +2019,11 @@ export class GameScene extends Phaser.Scene {
 
   private useItem(runner: Sprite) {
     const st = this.rState.get(runner)!;
-    if (st.frozen || st.water <= 0) return;
+    if (st.frozen) {
+      if (st.isPlayer) this.cryForHelp(); // E / H2O while frozen = shout for the crew
+      return;
+    }
+    if (st.water <= 0) return;
 
     // pure water — thaw the nearest frozen mate from range
     const frozen = this.nearestOf(
@@ -2024,6 +2037,28 @@ export class GameScene extends Phaser.Scene {
     ) {
       st.water--;
       this.thaw(frozen, runner);
+    }
+  }
+
+  /** Shout for the crew — brave mates (rescue >= .5) run to you even under
+   * pressure for ~5s. Cowards (Emeka .25) keep their distance. */
+  private cryForHelp() {
+    const now = this.time.now;
+    if (now < this.helpUntil - 2000) return; // already screaming
+    this.helpUntil = now + 5200;
+    this.floatText(this.player.x, this.player.y - 32, 'COME SAVE ME!', '#7dd0ff');
+    this.burst(this.player.x, this.player.y, 0x7dd0ff, 14, 140);
+
+    // one brave mate answers out loud with the recorded voice
+    const savior = this.runners.find((r) => {
+      const s = this.rState.get(r)!;
+      return !s.isPlayer && !s.frozen && (s.personality?.rescue ?? 0) >= 0.5;
+    });
+    if (savior) {
+      this.time.delayedCall(650, () => {
+        this.floatText(savior.x, savior.y - 24, 'I dey come o!', '#7dd0ff');
+        sfx.voice('I dey come o!');
+      });
     }
   }
 
