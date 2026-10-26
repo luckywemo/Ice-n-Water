@@ -3,7 +3,14 @@ import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION, shade } from '../ui';
-import { LevelDef, levelIntro, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
+import {
+  LevelDef,
+  levelIntro,
+  Mutator,
+  objectiveText,
+  recordLevel,
+  TOTAL_LEVELS,
+} from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
@@ -47,6 +54,7 @@ interface ChaserState {
   speedMult: number; // boss chasers run hot
   tint?: number; // boss body color (warn flash overrides it temporarily)
   tag?: Phaser.GameObjects.Text; // floating boss name
+  rageUntil?: number; // boss move — boiling red, runs you down harder
   noTagUntil?: number; // icelings get a warm-up before their touch freezes
 }
 
@@ -59,6 +67,14 @@ type BarkKind = keyof typeof CONFIG.barks;
 const sfx = Sfx.inst;
 const REFUGE_COVER_MS = 5000;
 const REFUGE_RADIUS = 120;
+const MUT_LABEL: Record<Mutator, string> = {
+  night: 'NIGHT',
+  storm: 'STORM',
+  market: 'MARKET DAY',
+  heat: 'HEAT WAVE',
+  crowd: 'CROWDED',
+  decoy: 'BITTER DROPS',
+};
 
 export class GameScene extends Phaser.Scene {
   private player!: Sprite;
@@ -141,6 +157,12 @@ export class GameScene extends Phaser.Scene {
   // into hunters and opens the gold exit ring
   private collectPhase2 = false;
   private huntMode = false;
+  private mutator?: Mutator;
+  private duskMode = false;
+  private nextStormAt = 0;
+  private staminaDrainMult = 1;
+  private nextBossMoveAt = 0;
+  private decoys = new Set<Sprite>();
   private exitPos: { x: number; y: number; r: number } | null = null;
   private exitGfx: Phaser.GameObjects.Graphics | null = null;
 
@@ -210,6 +232,12 @@ export class GameScene extends Phaser.Scene {
     this.refugeMs = REFUGE_COVER_MS;
     this.collectPhase2 = false;
     this.huntMode = this.level?.objective.kind === 'hunt';
+    this.mutator = this.level?.mutator;
+    this.duskMode = false;
+    this.staminaDrainMult = this.mutator === 'heat' ? 1.7 : 1;
+    this.nextStormAt = this.mutator === 'storm' ? this.time.now + 1500 : 0;
+    this.nextBossMoveAt = this.time.now + 9000;
+    this.decoys.clear();
     this.exitPos = null;
     this.exitGfx = null;
     this.introObjs = [];
@@ -276,6 +304,11 @@ export class GameScene extends Phaser.Scene {
     for (const obj of this.children.list) {
       (obj as unknown as { setPipeline?: (p: string) => void }).setPipeline?.('Light2D');
     }
+
+    // chapter mutators — dusk needs the light pipeline live, decoys need
+    // the collect group to exist first
+    if (this.mutator === 'night') this.applyDusk();
+    if (this.mutator === 'decoy') this.spawnDecoys();
 
     this.touch = new TouchControls(
       this,
@@ -480,7 +513,9 @@ export class GameScene extends Phaser.Scene {
     this.runners.push(this.player);
     this.rState.set(this.player, this.freshRunner(this.player, 'YOU', null));
 
-    for (let i = 0; i < this.crewSize; i++) {
+    // crowd mutator packs the field with extra bodies — compound streets
+    const crowdBonus = this.mutator === 'crowd' ? 3 : 0;
+    for (let i = 0; i < this.crewSize + crowdBonus; i++) {
       const p = this.randomFreePos(this.arenaW * 0.35, this.arenaW - 60);
       const r = this.physics.add.sprite(p.x, p.y, 'runner');
       (r.body as Body).setCircle(CONFIG.runner.radius + 2);
@@ -617,10 +652,12 @@ export class GameScene extends Phaser.Scene {
         });
       }
     };
-    spawn('slippers', items.slippers.count);
-    spawn('charm', items.charm.count);
+    // market-day mutator floods the field with pickups
+    const itemMult = this.mutator === 'market' ? 2 : 1;
+    spawn('slippers', items.slippers.count * itemMult);
+    spawn('charm', items.charm.count * itemMult);
     // pure water — ranged thaw item
-    spawn('water', items.water.count);
+    spawn('water', items.water.count * itemMult);
   }
 
   /** collect-objective levels — scattered water drops */
@@ -656,8 +693,50 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  /** trickster mutator — bitter kola drops dressed as water */
+  private spawnDecoys() {
+    if (!this.collectGroup || this.level?.objective.kind !== 'collect') return;
+    const fake = this.level.objective.count; // a trap for every real drop
+    for (let i = 0; i < fake; i++) {
+      const p = this.randomFreePos();
+      const s = this.lit(
+        this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite,
+      ).setDepth(1.6);
+      s.setTint(0xc9a06a); // browner tint — sharp eyes can tell
+      this.decoys.add(s);
+      if (!REDUCED_MOTION) {
+        this.tweens.add({
+          targets: s,
+          y: s.y - 5,
+          duration: 650 + Math.random() * 350,
+          yoyo: true,
+          repeat: -1,
+        });
+      }
+    }
+  }
+
+  /** night mutator — permanent dusk: your own spotlight, militia as glints */
+  private applyDusk() {
+    this.duskMode = true;
+    this.lights.setAmbientColor(0x2e2e40);
+    this.playerLight = this.lights.addLight(this.player.x, this.player.y, 220, 0xffe9b0, 1.7);
+    this.chaserLights = this.chasers.map((c) =>
+      this.lights.addLight(c.x, c.y, 70, 0xff5050, 0.8),
+    );
+  }
+
   private collectToken(t: Sprite) {
     if (this.phase !== 'play') return;
+    // bitter kola — trickster decoy. Same coat, no water inside.
+    if (this.decoys.has(t)) {
+      this.decoys.delete(t);
+      this.burst(t.x, t.y, 0x9a6b3a, 10, 140);
+      this.floatText(t.x, t.y, 'BITTER KOLA!');
+      sfx.freeze();
+      t.destroy();
+      return;
+    }
     this.burst(t.x, t.y, 0x7fd8f0, 12, 160);
     this.floatText(t.x, t.y, 'WATER DROP!');
     sfx.pickup();
@@ -751,6 +830,26 @@ export class GameScene extends Phaser.Scene {
   // ---------- collect twist — the water fights back ----------
 
   /** quota reached: leftover drops freeze into hunters, exit ring opens */
+  /** a frozen water drop that hunts — small, cold, half your speed */
+  private addIceling(x: number, y: number) {
+    const c = this.lit(
+      this.physics.add
+        .sprite(x, y, 'chaser')
+        .setScale(0.65)
+        .setTint(CONFIG.colors.frozen)
+        .setDepth(3),
+    ) as Sprite;
+    (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
+    this.chasers.push(c);
+    const cst = this.freshChaser(c);
+    cst.speedMult = 0.55; // hunters run cold — you can outpace them
+    cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
+    cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
+    this.cState.set(c, cst);
+    this.collideWithWorld(c);
+    this.burst(x, y, CONFIG.colors.frozen, 10, 140);
+  }
+
   private triggerTwist() {
     this.collectPhase2 = true;
     sfx.freeze();
@@ -759,22 +858,7 @@ export class GameScene extends Phaser.Scene {
 
     const kids = this.collectGroup.getChildren() as Sprite[];
     for (const drop of kids) {
-      const c = this.lit(
-        this.physics.add
-          .sprite(drop.x, drop.y, 'chaser')
-          .setScale(0.65)
-          .setTint(CONFIG.colors.frozen)
-          .setDepth(3),
-      ) as Sprite;
-      (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
-      this.chasers.push(c);
-      const cst = this.freshChaser(c);
-      cst.speedMult = 0.55; // hunters run cold — you can outpace them
-      cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
-      cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
-      this.cState.set(c, cst);
-      this.collideWithWorld(c);
-      this.burst(drop.x, drop.y, CONFIG.colors.frozen, 10, 140);
+      this.addIceling(drop.x, drop.y);
       drop.destroy();
     }
 
@@ -1361,7 +1445,10 @@ export class GameScene extends Phaser.Scene {
 
     this.itemType.delete(item);
     item.destroy();
-    this.time.delayedCall(CONFIG.items.respawnMs, () => {
+    // market days restock fast
+    this.time.delayedCall(
+      CONFIG.items.respawnMs * (this.mutator === 'market' ? 0.5 : 1),
+      () => {
       const p = this.randomFreePos();
       const s = this.lit(this.itemGroup.create(p.x, p.y, type)) as Sprite;
       s.setDepth(1.6);
@@ -1479,6 +1566,7 @@ export class GameScene extends Phaser.Scene {
       this.aiUseWater();
     }
     this.updateEvents(dt);
+    this.updateBoss();
     this.updateNepaLights();
     this.updateRefuge(dt);
     this.updateDanger();
@@ -1571,7 +1659,11 @@ export class GameScene extends Phaser.Scene {
     st.sprinting =
       moving && (this.keys.SHIFT.isDown || (this.touch?.sprint ?? false)) && st.stamina > 0;
     st.stamina = Phaser.Math.Clamp(
-      st.stamina + (st.sprinting ? -CONFIG.runner.sprintDrain : CONFIG.runner.staminaRegen) * dt,
+      st.stamina +
+        (st.sprinting
+          ? -CONFIG.runner.sprintDrain * this.staminaDrainMult
+          : CONFIG.runner.staminaRegen) *
+          dt,
       0,
       1,
     );
@@ -1674,8 +1766,15 @@ export class GameScene extends Phaser.Scene {
       st.nextBarkAt = this.time.now + Phaser.Math.Between(5000, 9000);
       if (Math.random() < 0.55) this.bark(c, 'hunt');
     }
-    c.setTintFill(st.warnUntil > 0 ? 0xffc46b : (st.tint ?? 0xffffff));
-    if (st.warnUntil === 0 && st.tint === undefined) c.clearTint();
+    c.setTintFill(
+      st.warnUntil > 0
+        ? 0xffc46b
+        : this.time.now < (st.rageUntil ?? 0)
+          ? 0xff2d2d
+          : (st.tint ?? 0xffffff),
+    );
+    if (st.warnUntil === 0 && st.tint === undefined && this.time.now >= (st.rageUntil ?? 0))
+      c.clearTint();
     st.tag?.setPosition(c.x, c.y - CONFIG.chaser.radius - 30);
 
     // stuck detection
@@ -1705,7 +1804,8 @@ export class GameScene extends Phaser.Scene {
         const steered = this.steer(c, dir);
         const speed =
           (this.time.now < st.dashUntil ? this.chaserSpeed * dash.mult : this.chaserSpeed) *
-          st.speedMult;
+          st.speedMult *
+          (this.time.now < (st.rageUntil ?? 0) ? 1.7 : 1);
         st.desired.set(steered.x * speed, steered.y * speed);
       } else {
         st.desired.set(0, 0);
@@ -1874,6 +1974,12 @@ export class GameScene extends Phaser.Scene {
     if (!this.eventsEnabled) return;
     const now = this.time.now;
 
+    // storm mutator — the sky keeps opening up all round
+    if (this.mutator === 'storm' && now >= this.nextStormAt) {
+      this.nextStormAt = now + 20000;
+      this.startRain();
+    }
+
     // NEPA blackout ends
     if (this.nepaUntil > 0 && now >= this.nepaUntil) this.endNepa();
 
@@ -1891,7 +1997,8 @@ export class GameScene extends Phaser.Scene {
       now + Phaser.Math.Between(CONFIG.events.delayMs.min, CONFIG.events.delayMs.max);
 
     const pool: EventKind[] = (['danfo', 'nepa', 'rain'] as EventKind[]).filter(
-      (e) => e !== this.lastEvent,
+      // dusk already owns the dark — NEPA has nothing left to take
+      (e) => e !== this.lastEvent && !(e === 'nepa' && this.duskMode),
     );
     const kind = Phaser.Utils.Array.GetRandom(pool);
     this.lastEvent = kind;
@@ -1991,8 +2098,51 @@ export class GameScene extends Phaser.Scene {
     this.announce('RAIN — watch your footing!');
   }
 
+  /** milestone champions get a signature move — on a 16s cadence */
+  private updateBoss() {
+    const move = this.level?.bossMove;
+    if (!move || this.phase !== 'play' || !this.chasers.length) return;
+    if (this.time.now < this.nextBossMoveAt) return;
+    this.nextBossMoveAt = this.time.now + 16000;
+
+    const boss = this.chasers[0];
+    const st = this.cState.get(boss);
+    if (!st || !boss.active) return;
+
+    if (move === 'summon') {
+      this.floatText(boss.x, boss.y - 40, 'RALLY!', '#ffb0b0');
+      this.addIceling(boss.x + 36, boss.y + 10);
+    } else if (move === 'rage') {
+      st.rageUntil = this.time.now + 3200;
+      this.floatText(boss.x, boss.y - 40, 'RAGE!', '#ff5050');
+      sfx.freeze();
+    } else {
+      // blink — warn flash, then materialize beside the player
+      st.warnUntil = this.time.now + 650;
+      this.time.delayedCall(650, () => {
+        if (this.phase !== 'play' || !boss.active) return;
+        const a = Math.random() * Math.PI * 2;
+        const x = Phaser.Math.Clamp(
+          this.player.x + Math.cos(a) * 260,
+          80,
+          this.arenaW - 80,
+        );
+        const y = Phaser.Math.Clamp(
+          this.player.y + Math.sin(a) * 260,
+          80,
+          this.arenaH - 80,
+        );
+        this.burst(boss.x, boss.y, 0xc4b5fd, 14, 200);
+        boss.setPosition(x, y);
+        this.burst(x, y, 0xc4b5fd, 14, 200);
+        st.noTagUntil = this.time.now + 500; // blink-in grace
+        this.floatText(x, y - 30, 'BEHIND YOU!', '#c4b5fd');
+      });
+    }
+  }
+
   private updateNepaLights() {
-    if (this.nepaUntil <= 0) return;
+    if (this.nepaUntil <= 0 && !this.duskMode) return;
     if (this.playerLight) this.playerLight.setPosition(this.player.x, this.player.y);
     this.chasers.forEach((c, i) => {
       const l = this.chaserLights[i];
@@ -2385,7 +2535,7 @@ export class GameScene extends Phaser.Scene {
                   ? ` · tagged ${this.objGot}/${o.count}`
                   : '';
         this.objText.setText(
-          `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}`,
+          `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}${this.mutator ? ' · ' + MUT_LABEL[this.mutator] : ''}`,
         );
       }
     }

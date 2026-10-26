@@ -58,6 +58,10 @@ const BOSSES = [
 ];
 
 export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge' | 'hunt';
+// chapter-scaled battlefield twists — each stretch of the road has a mood
+export type Mutator = 'night' | 'storm' | 'market' | 'heat' | 'crowd' | 'decoy';
+// milestone champions get a signature move that escalates by chapter
+export type BossMove = 'summon' | 'rage' | 'blink';
 
 export interface LevelDef {
   n: number; // 1..500
@@ -74,6 +78,8 @@ export interface LevelDef {
   chapter: string; // one of the 10 chapters
   objective: { kind: ObjectiveKind; count: number };
   boss?: string; // set on every 10th level
+  bossMove?: BossMove; // the champion's signature trick
+  mutator?: Mutator; // this stop's battlefield twist
   twist?: boolean; // collect levels: leftover drops turn to ice and hunt you
 }
 
@@ -105,6 +111,21 @@ const SLOT_PATTERN: SlotDef[] = [
   { kind: 'survive' }, // 10 — BOSS
 ];
 
+// Each chapter's battlefield mood — the deeper you push north, the more the
+// land itself fights you. Deterministic per level so a stop always plays the same.
+const MUTATOR_POOLS: Mutator[][] = [
+  [], // I — STREET LEGENDS: clean learning ground
+  ['crowd'], // II — COMPOUND WARS: families everywhere
+  ['heat'], // III — SCHOOLYARD: afternoon sun drains your sprint
+  ['market', 'crowd'], // IV — MARKET MADNESS: items + bodies everywhere
+  ['storm'], // V — DANFO & DOWNPOURS: the ground never dries
+  ['night'], // VI — FESTIVAL LIGHTS: dusk, spotlight, red glints
+  ['decoy', 'night'], // VII — TRICKSTER GAMES: bitter drops among the water
+  ['storm', 'heat', 'night'], // VIII — SURVIVAL TRIALS: everything at once
+  ['night', 'crowd', 'storm'], // IX — RIVAL ARENAS: hostile territory
+  ['storm', 'night', 'decoy', 'heat'], // X — LEGEND: full chaos
+];
+
 export function levelDef(n: number): LevelDef {
   const { milestone, town } = TOWN_FOR(n);
   const slot = (n - 1) % LEVELS_PER_MILESTONE;
@@ -115,13 +136,29 @@ export function levelDef(n: number): LevelDef {
   const kind: ObjectiveKind =
     slot === 5 && def.kind === 'collect' && packIdx % 2 === 1 ? 'hunt' : def.kind;
   const huntCount = 2 + Math.floor(n / 140); // 2 → 5 runners to tag
+  const pool = MUTATOR_POOLS[chapterIdx];
+  const mutator = pool.length ? pool[(n * 7) % pool.length] : undefined;
+  // champions escalate: early ones summon iceling backup, mid ones rage,
+  // the final ones blink onto your back
+  const bossMove: BossMove | undefined = milestone
+    ? chapterIdx < 3
+      ? 'summon'
+      : chapterIdx < 6
+        ? 'rage'
+        : 'blink'
+    : undefined;
+  // from TRICKSTER GAMES on, the fixed squad matchups field one extra militia
+  const militiaBump =
+    kind !== 'hunt' && def.militia !== undefined && chapterIdx >= 6 ? 1 : 0;
   return {
     n,
     seed: (n * 2654435761) >>> 0,
     chasers:
       kind === 'hunt'
         ? 0
-        : (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) + (milestone ? 1 : 0),
+        : (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) +
+          militiaBump +
+          (milestone ? 1 : 0),
     reinforcements: kind === 'hunt' ? 0 : Math.min(1 + Math.floor(n / 150), 3),
     chaserMult: Math.min(0.85 + n * 0.0013, 1.5),
     seconds: Math.min(45 + Math.round(n * 0.15), 120) + (milestone ? 15 : 0),
@@ -143,6 +180,8 @@ export function levelDef(n: number): LevelDef {
               : 0,
     },
     boss: n % LEVELS_PER_MILESTONE === 0 ? BOSSES[chapterIdx] : undefined,
+    bossMove,
+    mutator,
     twist: def.twist || undefined,
   };
 }
@@ -166,11 +205,59 @@ export interface LevelIntro {
 }
 export function levelIntro(def: LevelDef): LevelIntro | null {
   if (def.boss) {
+    const moveHint =
+      def.bossMove === 'summon'
+        ? ' He calls iceling backup.'
+        : def.bossMove === 'rage'
+          ? ' He rages — do not be near when he boils.'
+          : def.bossMove === 'blink'
+            ? ' He blinks — watch your back.'
+            : '';
     return {
       title: `${def.town.toUpperCase()} — MILESTONE ${def.milestone}`,
-      body: `${def.boss} holds this stop.\n${def.chasers} militia on the field — take the crown.`,
+      body: `${def.boss} holds this stop.${moveHint}\n${def.chasers} militia on the field — take the crown.`,
     };
   }
+  // each new chapter opens with its own card — the land changes its rules
+  const CHAPTER_INTRO: Record<number, LevelIntro> = {
+    51: {
+      title: 'CHAPTER II — COMPOUND WARS',
+      body: 'The compounds are packed — extra bodies everywhere.\nMore cover for you. More chaos for everyone.',
+    },
+    101: {
+      title: 'CHAPTER III — SCHOOLYARD SHOWDOWN',
+      body: 'Afternoon sun dey burn — sprint drains faster here.\nPace the RUN button or pay for it.',
+    },
+    151: {
+      title: 'CHAPTER IV — MARKET MADNESS',
+      body: 'Market day! Slippers, juju, pure water everywhere.\nGrab what you can carry — the militia dey come too.',
+    },
+    201: {
+      title: 'CHAPTER V — DANFO & DOWNPOURS',
+      body: 'Rain season — the ground never dries.\nEverybody slides. Learn to drift or learn to fall.',
+    },
+    251: {
+      title: 'CHAPTER VI — FESTIVAL LIGHTS',
+      body: 'Dusk has fallen — you run inside your own spotlight.\nThe militia are only red glints in the dark.',
+    },
+    301: {
+      title: 'CHAPTER VII — TRICKSTER GAMES',
+      body: 'Not every drop is water — bitter kola wears the same coat.\nWatch the colour before you grab.',
+    },
+    351: {
+      title: 'CHAPTER VIII — SURVIVAL TRIALS',
+      body: 'Heat, storm, night — everything at once.\nThe road does not love you anymore.',
+    },
+    401: {
+      title: 'CHAPTER IX — RIVAL ARENAS',
+      body: 'Elite militia territory — they blink, they rage,\nand the squads field one extra body. Respect the crown.',
+    },
+    451: {
+      title: 'CHAPTER X — LEGEND OF THE ROAD',
+      body: 'Every trick the road taught you, all at once.\nMaiduguri is watching. Finish it.',
+    },
+  };
+  if (CHAPTER_INTRO[def.n]) return CHAPTER_INTRO[def.n];
   const FIRST: Record<number, LevelIntro> = {
     1: {
       title: 'WELCOME TO THE ROAD',
