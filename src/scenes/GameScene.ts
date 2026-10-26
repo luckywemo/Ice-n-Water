@@ -140,6 +140,7 @@ export class GameScene extends Phaser.Scene {
   // collect-twist levels — grabbing the quota freezes the leftover drops
   // into hunters and opens the gold exit ring
   private collectPhase2 = false;
+  private huntMode = false;
   private exitPos: { x: number; y: number; r: number } | null = null;
   private exitGfx: Phaser.GameObjects.Graphics | null = null;
 
@@ -208,6 +209,7 @@ export class GameScene extends Phaser.Scene {
     this.refugeLabel = null;
     this.refugeMs = REFUGE_COVER_MS;
     this.collectPhase2 = false;
+    this.huntMode = this.level?.objective.kind === 'hunt';
     this.exitPos = null;
     this.exitGfx = null;
     this.introObjs = [];
@@ -295,6 +297,12 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.chasers, this.runners, (a, b) =>
       this.tryTag(a as Sprite, b as Sprite),
     );
+    if (this.huntMode) {
+      this.player.setTint(0xffb0a0); // you're IT — wear the red
+      this.physics.add.overlap(this.player, this.runners, (_p, b) =>
+        this.tryHuntTag(b as Sprite),
+      );
+    }
     this.physics.add.overlap(this.runners, this.itemGroup, (a, b) =>
       this.pickupItem(a as Sprite, b as Sprite),
     );
@@ -1254,6 +1262,20 @@ export class GameScene extends Phaser.Scene {
     this.freeze(runner);
   }
 
+  // hunt levels — the player is the chaser. Catches stay down the whole round.
+  private tryHuntTag(runner: Sprite) {
+    if (!this.huntMode || this.phase !== 'play' || runner === this.player) return;
+    const st = this.rState.get(runner)!;
+    if (st.frozen || this.time.now < st.immuneUntil) return;
+
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, runner.x, runner.y);
+    if (d > CONFIG.tagRange + CONFIG.runner.radius) return;
+
+    this.freeze(runner);
+    this.objGot++;
+    this.barkNear(this.player, 'catch');
+  }
+
   private freeze(runner: Sprite) {
     const st = this.rState.get(runner)!;
     st.frozen = true;
@@ -1438,7 +1460,8 @@ export class GameScene extends Phaser.Scene {
         o.kind === 'refuge' ||
         (o.kind === 'collect' && !this.level?.twist && this.objGot >= o.count) ||
         (o.kind === 'collect' && this.level?.twist && this.collectPhase2 && this.reachedExit()) ||
-        (o.kind === 'rescue' && this.playerRescues >= o.count);
+        (o.kind === 'rescue' && this.playerRescues >= o.count) ||
+        (o.kind === 'hunt' && this.objGot >= o.count);
       return this.endGame(!done, true);
     }
 
@@ -1450,8 +1473,11 @@ export class GameScene extends Phaser.Scene {
     for (const r of this.runners) if (!this.rState.get(r)!.isPlayer) this.updateAiRunner(r, delta);
     for (const c of this.chasers) this.updateChaser(c, delta);
 
-    this.resolveThaws();
-    this.aiUseWater();
+    // on hunt stops your catches stay down — nobody thaws them
+    if (!this.huntMode) {
+      this.resolveThaws();
+      this.aiUseWater();
+    }
     this.updateEvents(dt);
     this.updateNepaLights();
     this.updateRefuge(dt);
@@ -1466,7 +1492,8 @@ export class GameScene extends Phaser.Scene {
       const done =
         (o.kind === 'collect' && !this.level.twist && this.objGot >= o.count) ||
         (o.kind === 'collect' && this.collectPhase2 && this.reachedExit()) ||
-        (o.kind === 'rescue' && this.playerRescues >= o.count);
+        (o.kind === 'rescue' && this.playerRescues >= o.count) ||
+        (o.kind === 'hunt' && this.objGot >= o.count);
       if (done) return this.endGame(false);
     }
 
@@ -1574,7 +1601,7 @@ export class GameScene extends Phaser.Scene {
       st.decideIn = CONFIG.ai.runnerThinkMs;
 
       const p = st.personality;
-      const chaser = this.nearestOf(this.chasers, r);
+      const chaser = this.nearestOf(this.huntMode ? [this.player] : this.chasers, r);
       const chaserDist = chaser
         ? Phaser.Math.Distance.Between(r.x, r.y, chaser.x, chaser.y)
         : Infinity;
@@ -2337,7 +2364,9 @@ export class GameScene extends Phaser.Scene {
     }
     const lvl = this.level ? `LVL ${this.level.n} · ` : '';
     this.infoText.setText(
-      `${lvl}CREW ${this.runners.length - frozenCount} free${frozenCount ? ` · ${frozenCount} frozen` : ''}`,
+      this.huntMode
+        ? `${lvl}TARGETS ${this.runners.length - frozenCount - 1} free · ${frozenCount} caught`
+        : `${lvl}CREW ${this.runners.length - frozenCount} free${frozenCount ? ` · ${frozenCount} frozen` : ''}`,
     );
 
     if (this.level) {
@@ -2352,7 +2381,9 @@ export class GameScene extends Phaser.Scene {
               ? ` · ${this.playerRescues}/${o.count}`
               : o.kind === 'refuge'
                 ? ` · ring ${(this.refugeMs / 1000).toFixed(0)}s`
-                : '';
+                : o.kind === 'hunt'
+                  ? ` · tagged ${this.objGot}/${o.count}`
+                  : '';
         this.objText.setText(
           `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}`,
         );

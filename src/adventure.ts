@@ -57,7 +57,7 @@ const BOSSES = [
   'THE TRICKSTER KING', 'THE ICE TITAN', 'THE RIVAL SQUAD CAPTAIN', 'THE ICE KING',
 ];
 
-export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge';
+export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge' | 'hunt';
 
 export interface LevelDef {
   n: number; // 1..500
@@ -108,17 +108,24 @@ const SLOT_PATTERN: SlotDef[] = [
 export function levelDef(n: number): LevelDef {
   const { milestone, town } = TOWN_FOR(n);
   const slot = (n - 1) % LEVELS_PER_MILESTONE;
+  const packIdx = Math.floor((n - 1) / LEVELS_PER_MILESTONE);
   const chapterIdx = Math.min(Math.floor((n - 1) / 50), 9);
   const def = SLOT_PATTERN[slot];
-  const kind = def.kind;
+  // every other town flips the script on slot 6 — you become the hunter
+  const kind: ObjectiveKind =
+    slot === 5 && def.kind === 'collect' && packIdx % 2 === 1 ? 'hunt' : def.kind;
+  const huntCount = 2 + Math.floor(n / 140); // 2 → 5 runners to tag
   return {
     n,
     seed: (n * 2654435761) >>> 0,
-    chasers: (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) + (milestone ? 1 : 0),
-    reinforcements: Math.min(1 + Math.floor(n / 150), 3),
+    chasers:
+      kind === 'hunt'
+        ? 0
+        : (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) + (milestone ? 1 : 0),
+    reinforcements: kind === 'hunt' ? 0 : Math.min(1 + Math.floor(n / 150), 3),
     chaserMult: Math.min(0.85 + n * 0.0013, 1.5),
     seconds: Math.min(45 + Math.round(n * 0.15), 120) + (milestone ? 15 : 0),
-    crew: def.mates ?? (n < 100 ? 4 : n < 300 ? 3 : 2),
+    crew: kind === 'hunt' ? huntCount + 2 : (def.mates ?? (n < 100 ? 4 : n < 300 ? 3 : 2)),
     events: n > 5,
     milestone,
     town,
@@ -131,7 +138,9 @@ export function levelDef(n: number): LevelDef {
           ? 3 + Math.floor(n / 90) // 3 → 8 water drops
           : kind === 'rescue'
             ? 1 + Math.floor(n / 130) // 1 → 4 mates
-            : 0,
+            : kind === 'hunt'
+              ? huntCount
+              : 0,
     },
     boss: n % LEVELS_PER_MILESTONE === 0 ? BOSSES[chapterIdx] : undefined,
     twist: def.twist || undefined,
@@ -145,6 +154,7 @@ export function objectiveText(def: LevelDef): string {
     return def.twist ? `collect ${o.count} drops — then run` : `collect ${o.count} water drops`;
   if (o.kind === 'rescue') return `thaw ${o.count} mates`;
   if (o.kind === 'refuge') return `last ${def.seconds}s · hide in the gold ring`;
+  if (o.kind === 'hunt') return `tag ${o.count} runners — you're the chaser`;
   return `last ${def.seconds}s`;
 }
 
@@ -197,6 +207,10 @@ export function levelIntro(def: LevelDef): LevelIntro | null {
     9: {
       title: 'NEW: WATER FIGHTS BACK',
       body: 'Collect the drops — then the leftovers freeze into hunters.\nReach the gold EXIT ring alive to clear the stop.',
+    },
+    16: {
+      title: "NEW: YOU'RE IT!",
+      body: 'The script flips — YOU chase them now.\nTag the count shown before the clock dies.\nFrozen runners stay down on hunt stops.',
     },
   };
   return FIRST[def.n] ?? null;
