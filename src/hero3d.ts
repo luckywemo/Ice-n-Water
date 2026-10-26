@@ -597,12 +597,13 @@ export class Hero3D {
           this.furBend.set(key, b);
         }
     }
-    // spring: v += -SPRING*b; v *= DAMP; b += v — then prune settled cells
+    // spring: v += -SPRING*b; v *= DAMP; b += v — stiffer + damper so the
+    // blow reads as a ruffle, not a gust; then prune settled cells
     for (const [k, b] of this.furBend) {
-      b.vx += -0.1 * b.x;
-      b.vy += -0.1 * b.y;
-      b.vx *= 0.88;
-      b.vy *= 0.88;
+      b.vx += -0.18 * b.x;
+      b.vy += -0.18 * b.y;
+      b.vx *= 0.8;
+      b.vy *= 0.8;
       b.x += b.vx;
       b.y += b.vy;
       if (b.x * b.x + b.y * b.y + b.vx * b.vx + b.vy * b.vy < 0.004)
@@ -730,8 +731,17 @@ export class Hero3D {
       const b = this.furBend.get(
         Math.floor(s.y / CELLS) * GW + Math.floor(s.x / CELLS),
       );
-      const bx = b?.x ?? 0,
+      // the pet should ruffle tips, not stretch strands — cap the raw bend,
+      // then halve what reaches the stroke so tips stay close to home
+      let bx = b?.x ?? 0,
         by = b?.y ?? 0;
+      const bl = Math.hypot(bx, by);
+      if (bl > 10) {
+        bx *= 10 / bl;
+        by *= 10 / bl;
+      }
+      bx *= 0.5;
+      by *= 0.5;
       const ba = s.a + (bx * -Math.sin(s.a) + by * Math.cos(s.a)) * 0.04;
       const pnx = -Math.sin(s.a),
         pny = Math.cos(s.a);
