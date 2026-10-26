@@ -293,7 +293,7 @@ export class Hero3D {
   private furCv: HTMLCanvasElement | null = null;
   private furCvCtx: CanvasRenderingContext2D | null = null;
   // coat preset — scenes assign the Bean FPS tier's FurQuality at create
-  furQ = { fluff: 0.85, mess: 0.3, density: 1.55 };
+  furQ = { fluff: 0.85, mess: 0.3, density: 1.0 };
 
   /** Draw the fur coat over the composited bean frame.
    *  Call AFTER the WebGL frame is drawn into `ctx`.

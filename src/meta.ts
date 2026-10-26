@@ -17,9 +17,9 @@ export interface FurQuality {
   density: number; // sampling density (1 ≈ one strand per 3px)
 }
 export const FUR_Q: Record<PerfMode, FurQuality> = {
-  low: { fluff: 0.7, mess: 0.22, density: 1.0 },
-  balanced: { fluff: 0.85, mess: 0.3, density: 1.55 },
-  high: { fluff: 1.0, mess: 0.4, density: 2.2 },
+  low: { fluff: 0.7, mess: 0.22, density: 0.7 },
+  balanced: { fluff: 0.85, mess: 0.3, density: 1.0 },
+  high: { fluff: 1.0, mess: 0.4, density: 1.6 },
 };
 
 export interface DiffPreset {
