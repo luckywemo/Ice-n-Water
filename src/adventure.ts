@@ -57,7 +57,7 @@ const BOSSES = [
   'THE TRICKSTER KING', 'THE ICE TITAN', 'THE RIVAL SQUAD CAPTAIN', 'THE ICE KING',
 ];
 
-export type ObjectiveKind = 'survive' | 'collect' | 'rescue';
+export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge';
 
 export interface LevelDef {
   n: number; // 1..500
@@ -74,6 +74,7 @@ export interface LevelDef {
   chapter: string; // one of the 10 chapters
   objective: { kind: ObjectiveKind; count: number };
   boss?: string; // set on every 10th level
+  twist?: boolean; // collect levels: leftover drops turn to ice and hunt you
 }
 
 const TOWN_FOR = (n: number): { milestone: number; town: string } =>
@@ -81,25 +82,43 @@ const TOWN_FOR = (n: number): { milestone: number; town: string } =>
     ? { milestone: n / LEVELS_PER_MILESTONE, town: MILESTONE_TOWNS[n / LEVELS_PER_MILESTONE - 1] }
     : { milestone: 0, town: '' };
 
-// objective rotation inside each 10-pack — the 10th is always a boss fight
-const OBJ_PATTERN: ObjectiveKind[] = [
-  'survive', 'collect', 'survive', 'rescue', 'survive',
-  'collect', 'survive', 'rescue', 'collect', 'survive',
+// Objective + squad rotation inside each 10-pack — the 10th is always a
+// boss fight. `mates`/`militia` override the difficulty curve for squad
+// variety: some stops stack the squads (4v4 brawl), some leave you alone
+// against a pack (lone wolf), some give you numbers over the militia.
+interface SlotDef {
+  kind: ObjectiveKind;
+  mates?: number; // AI teammates (player is the +1) — null = difficulty curve
+  militia?: number; // exact chaser count — null = difficulty curve
+  twist?: boolean; // collect: drops freeze into hunters, escape through the ring
+}
+const SLOT_PATTERN: SlotDef[] = [
+  { kind: 'survive' }, // 1 — the standard chase
+  { kind: 'collect' }, // 2 — grab the water drops
+  { kind: 'rescue' }, // 3 — thaw your mates
+  { kind: 'survive', mates: 3, militia: 4 }, // 4 — BIG BRAWL: 4v4
+  { kind: 'refuge' }, // 5 — SAFE RING: 5s of cover, can't camp it
+  { kind: 'collect', mates: 1, militia: 4 }, // 6 — OUTNUMBERED: 2v4 scramble
+  { kind: 'survive', mates: 0, militia: 2 }, // 7 — LONE WOLF: just you vs a pair
+  { kind: 'rescue', mates: 3, militia: 1 }, // 8 — SQUAD SUPPORT: 4v1 — you have numbers
+  { kind: 'collect', mates: 1, militia: 2, twist: true }, // 9 — WATER FIGHTS BACK (2v2)
+  { kind: 'survive' }, // 10 — BOSS
 ];
 
 export function levelDef(n: number): LevelDef {
   const { milestone, town } = TOWN_FOR(n);
   const slot = (n - 1) % LEVELS_PER_MILESTONE;
   const chapterIdx = Math.min(Math.floor((n - 1) / 50), 9);
-  const kind = OBJ_PATTERN[slot];
+  const def = SLOT_PATTERN[slot];
+  const kind = def.kind;
   return {
     n,
     seed: (n * 2654435761) >>> 0,
-    chasers: Math.min(1 + Math.floor((n - 1) / 60), 6) + (milestone ? 1 : 0),
+    chasers: (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) + (milestone ? 1 : 0),
     reinforcements: Math.min(1 + Math.floor(n / 150), 3),
     chaserMult: Math.min(0.85 + n * 0.0013, 1.5),
     seconds: Math.min(45 + Math.round(n * 0.15), 120) + (milestone ? 15 : 0),
-    crew: n < 100 ? 4 : n < 300 ? 3 : 2,
+    crew: def.mates ?? (n < 100 ? 4 : n < 300 ? 3 : 2),
     events: n > 5,
     milestone,
     town,
@@ -115,15 +134,72 @@ export function levelDef(n: number): LevelDef {
             : 0,
     },
     boss: n % LEVELS_PER_MILESTONE === 0 ? BOSSES[chapterIdx] : undefined,
+    twist: def.twist || undefined,
   };
 }
 
 /** human-readable objective — shared by the map card, HUD and level banner */
 export function objectiveText(def: LevelDef): string {
   const o = def.objective;
-  if (o.kind === 'collect') return `collect ${o.count} water drops`;
+  if (o.kind === 'collect')
+    return def.twist ? `collect ${o.count} drops — then run` : `collect ${o.count} water drops`;
   if (o.kind === 'rescue') return `thaw ${o.count} mates`;
+  if (o.kind === 'refuge') return `last ${def.seconds}s · hide in the gold ring`;
   return `last ${def.seconds}s`;
+}
+
+/** intro card shown before the round — first taste of each mechanic,
+ *  plus a town card at every milestone boss */
+export interface LevelIntro {
+  title: string;
+  body: string;
+}
+export function levelIntro(def: LevelDef): LevelIntro | null {
+  if (def.boss) {
+    return {
+      title: `${def.town.toUpperCase()} — MILESTONE ${def.milestone}`,
+      body: `${def.boss} holds this stop.\n${def.chasers} militia on the field — take the crown.`,
+    };
+  }
+  const FIRST: Record<number, LevelIntro> = {
+    1: {
+      title: 'WELCOME TO THE ROAD',
+      body: 'They chase. You run. You freeze —\nyour crew can thaw you back.\nSurvive the clock to push north.',
+    },
+    2: {
+      title: 'NEW: WATER DROPS',
+      body: 'Grab the drops scattered across the map.\nCollect the count shown before the clock dies.',
+    },
+    3: {
+      title: 'NEW: THAW',
+      body: 'Frozen mates need you — touch them to bring them back.\nThaw the count shown to clear the stop.',
+    },
+    4: {
+      title: 'NEW: BIG BRAWL',
+      body: '4 vs 4 — full squads on the field.\nYour mates pull heat off you. Use them.',
+    },
+    5: {
+      title: 'NEW: THE SAFE RING',
+      body: 'The gold ring makes you untaggable — for 5 seconds.\nCover drains while you hide, cools while you run.\nNo camping.',
+    },
+    6: {
+      title: 'NEW: OUTNUMBERED + STREET CHAOS',
+      body: '2 vs 4 — and from here the street fights back too:\ndanfo, NEPA blackouts, rain.',
+    },
+    7: {
+      title: 'NEW: LONE WOLF',
+      body: "Just you out there — nobody to thaw you.\nOne freeze and the run is over. Don't get touched.",
+    },
+    8: {
+      title: 'NEW: SQUAD SUPPORT',
+      body: '4 vs 1 — your numbers, their lone hunter.\nShame them. Rescue anyone who slips.',
+    },
+    9: {
+      title: 'NEW: WATER FIGHTS BACK',
+      body: 'Collect the drops — then the leftovers freeze into hunters.\nReach the gold EXIT ring alive to clear the stop.',
+    },
+  };
+  return FIRST[def.n] ?? null;
 }
 
 // ---------- progress (localStorage) ----------

@@ -201,8 +201,10 @@ export function decorateYard(
   scene: Phaser.Scene,
   obstacleRects: Phaser.Geom.Rectangle[],
   rng: () => number = Math.random,
+  width: number = CONFIG.arena.width,
+  height: number = CONFIG.arena.height,
 ): Phaser.GameObjects.GameObject[] {
-  const { width, height, wall } = CONFIG.arena;
+  const { wall } = CONFIG.arena;
   const out: Phaser.GameObjects.GameObject[] = [];
   const d = scene.add.graphics().setDepth(0);
   out.push(d);

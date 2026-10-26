@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION, shade } from '../ui';
-import { LevelDef, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
+import { LevelDef, levelIntro, objectiveText, recordLevel, TOTAL_LEVELS } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
@@ -47,6 +47,7 @@ interface ChaserState {
   speedMult: number; // boss chasers run hot
   tint?: number; // boss body color (warn flash overrides it temporarily)
   tag?: Phaser.GameObjects.Text; // floating boss name
+  noTagUntil?: number; // icelings get a warm-up before their touch freezes
 }
 
 type ItemType = 'slippers' | 'charm' | 'water';
@@ -56,6 +57,8 @@ type Personality = (typeof CONFIG.crew)[number] | null;
 type BarkKind = keyof typeof CONFIG.barks;
 
 const sfx = Sfx.inst;
+const REFUGE_COVER_MS = 5000;
+const REFUGE_RADIUS = 120;
 
 export class GameScene extends Phaser.Scene {
   private player!: Sprite;
@@ -68,7 +71,11 @@ export class GameScene extends Phaser.Scene {
   private obstacleGroup!: Phaser.Physics.Arcade.StaticGroup;
   private obstacleRects: Phaser.Geom.Rectangle[] = [];
   private mapSeed = 0;
-  private minimap!: Phaser.GameObjects.Graphics;
+  private arenaW: number = CONFIG.arena.width;
+  private arenaH: number = CONFIG.arena.height;
+  private minimap!: Phaser.GameObjects.Graphics; // radar chrome
+  private minimapMaskGfx!: Phaser.GameObjects.Graphics; // circle clip mask
+  private minimapDots!: Phaser.GameObjects.Graphics; // masked contents
   private hudItems: HudItem[] = [];
   private itemGroup!: Phaser.Physics.Arcade.Group;
   private itemType = new Map<Sprite, ItemType>();
@@ -122,6 +129,23 @@ export class GameScene extends Phaser.Scene {
   // adventure objectives — collect tokens / rescue mates beyond raw survival
   private objGot = 0;
   private collectGroup!: Phaser.Physics.Arcade.Group;
+
+  // refuge levels — the gold ring grants ~5s of untaggable cover that
+  // drains while you hide and cools back while you run
+  private refugePos: { x: number; y: number; r: number } | null = null;
+  private refugeGfx: Phaser.GameObjects.Graphics | null = null;
+  private refugeLabel: Phaser.GameObjects.Text | null = null;
+  private refugeMs = REFUGE_COVER_MS;
+
+  // collect-twist levels — grabbing the quota freezes the leftover drops
+  // into hunters and opens the gold exit ring
+  private collectPhase2 = false;
+  private exitPos: { x: number; y: number; r: number } | null = null;
+  private exitGfx: Phaser.GameObjects.Graphics | null = null;
+
+  // mechanic intro card — pauses the countdown until dismissed
+  private introObjs: Phaser.GameObjects.GameObject[] = [];
+  private introActive = false;
 
   private timeText!: Phaser.GameObjects.Text;
   private infoText!: Phaser.GameObjects.Text;
@@ -179,6 +203,15 @@ export class GameScene extends Phaser.Scene {
     this.chaserLights = [];
     this.bus = null;
     this.busCollider = null;
+    this.refugePos = null;
+    this.refugeGfx = null;
+    this.refugeLabel = null;
+    this.refugeMs = REFUGE_COVER_MS;
+    this.collectPhase2 = false;
+    this.exitPos = null;
+    this.exitGfx = null;
+    this.introObjs = [];
+    this.introActive = false;
 
     // apply the picked difficulty — adventure levels override everything
     if (this.level) {
@@ -202,22 +235,36 @@ export class GameScene extends Phaser.Scene {
       this.mapSeed = Math.floor(Math.random() * 0xffffffff);
     }
 
+    // battlefield size — seeded per level so the same stop always has the
+    // same sprawl, and the road north gets bigger as you go
+    const growRng = seededRng(this.mapSeed ^ 0x5f3759df);
+    const grow =
+      1.12 + growRng() * 0.38 + (this.level ? Math.min(this.level.n * 0.0006, 0.3) : 0);
+    this.arenaW = Math.round((CONFIG.arena.width * grow) / 16) * 16;
+    this.arenaH = Math.round((CONFIG.arena.height * grow) / 16) * 16;
+
     // world bounds = the big arena, not the viewport
-    const { arena } = CONFIG;
-    this.physics.world.setBounds(0, 0, arena.width, arena.height);
+    this.physics.world.setBounds(0, 0, this.arenaW, this.arenaH);
 
     makeTextures(this);
     this.buildArena();
-    decorateYard(this, this.obstacleRects, seededRng(this.mapSeed ^ 0x9e3779b9));
+    decorateYard(
+      this,
+      this.obstacleRects,
+      seededRng(this.mapSeed ^ 0x9e3779b9),
+      this.arenaW,
+      this.arenaH,
+    );
 
     this.itemGroup = this.physics.add.group({ allowGravity: false, immovable: true });
     this.spawnEntities();
     this.spawnInitialItems();
     if (this.level?.objective.kind === 'collect') this.spawnCollectTokens();
+    if (this.level?.objective.kind === 'refuge') this.spawnRefuge();
 
     // camera lives on the player — the world is bigger than the screen now
     this.cameras.main
-      .setBounds(0, 0, arena.width, arena.height)
+      .setBounds(0, 0, this.arenaW, this.arenaH)
       .setZoom(CONFIG.camera.zoom)
       .setDeadzone(CONFIG.camera.deadzone.w, CONFIG.camera.deadzone.h)
       .startFollow(this.player, true, 0.1, 0.1);
@@ -287,13 +334,104 @@ export class GameScene extends Phaser.Scene {
     this.buildHud();
     this.relayout();
     this.events.once('shutdown', () => sfx.stopMusic());
+
+    // mechanic intro card — first-of-type levels and every milestone boss
+    if (this.level) {
+      const intro = levelIntro(this.level);
+      if (intro) this.showIntro(intro);
+    }
+  }
+
+  // ---------- mechanic intro card ----------
+
+  private introDismiss: (() => void) | null = null;
+
+  private showIntro(intro: { title: string; body: string }) {
+    this.introActive = true;
+    this.touch?.setActive(false);
+
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const z = CONFIG.camera.zoom;
+    const dim = this.add
+      .rectangle(w / 2, h / 2, (w * 1.5) / z, (h * 1.5) / z, 0x081420, 0.62)
+      .setDepth(28)
+      .setScrollFactor(0);
+
+    const pw = Math.min(560 / z, (w * 0.86) / z);
+    const ph = 250;
+    const card = panel(this, -pw / 2, -ph / 2, pw, ph, { depth: 0 });
+    const title = this.add
+      .text(0, -ph / 2 + 30, intro.title, {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '22px',
+        color: '#0f7fb8',
+        align: 'center',
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(1);
+    const body = this.add
+      .text(0, -ph / 2 + 76, intro.body, {
+        fontFamily: UI_FONT,
+        fontSize: '15px',
+        fontStyle: '600',
+        color: '#1c2a3a',
+        align: 'center',
+        lineSpacing: 7,
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(1);
+    const hint = this.add
+      .text(0, ph / 2 - 38, 'TAP TO PLAY', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '15px',
+        color: '#c98a00',
+      })
+      .setOrigin(0.5)
+      .setDepth(1);
+    const wrap = this.add.container(0, 0, [card, title, body, hint]).setDepth(29);
+    this.pin(wrap, 0.5, 0.5);
+    this.introObjs.push(dim, wrap);
+    this.relayout(); // pin() registers — layoutHud only places on relayout
+
+    if (!REDUCED_MOTION) {
+      this.tweens.add({ targets: hint, alpha: 0.3, duration: 550, yoyo: true, repeat: -1 });
+      wrap.setAlpha(0);
+      this.tweens.add({ targets: wrap, alpha: 1, duration: 200 });
+    }
+
+    this.introDismiss = () => this.dismissIntro();
+    this.input.on('pointerdown', this.introDismiss);
+    this.input.keyboard?.on('keydown', this.introDismiss);
+    this.events.once('shutdown', () => this.dropIntroListeners());
+  }
+
+  private dropIntroListeners() {
+    if (this.introDismiss) {
+      this.input.off('pointerdown', this.introDismiss);
+      this.input.keyboard?.off('keydown', this.introDismiss);
+      this.introDismiss = null;
+    }
+  }
+
+  private dismissIntro() {
+    if (!this.introActive) return;
+    this.introActive = false;
+    this.dropIntroListeners();
+    const dead = new Set(this.introObjs as unknown[]);
+    this.hudItems = this.hudItems.filter((h) => !dead.has(h.obj));
+    for (const o of this.introObjs) o.destroy();
+    this.introObjs = [];
+    this.touch?.setActive(true);
   }
 
   // ---------- world building ----------
 
   private buildArena() {
-    const { arena, colors } = CONFIG;
-    const { width, height, wall } = arena;
+    const { colors } = CONFIG;
+    const { wall } = CONFIG.arena;
+    const width = this.arenaW;
+    const height = this.arenaH;
 
     this.add.rectangle(width / 2, height / 2, width, height, colors.ground);
 
@@ -312,7 +450,7 @@ export class GameScene extends Phaser.Scene {
 
     // seeded neighborhood blocks — the layout that changes every game
     this.obstacleGroup = this.physics.add.staticGroup();
-    for (const o of generateLayout(this.mapSeed)) {
+    for (const o of generateLayout(this.mapSeed, width, height)) {
       const rect = this.add.rectangle(o.x, o.y, o.w, o.h, colors.obstacle);
       this.obstacleGroup.add(rect);
       this.obstacleRects.push(
@@ -329,13 +467,13 @@ export class GameScene extends Phaser.Scene {
   private spawnEntities() {
     const { arena } = CONFIG;
 
-    this.player = this.physics.add.sprite(arena.width * 0.65, arena.height * 0.5, 'player');
+    this.player = this.physics.add.sprite(this.arenaW * 0.65, this.arenaH * 0.5, 'player');
     (this.player.body as Body).setCircle(CONFIG.runner.radius + 2);
     this.runners.push(this.player);
     this.rState.set(this.player, this.freshRunner(this.player, 'YOU', null));
 
     for (let i = 0; i < this.crewSize; i++) {
-      const p = this.randomFreePos(arena.width * 0.35, arena.width - 60);
+      const p = this.randomFreePos(this.arenaW * 0.35, this.arenaW - 60);
       const r = this.physics.add.sprite(p.x, p.y, 'runner');
       (r.body as Body).setCircle(CONFIG.runner.radius + 2);
       this.runners.push(r);
@@ -345,7 +483,7 @@ export class GameScene extends Phaser.Scene {
 
     // militia — adventure levels can field a whole squad from the first whistle
     for (let i = 0; i < this.initialChasers; i++) {
-      const y = (arena.height / (this.initialChasers + 1)) * (i + 1);
+      const y = (this.arenaH / (this.initialChasers + 1)) * (i + 1);
       const chaser = this.physics.add.sprite(arena.wall + 40, y, 'chaser');
       (chaser.body as Body).setCircle(CONFIG.chaser.radius + 2);
       this.chasers.push(chaser);
@@ -438,10 +576,10 @@ export class GameScene extends Phaser.Scene {
 
   private randomFreePos(minX = 60, maxX?: number): Phaser.Math.Vector2 {
     const { arena } = CONFIG;
-    const x2 = maxX ?? arena.width - 60;
+    const x2 = maxX ?? this.arenaW - 60;
     for (let i = 0; i < 60; i++) {
       const x = Phaser.Math.Between(minX, x2);
-      const y = Phaser.Math.Between(arena.wall + 50, arena.height - arena.wall - 50);
+      const y = Phaser.Math.Between(arena.wall + 50, this.arenaH - arena.wall - 50);
       const blocked = this.obstacleRects.some((r) =>
         Phaser.Geom.Rectangle.Contains(
           new Phaser.Geom.Rectangle(r.x - 30, r.y - 30, r.width + 60, r.height + 60),
@@ -451,7 +589,7 @@ export class GameScene extends Phaser.Scene {
       );
       if (!blocked) return new Phaser.Math.Vector2(x, y);
     }
-    return new Phaser.Math.Vector2(arena.width / 2, arena.height / 2);
+    return new Phaser.Math.Vector2(this.arenaW / 2, this.arenaH / 2);
   }
 
   private spawnInitialItems() {
@@ -517,6 +655,162 @@ export class GameScene extends Phaser.Scene {
     sfx.pickup();
     t.destroy();
     this.objGot++;
+    if (
+      this.level?.twist &&
+      !this.collectPhase2 &&
+      this.objGot >= this.level.objective.count
+    ) {
+      this.triggerTwist();
+    }
+  }
+
+  // ---------- refuge — the gold safe ring ----------
+
+  private spawnRefuge() {
+    // center band — never sits on top of the player's spawn corner
+    const p = this.randomFreePos(this.arenaW * 0.25, this.arenaW * 0.75);
+    this.refugePos = { x: p.x, y: p.y, r: REFUGE_RADIUS };
+
+    const g = this.add.graphics().setDepth(1.4);
+    this.lit(g);
+    this.refugeGfx = g;
+    this.refugeLabel = this.lit(
+      this.add
+        .text(p.x, p.y - REFUGE_RADIUS - 18, 'SAFE RING', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '13px',
+          color: '#c98a00',
+          stroke: '#2b2115',
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5)
+        .setDepth(1.4),
+    );
+    this.drawRefuge();
+    if (!REDUCED_MOTION) {
+      this.tweens.add({
+        targets: this.refugeLabel,
+        y: this.refugeLabel.y - 6,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
+  }
+
+  private drawRefuge() {
+    const g = this.refugeGfx;
+    const pos = this.refugePos;
+    if (!g || !pos) return;
+    const charge = this.refugeMs / REFUGE_COVER_MS;
+    g.clear();
+    g.fillStyle(0xffd54a, 0.1 + charge * 0.14);
+    g.lineStyle(4, 0xffd54a, 0.35 + charge * 0.6);
+    g.fillCircle(pos.x, pos.y, pos.r);
+    g.strokeCircle(pos.x, pos.y, pos.r);
+    g.lineStyle(2, 0xffffff, 0.5);
+    g.strokeCircle(pos.x, pos.y, pos.r - 9);
+  }
+
+  /** is this runner currently under the ring's cover? */
+  private inRefuge(r: Sprite): boolean {
+    if (!this.refugePos || this.refugeMs <= 0) return false;
+    return (
+      Phaser.Math.Distance.Between(r.x, r.y, this.refugePos.x, this.refugePos.y) <=
+      this.refugePos.r
+    );
+  }
+
+  private updateRefuge(dt: number) {
+    if (!this.refugePos) return;
+    const inside = this.inRefuge(this.player);
+    if (inside) {
+      this.refugeMs = Math.max(0, this.refugeMs - dt * 1000);
+      if (this.refugeMs === 0) {
+        this.announce('RING DRIED UP — MOVE!');
+        this.shake(140, 0.006);
+      }
+    } else {
+      // cools back while you're out running — half rate, so dips cost you
+      const before = this.refugeMs;
+      this.refugeMs = Math.min(REFUGE_COVER_MS, this.refugeMs + dt * 500);
+      if (before === 0 && this.refugeMs > 0) this.announce('RING IS BACK');
+    }
+    this.drawRefuge();
+    this.refugeLabel?.setColor(this.refugeMs > 0 ? '#c98a00' : '#8a8a8a');
+  }
+
+  // ---------- collect twist — the water fights back ----------
+
+  /** quota reached: leftover drops freeze into hunters, exit ring opens */
+  private triggerTwist() {
+    this.collectPhase2 = true;
+    sfx.freeze();
+    this.showBanner('THE WATER TURNS!', 'Reach the gold ring — don\'t let it touch you');
+    this.time.delayedCall(2600, () => this.clearBanner());
+
+    const kids = this.collectGroup.getChildren() as Sprite[];
+    for (const drop of kids) {
+      const c = this.lit(
+        this.physics.add
+          .sprite(drop.x, drop.y, 'chaser')
+          .setScale(0.65)
+          .setTint(CONFIG.colors.frozen)
+          .setDepth(3),
+      ) as Sprite;
+      (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
+      this.chasers.push(c);
+      const cst = this.freshChaser(c);
+      cst.speedMult = 0.55; // hunters run cold — you can outpace them
+      cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
+      cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
+      this.cState.set(c, cst);
+      this.collideWithWorld(c);
+      this.burst(drop.x, drop.y, CONFIG.colors.frozen, 10, 140);
+      drop.destroy();
+    }
+
+    // exit ring — far side of the neighborhood from wherever you are
+    const { arena } = CONFIG;
+    const ex = this.player.x < this.arenaW / 2 ? this.arenaW * 0.8 : this.arenaW * 0.2;
+    const p = this.randomFreePos(ex - 150, ex + 150);
+    this.exitPos = { x: p.x, y: p.y, r: 70 };
+    this.exitGfx = this.lit(this.add.graphics().setDepth(1.4));
+    this.drawExit();
+    if (!REDUCED_MOTION) {
+      this.tweens.add({
+        targets: this.exitGfx,
+        alpha: { from: 1, to: 0.55 },
+        duration: 500,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
+  }
+
+  private drawExit() {
+    const g = this.exitGfx;
+    const pos = this.exitPos;
+    if (!g || !pos) return;
+    g.clear();
+    g.fillStyle(0xffd54a, 0.2);
+    g.lineStyle(5, 0xffd54a, 0.95);
+    g.fillCircle(pos.x, pos.y, pos.r);
+    g.strokeCircle(pos.x, pos.y, pos.r);
+    g.lineStyle(2, 0xffffff, 0.6);
+    g.strokeCircle(pos.x, pos.y, pos.r - 12);
+  }
+
+  private reachedExit(): boolean {
+    if (!this.exitPos) return false;
+    return (
+      Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        this.exitPos.x,
+        this.exitPos.y,
+      ) <= this.exitPos.r
+    );
   }
 
   // ---------- HUD ----------
@@ -629,45 +923,100 @@ export class GameScene extends Phaser.Scene {
 
     this.staminaGfx = this.add.graphics().setDepth(9);
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
+    // pinned identically to minimapDots — same layout transform keeps the
+    // mask glued to the contents it clips
+    this.minimapMaskGfx = this.pin(this.add.graphics().setDepth(27), 0, 0) as Phaser.GameObjects.Graphics;
+    this.minimapMaskGfx.setVisible(false); // geometry masks clip even when hidden
+    this.minimapDots = this.pin(this.add.graphics().setDepth(27), 0, 0) as Phaser.GameObjects.Graphics;
+    this.minimapDots.setMask(this.minimapMaskGfx.createGeometryMask());
   }
 
-  /** corner radar — the world is bigger than the screen now */
+  /** circular radar — shows only the neighbourhood around YOU, not the
+   *  whole battlefield. Distant militia stay out of sight. */
   private drawMinimap() {
-    const { arena } = CONFIG;
-    const mw = 178;
-    const mh = Math.round((mw * arena.height) / arena.width);
-    const x0 = this.scale.width - mw - 10;
-    const y0 = 44;
-    const sx = mw / arena.width;
-    const sy = mh / arena.height;
+    const R = 58; // radar radius, screen px
+    const RANGE = 820; // world units of coverage
+    const cx = this.scale.width - R - 16;
+    const cy = 52 + R;
+    const s = R / RANGE;
     const g = this.minimap;
+    const d = this.minimapDots;
+    const m = this.minimapMaskGfx;
 
     g.clear();
-    // rimmed card anatomy — offset dark base, white rim, ink face
-    g.fillStyle(0x0a1420, 0.55);
-    g.fillRoundedRect(x0 - 1, y0 - 1, mw + 18, mh + 18, 12);
-    g.fillStyle(0xffffff, 0.95);
-    g.fillRoundedRect(x0 - 5, y0 - 5, mw + 10, mh + 10, 10);
-    g.fillStyle(UI.ink, 0.92);
-    g.fillRoundedRect(x0 - 2, y0 - 2, mw + 4, mh + 4, 7);
+    d.clear();
+    m.clear();
 
-    // obstacle blocks
-    g.fillStyle(0x4a3f2e, 0.9);
-    for (const r of this.obstacleRects) {
-      g.fillRect(x0 + r.x * sx, y0 + r.y * sy, r.width * sx, r.height * sy);
+    // chrome — shadow, white rim, ink face
+    g.fillStyle(0x0a1420, 0.55).fillCircle(cx, cy, R + 7);
+    g.fillStyle(0xffffff, 0.95).fillCircle(cx, cy, R + 4);
+    g.fillStyle(UI.ink, 0.92).fillCircle(cx, cy, R + 1);
+    // range rings + crosshair
+    g.lineStyle(1, 0x7fd8f0, 0.22);
+    g.strokeCircle(cx, cy, R * 0.66).strokeCircle(cx, cy, R * 0.33);
+    g.lineStyle(1, 0x7fd8f0, 0.14);
+    g.lineBetween(cx - R, cy, cx + R, cy).lineBetween(cx, cy - R, cx, cy + R);
+    // rotating sweep
+    if (!REDUCED_MOTION) {
+      const a = (this.time.now / 1600) % (Math.PI * 2);
+      g.lineStyle(2, 0x7fd8f0, 0.45);
+      g.lineBetween(cx, cy, cx + Math.cos(a) * R, cy + Math.sin(a) * R);
     }
-    const dot = (x: number, y: number, color: number, r: number) => {
-      g.fillStyle(color, 0.95);
-      g.fillCircle(x0 + x * sx, y0 + y * sy, r);
+
+    // contents — everything clipped to the circle
+    m.fillStyle(0xffffff).fillCircle(cx, cy, R);
+    const px = this.player.x;
+    const py = this.player.y;
+    const toMapX = (wx: number) => cx + (wx - px) * s;
+    const toMapY = (wy: number) => cy + (wy - py) * s;
+
+    // arena walls when near an edge
+    d.lineStyle(2, 0xffffff, 0.28);
+    d.strokeRect(toMapX(0), toMapY(0), this.arenaW * s, this.arenaH * s);
+
+    // obstacle blocks in range
+    d.fillStyle(0x4a3f2e, 0.9);
+    for (const r of this.obstacleRects) {
+      const rx = r.x + r.width / 2;
+      const ry = r.y + r.height / 2;
+      if (Math.abs(rx - px) > RANGE + 300 || Math.abs(ry - py) > RANGE + 300) continue;
+      d.fillRect(
+        toMapX(rx) - (r.width * s) / 2,
+        toMapY(ry) - (r.height * s) / 2,
+        r.width * s,
+        r.height * s,
+      );
+    }
+
+    const inRange = (wx: number, wy: number) =>
+      Math.abs(wx - px) <= RANGE && Math.abs(wy - py) <= RANGE;
+    const dot = (wx: number, wy: number, color: number, rad: number) => {
+      if (!inRange(wx, wy)) return;
+      d.fillStyle(color, 0.95);
+      d.fillCircle(toMapX(wx), toMapY(wy), rad);
     };
-    for (const c of this.chasers) dot(c.x, c.y, CONFIG.colors.chaser, 2.6);
+
+    // rings worth navigating to
+    if (this.refugePos) {
+      const p = this.refugePos;
+      dot(p.x, p.y, 0xffd54a, 4);
+    }
+    if (this.exitPos) {
+      const p = this.exitPos;
+      dot(p.x, p.y, 0xffd54a, 4);
+    }
+    // danfo
+    if (this.bus) dot(this.bus.x, this.bus.y, 0xf7bd14, 3.4);
+    // militia — only what the sweep can see
+    for (const c of this.chasers) dot(c.x, c.y, CONFIG.colors.chaser, 2.8);
     for (const r of this.runners) {
       const st = this.rState.get(r)!;
       if (st.isPlayer) continue;
       dot(r.x, r.y, st.frozen ? CONFIG.colors.frozen : CONFIG.colors.runner, 2.4);
     }
-    // you — white ring so you never lose yourself
-    dot(this.player.x, this.player.y, 0xffffff, 3.4);
+    // YOU — always dead center, white ring
+    d.fillStyle(0xffffff, 1).fillCircle(cx, cy, 3.6);
+    d.lineStyle(1.4, 0x2f9bff, 0.9).strokeCircle(cx, cy, 5.4);
   }
 
   private showBanner(main: string, sub = '') {
@@ -888,6 +1237,8 @@ export class GameScene extends Phaser.Scene {
     if (this.phase !== 'play') return;
     const st = this.rState.get(runner)!;
     if (st.frozen || this.time.now < st.immuneUntil) return;
+    if (this.time.now < (this.cState.get(chaser)?.noTagUntil ?? 0)) return;
+    if (this.inRefuge(runner)) return; // under the gold ring's cover
 
     const d = Phaser.Math.Distance.Between(chaser.x, chaser.y, runner.x, runner.y);
     if (d > CONFIG.tagRange + CONFIG.runner.radius) return;
@@ -1001,6 +1352,12 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     const now = this.time.now;
 
+    // mechanic intro card owns the round until dismissed — countdown waits
+    if (this.introActive) {
+      this.updatePresentation(delta);
+      return;
+    }
+
     if (this.paused) {
       if (
         Phaser.Input.Keyboard.JustDown(this.keys.ESC) ||
@@ -1078,7 +1435,9 @@ export class GameScene extends Phaser.Scene {
       const done =
         !o ||
         o.kind === 'survive' ||
-        (o.kind === 'collect' && this.objGot >= o.count) ||
+        o.kind === 'refuge' ||
+        (o.kind === 'collect' && !this.level?.twist && this.objGot >= o.count) ||
+        (o.kind === 'collect' && this.level?.twist && this.collectPhase2 && this.reachedExit()) ||
         (o.kind === 'rescue' && this.playerRescues >= o.count);
       return this.endGame(!done, true);
     }
@@ -1095,6 +1454,7 @@ export class GameScene extends Phaser.Scene {
     this.aiUseWater();
     this.updateEvents(dt);
     this.updateNepaLights();
+    this.updateRefuge(dt);
     this.updateDanger();
     this.updateHud();
     this.updatePresentation(delta);
@@ -1104,7 +1464,8 @@ export class GameScene extends Phaser.Scene {
     if (this.level) {
       const o = this.level.objective;
       const done =
-        (o.kind === 'collect' && this.objGot >= o.count) ||
+        (o.kind === 'collect' && !this.level.twist && this.objGot >= o.count) ||
+        (o.kind === 'collect' && this.collectPhase2 && this.reachedExit()) ||
         (o.kind === 'rescue' && this.playerRescues >= o.count);
       if (done) return this.endGame(false);
     }
@@ -1142,7 +1503,7 @@ export class GameScene extends Phaser.Scene {
   private spawnReinforcement() {
     this.reinforced = true;
     for (let i = 0; i < this.reinforceCount; i++) {
-      const p = this.randomFreePos(CONFIG.arena.wall + 40, CONFIG.arena.width * 0.4);
+      const p = this.randomFreePos(CONFIG.arena.wall + 40, this.arenaW * 0.4);
       const c = this.physics.add.sprite(p.x, p.y, 'chaser');
       (c.body as Body).setCircle(CONFIG.chaser.radius + 2);
       this.chasers.push(c);
@@ -1374,7 +1735,7 @@ export class GameScene extends Phaser.Scene {
   private blocked(x: number, y: number): boolean {
     const { arena } = CONFIG;
     const m = arena.wall + 16;
-    if (x < m || x > arena.width - m || y < m || y > arena.height - m) return true;
+    if (x < m || x > this.arenaW - m || y < m || y > this.arenaH - m) return true;
     return this.obstacleRects
       .some((r) =>
         Phaser.Geom.Rectangle.Contains(
@@ -1491,7 +1852,7 @@ export class GameScene extends Phaser.Scene {
 
     // bus rolls through
     if (this.bus) {
-      if (this.bus.x > CONFIG.arena.width + 90 || this.bus.x < -90) {
+      if (this.bus.x > this.arenaW + 90 || this.bus.x < -90) {
         this.busCollider?.destroy();
         this.bus.destroy();
         this.bus = null;
@@ -1515,10 +1876,10 @@ export class GameScene extends Phaser.Scene {
 
   private spawnDanfo() {
     const { arena, events } = CONFIG;
-    const y = Phaser.Math.Between(arena.wall + 80, arena.height - arena.wall - 80);
+    const y = Phaser.Math.Between(arena.wall + 80, this.arenaH - arena.wall - 80);
     const fromLeft = Math.random() < 0.5;
     const bus = this.lit(
-      this.physics.add.sprite(fromLeft ? -80 : arena.width + 80, y, 'bus'),
+      this.physics.add.sprite(fromLeft ? -80 : this.arenaW + 80, y, 'bus'),
     ) as Sprite;
     bus.setFlipX(!fromLeft);
     bus.setDepth(3);
@@ -1586,7 +1947,7 @@ export class GameScene extends Phaser.Scene {
     sfx.rain();
 
     const em = this.add.particles(0, -20, 'dot', {
-      x: { min: 0, max: arena.width },
+      x: { min: 0, max: this.arenaW },
       y: -20,
       speedY: { min: 420, max: 560 },
       speedX: { min: -60, max: -20 },
@@ -1981,11 +2342,21 @@ export class GameScene extends Phaser.Scene {
 
     if (this.level) {
       const o = this.level.objective;
-      const prog =
-        o.kind === 'collect' ? ` · ${this.objGot}/${o.count}` : o.kind === 'rescue' ? ` · ${this.playerRescues}/${o.count}` : '';
-      this.objText.setText(
-        `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}`,
-      );
+      if (this.collectPhase2) {
+        this.objText.setText(`${this.level.name} · REACH THE GOLD RING!`);
+      } else {
+        const prog =
+          o.kind === 'collect'
+            ? ` · ${this.objGot}/${o.count}`
+            : o.kind === 'rescue'
+              ? ` · ${this.playerRescues}/${o.count}`
+              : o.kind === 'refuge'
+                ? ` · ring ${(this.refugeMs / 1000).toFixed(0)}s`
+                : '';
+        this.objText.setText(
+          `${this.level.name}${this.level.boss ? ' — ' + this.level.boss : ''} · ${objectiveText(this.level)}${prog}`,
+        );
+      }
     }
 
     this.teamDots.forEach((dot, i) => {
