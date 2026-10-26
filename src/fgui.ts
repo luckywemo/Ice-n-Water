@@ -337,9 +337,12 @@ export function fgTopBar(
       })
       .setOrigin(0.5)
       .setDepth(31);
-  ui.push(bumper(vw / 2 - total / 2 - 34, 'LB'));
-  ui.push(bumper(vw / 2 + total / 2 + 34, 'RB'));
-  let x = vw / 2 - total / 2;
+  // centre on the VISIBLE band, not vw/2 — letterboxed callers pass edge
+  // anchors in a wider coordinate space, and vw/2 drifts left of centre
+  const cx0 = (exL + exR) / 2;
+  ui.push(bumper(cx0 - total / 2 - 34, 'LB'));
+  ui.push(bumper(cx0 + total / 2 + 34, 'RB'));
+  let x = cx0 - total / 2;
   const cham = 7; // "/" slant on the group's outer ends
   const iconBtns: { g: Phaser.GameObjects.Graphics; draw: (on: boolean) => void }[] = [];
   items.forEach((it, i) => {
