@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HUD_SCALE, HudItem, REDUCED_MOTION, shade } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HudItem, REDUCED_MOTION, shade, viewZoom, hudFactor } from '../ui';
 import {
   LevelDef,
   levelIntro,
@@ -130,6 +130,9 @@ export class GameScene extends Phaser.Scene {
   private lastEvent: EventKind | null = null;
   private slipperyUntil = 0;
   private helpUntil = 0; // COME SAVE ME ping — brave mates come running
+  private zoom: number = CONFIG.camera.zoom; // live camera zoom — viewZoom() adapts it to the screen
+  private hf = 1; // HUD shrink factor for small screens
+  private lastDotDock = -1;
   private nepaUntil = 0;
   private playerLight: Phaser.GameObjects.Light | null = null;
   private chaserLights: Phaser.GameObjects.Light[] = [];
@@ -317,7 +320,7 @@ export class GameScene extends Phaser.Scene {
     // camera lives on the player — the world is bigger than the screen now
     this.cameras.main
       .setBounds(0, 0, this.arenaW, this.arenaH)
-      .setZoom(CONFIG.camera.zoom)
+      .setZoom(viewZoom(this.scale.width, this.scale.height))
       .setDeadzone(CONFIG.camera.deadzone.w, CONFIG.camera.deadzone.h)
       .startFollow(this.player, true, 0.1, 0.1);
 
@@ -415,7 +418,7 @@ export class GameScene extends Phaser.Scene {
 
     const w = this.scale.width;
     const h = this.scale.height;
-    const z = CONFIG.camera.zoom;
+    const z = this.zoom;
     const dim = this.add
       .rectangle(w / 2, h / 2, (w * 1.5) / z, (h * 1.5) / z, 0x081420, 0.62)
       .setDepth(28)
@@ -993,16 +996,25 @@ export class GameScene extends Phaser.Scene {
   private relayout() {
     const w = this.scale.width;
     const h = this.scale.height;
-    const z = CONFIG.camera.zoom;
-    layoutHud(this.hudItems, w, h, z);
+    this.zoom = viewZoom(w, h);
+    this.hf = hudFactor(w, h);
+    this.cameras.main.setZoom(this.zoom);
+    layoutHud(this.hudItems, w, h, this.zoom, this.hf);
     // vignette covers the whole screen, centered
-    this.vignette.setPosition(w / 2, h / 2).setDisplaySize((w * 1.25) / z, (h * 1.25) / z);
+    this.vignette
+      .setPosition(w / 2, h / 2)
+      .setDisplaySize((w * 1.25) / this.zoom, (h * 1.25) / this.zoom);
+  }
+
+  /** rendered scale of authored-size HUD text under live zoom + shrink */
+  private hs() {
+    return this.hf / this.zoom;
   }
 
   private buildHud() {
     const style = { fontFamily: UI_FONT, fontSize: '19px', fontStyle: '600', color: '#1c2a3a' };
 
-    this.pin(panel(this, 14, 8, this.level ? 340 : 240, this.level ? 78 : 62), 0, 0);
+    this.pin(panel(this, 14, 8, this.level ? 356 : 240, this.level ? 78 : 62), 0, 0);
     this.timeText = this.pin(
       this.add.text(0, 0, '', { ...style, fontFamily: DISPLAY_FONT, fontSize: '17px' }).setDepth(10),
       0, 0, 28, 14,
@@ -1106,7 +1118,9 @@ export class GameScene extends Phaser.Scene {
   private drawMinimap() {
     const R = 58; // radar radius, screen px
     const RANGE = 820; // world units of coverage
-    const cx = this.scale.width - R - 16;
+    // the pinned object renders local coords × hf — w/hf lands the disc at
+    // the right screen edge even when the HUD is shrunk on small screens
+    const cx = this.scale.width / this.hf - R - 16;
     const cy = 52 + R;
     const s = R / RANGE;
     const g = this.minimap;
@@ -1199,7 +1213,7 @@ export class GameScene extends Phaser.Scene {
       this.bannerText.setScale(0.5);
       this.bannerTween = this.tweens.add({
         targets: this.bannerText,
-        scale: HUD_SCALE,
+        scale: this.hs(),
         duration: 380,
         ease: 'Back.easeOut',
       });
@@ -1565,8 +1579,8 @@ export class GameScene extends Phaser.Scene {
       if (shown !== this.countdownShown && shown > 0) {
         this.countdownShown = shown;
         this.countText.setText(String(shown));
-        this.countText.setScale(1.4 * HUD_SCALE);
-        this.tweens.add({ targets: this.countText, scale: HUD_SCALE, duration: 250 });
+        this.countText.setScale(1.4 * this.hs());
+        this.tweens.add({ targets: this.countText, scale: this.hs(), duration: 250 });
         sfx.tick();
       }
       if (this.countdownLeft <= 0) {
@@ -2637,9 +2651,20 @@ export class GameScene extends Phaser.Scene {
     const lvl = this.level ? `LVL ${this.level.n} · ` : '';
     this.infoText.setText(
       this.huntMode
-        ? `${lvl}TARGETS ${this.runners.length - frozenCount - 1} free · ${frozenCount} caught`
-        : `${lvl}CREW ${this.runners.length - frozenCount} free${frozenCount ? ` · ${frozenCount} frozen` : ''}`,
+        ? `${lvl}TAG ${this.runners.length - frozenCount - 1} free · ${frozenCount} caught`
+        : `${lvl}CREW ${this.runners.length - frozenCount} free${frozenCount ? ` · ${frozenCount} iced` : ''}`,
     );
+    // dock the team dots right after the info line — text width varies per
+    // level so a fixed offset either collides or leaves a gap
+    const dockX = 28 + this.infoText.width + 12;
+    if (Math.abs(dockX - this.lastDotDock) > 1) {
+      this.lastDotDock = dockX;
+      for (const it of this.hudItems) {
+        const di = this.teamDots.indexOf(it.obj as Sprite);
+        if (di >= 0) it.ox = dockX + di * 16;
+      }
+      layoutHud(this.hudItems, this.scale.width, this.scale.height, this.zoom, this.hf);
+    }
 
     if (this.level) {
       const o = this.level.objective;

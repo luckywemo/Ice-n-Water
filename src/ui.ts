@@ -148,18 +148,25 @@ export function pinHud(
   return obj;
 }
 
-/** place all pinned items for the given canvas size + camera zoom */
-export function layoutHud(items: HudItem[], w: number, h: number, zoom: number) {
+/** place all pinned items for the given canvas size + camera zoom.
+ *  hf shrinks the whole HUD on small screens — offsets and scale both. */
+export function layoutHud(
+  items: HudItem[],
+  w: number,
+  h: number,
+  zoom: number,
+  hf = 1,
+) {
   // Camera transform for sf=0 objects: screen = center + zoom·(pos - center)
   // (zoom pivots around the view midpoint even without scroll).
   // Inverting: pos = center + (screen - center)/zoom.
   const cx = w / 2;
   const cy = h / 2;
   for (const it of items) {
-    const sx = it.ax * w + it.ox;
-    const sy = it.ay * h + it.oy;
+    const sx = it.ax * w + it.ox * hf;
+    const sy = it.ay * h + it.oy * hf;
     it.obj.setPosition(cx + (sx - cx) / zoom, cy + (sy - cy) / zoom);
-    it.obj.setScale?.(it.baseScale / zoom);
+    it.obj.setScale?.((it.baseScale * hf) / zoom);
   }
 }
 
@@ -174,7 +181,18 @@ export function screenToHudWorld(
   return { x: w / 2 + (sx - w / 2) / zoom, y: h / 2 + (sy - h / 2) / zoom };
 }
 
-export const HUD_SCALE = 1 / CONFIG.camera.zoom;
+export const HUD_SCALE = 1 / CONFIG.camera.zoom; // legacy fixed-zoom scale — new code should use viewZoom()/hudFactor()
+
+/** responsive follow-camera zoom — 1280×800 keeps the authored 1.15,
+ *  smaller screens zoom out so the field doesn't fill the whole phone */
+export function viewZoom(w: number, h: number): number {
+  return Math.min(1.15, Math.max(0.58, Math.min(w / 1100, h / 700) * 1.15));
+}
+
+/** how much to shrink pinned HUD on small screens (1 = authored size) */
+export function hudFactor(w: number, h: number): number {
+  return Math.min(1, Math.max(0.62, Math.min(w / 900, h / 560)));
+}
 
 /**
  * The schoolyard at dusk — shared menu backdrop. Gradient sky, painted

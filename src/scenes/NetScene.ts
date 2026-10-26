@@ -4,7 +4,7 @@ import { SERVER_URL } from '../net';
 import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade, viewZoom, hudFactor } from '../ui';
 import { TouchControls } from '../mobile';
 import { loadPicks } from '../meta';
 import { generateLayout, seededRng } from '../mapgen';
@@ -129,7 +129,7 @@ export class NetScene extends Phaser.Scene {
     // camera rides on you — the neighborhood is bigger than the screen
     this.cameras.main
       .setBounds(0, 0, arena.width, arena.height)
-      .setZoom(CONFIG.camera.zoom)
+      .setZoom(viewZoom(this.scale.width, this.scale.height))
       .setDeadzone(CONFIG.camera.deadzone.w, CONFIG.camera.deadzone.h)
       .startFollow(this.me, true, 0.1, 0.1);
 
@@ -224,7 +224,9 @@ export class NetScene extends Phaser.Scene {
   }
 
   private relayout() {
-    layoutHud(this.hudItems, this.scale.width, this.scale.height, CONFIG.camera.zoom);
+    const w = this.scale.width;
+    const h = this.scale.height;
+    layoutHud(this.hudItems, w, h, viewZoom(w, h), hudFactor(w, h));
   }
 
   private buildArena() {
@@ -446,7 +448,7 @@ export class NetScene extends Phaser.Scene {
     this.tweens.add({
       targets: t,
       alpha: 0,
-      y: t.y - 30 / CONFIG.camera.zoom,
+      y: t.y - 30 / viewZoom(this.scale.width, this.scale.height),
       delay: 2100,
       duration: 350,
       onComplete: () => {
