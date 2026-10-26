@@ -292,6 +292,8 @@ export class Hero3D {
   private furLastP = { x: -1, y: -1 };
   private furCv: HTMLCanvasElement | null = null;
   private furCvCtx: CanvasRenderingContext2D | null = null;
+  // coat preset — scenes assign the Bean FPS tier's FurQuality at create
+  furQ = { fluff: 0.85, mess: 0.3, density: 1.55 };
 
   /** Draw the fur coat over the composited bean frame.
    *  Call AFTER the WebGL frame is drawn into `ctx`.
@@ -304,8 +306,9 @@ export class Hero3D {
       R = 52,
       R2 = R * R;
     const d = ctx.getImageData(0, 0, W, H).data;
+    // floor before indexing — furQ strides are fractional
     const a = (x: number, y: number) =>
-      x < 0 || y < 0 || x >= W || y >= H ? 0 : d[(y * W + x) * 4 + 3];
+      x < 0 || y < 0 || x >= W || y >= H ? 0 : d[((y | 0) * W + (x | 0)) * 4 + 3];
     // face mask via flood fill — a local colour test can't separate the
     // face from big specular sheens, so we flood the pale region from a
     // seed in the face's expected area. Disconnected highlights stay
@@ -477,14 +480,19 @@ export class Hero3D {
     ctx.drawImage(this.furCv!, 0, 0);
 
     // ---- strands ----
+    // the furQ preset drives stride (density), strand length (fluff),
+    // and the jitter/curve amplitudes (mess)
     const cowX = W * 0.5,
       cowY = H * 0.3,
       down = Math.PI / 2;
+    const q = this.furQ,
+      stride = 3 / Math.sqrt(q.density),
+      fstride = 5 / Math.sqrt(q.density);
     const restAngle = (x: number, y: number) => {
       const fromCow = Math.atan2(y - cowY, x - cowX);
       const clump = (Math.sin(x * 0.04) + Math.cos(y * 0.035)) * 0.3;
       let an = fromCow + (((down - fromCow + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.5;
-      an += clump * 0.35 + (nz(x, y, 1) - 0.5) * 0.55;
+      an += clump * 0.35 + (nz(x, y, 1) - 0.5) * q.mess;
       return an;
     };
     type Strand = { x: number; y: number; a: number; l: number; c: number; s: number };
@@ -493,11 +501,12 @@ export class Hero3D {
       hi: Strand[] = [],
       fringe: Strand[] = [];
 
-    // interior coat — stride-3 sample of body pixels, layered like theirs
-    for (let y = 4; y < H - 4; y += 3)
-      for (let x = 4; x < W - 4; x += 3) {
+    // interior coat
+
+    for (let y = 4; y < H - 4; y += stride)
+      for (let x = 4; x < W - 4; x += stride) {
         if (!body(x, y)) continue;
-        const len = 9 + nz(x, y, 4) * 8;
+        const len = (9 + nz(x, y, 4) * 8) * q.fluff;
         const ang = restAngle(x, y);
         // skip strands that would stroke into the face region
         const tx = x + Math.cos(ang) * len,
@@ -509,14 +518,14 @@ export class Hero3D {
           y,
           a: ang,
           l: len,
-          c: (nz(x, y, 5) - 0.5) * len * 0.7,
+          c: (nz(x, y, 5) - 0.5) * len * q.mess,
           s: nz(x, y, 8),
         };
         (roll < 0.4 ? under : roll < 0.92 ? mid : hi).push(s);
       }
     // fringe — perimeter strands pointing outward
-    for (let y = 5; y < H - 5; y += 5)
-      for (let x = 5; x < W - 5; x += 5) {
+    for (let y = 5; y < H - 5; y += fstride)
+      for (let x = 5; x < W - 5; x += fstride) {
         if (!body(x, y)) continue;
         if (
           a(x - 6, y) > 100 &&
@@ -530,9 +539,9 @@ export class Hero3D {
         const nl = Math.hypot(nx, ny) || 1;
         const out = Math.atan2(ny / nl, nx / nl);
         let an = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
-        an += (nz(x, y, 3) - 0.5) * 0.5;
-        const len = 9 + nz(x, y, 4) * 8;
-        fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * 0.7, s: nz(x, y, 8) });
+        an += (nz(x, y, 3) - 0.5) * q.mess;
+        const len = (9 + nz(x, y, 4) * 8) * q.fluff;
+        fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * q.mess, s: nz(x, y, 8) });
       }
 
     ctx.save();

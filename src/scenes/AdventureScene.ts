@@ -4,7 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { loadStats, perfInterval } from '../meta';
+import { loadStats, perfInterval, furQuality } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -1013,6 +1013,7 @@ export class AdventureScene extends Phaser.Scene {
     // ~0.65 world-units and flips around the body centre, so the frame
     // needs real headroom (visible world top 3.29) and flap room (±1.59)
     const hero = (this.hero3d = new Hero3D(560, 700, 6.5));
+    hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
       const copy = (this.heroCv = document.createElement('canvas'));

@@ -9,6 +9,18 @@ export type PerfMode = 'low' | 'balanced' | 'high';
 export const PERF_MS: Record<PerfMode, number> = { low: 66, balanced: 33, high: 16 };
 export const PERF_ORDER: PerfMode[] = ['low', 'balanced', 'high'];
 export const PERF_LABEL: Record<PerfMode, string> = { low: '15 FPS', balanced: '30 FPS', high: '60 FPS' };
+// the FPS pick also carries the coat preset — low is trimmed+thin+cheap,
+// high is shaggy+plush+pricier. Balanced values are the reference look.
+export interface FurQuality {
+  fluff: number; // strand length scale
+  mess: number; // angle + curve jitter amplitude
+  density: number; // sampling density (1 ≈ one strand per 3px)
+}
+export const FUR_Q: Record<PerfMode, FurQuality> = {
+  low: { fluff: 0.7, mess: 0.22, density: 1.0 },
+  balanced: { fluff: 0.85, mess: 0.3, density: 1.55 },
+  high: { fluff: 1.0, mess: 0.4, density: 2.2 },
+};
 
 export interface DiffPreset {
   label: string;
@@ -92,4 +104,9 @@ export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating', per
 /** ms between bean composites — read once per scene, not per frame */
 export function perfInterval(): number {
   return PERF_MS[loadPicks().perf];
+}
+
+/** the coat preset riding on the Bean FPS pick */
+export function furQuality(): FurQuality {
+  return FUR_Q[loadPicks().perf];
 }

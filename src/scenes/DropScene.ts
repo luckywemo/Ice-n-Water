@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Hero3D } from '../hero3d';
 import { DISPLAY_FONT, UI_FONT, REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT } from '../fgui';
-import { DIFFS, Difficulty, perfInterval } from '../meta';
+import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
 
 // DropScene — the FALL GUYS "populating" beat, retold our way: the furry
@@ -67,6 +67,7 @@ export class DropScene extends Phaser.Scene {
     // flippers and trailing feet keep full margins, and the top-down
     // angle keeps the face readable in the belly-first posture
     const hero = (this.hero3d = new Hero3D(760, 700, 6.5, 3.1, 0.85));
+    hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
       const cv = (this.heroCv = document.createElement('canvas'));

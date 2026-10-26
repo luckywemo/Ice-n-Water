@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, PerfMode } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { TouchControls } from '../mobile';
@@ -368,6 +368,7 @@ export class TitleScene extends Phaser.Scene {
     // roomy buffer + deeper camera — hops and flap tips keep margin, same
     // px/world density as the map bean so it displays identical size
     this.hero3d = new Hero3D(640, 700, 6.5);
+    this.hero3d.furQ = FUR_Q[this.perf]; // the Bean FPS pick carries the coat
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
       // and kills scene boot. Blit three's frame into a plain 2d canvas instead.
@@ -807,6 +808,7 @@ export class TitleScene extends Phaser.Scene {
       const i = PERF_ORDER.indexOf(this.perf);
       this.perf = PERF_ORDER[(i + dir + PERF_ORDER.length) % PERF_ORDER.length];
       this.heroMs = PERF_MS[this.perf];
+      if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
       this.refreshPicks();
     });
     if (isTouch) {
