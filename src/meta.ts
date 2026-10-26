@@ -3,6 +3,12 @@
 export type Difficulty = 'easy' | 'normal' | 'hard';
 // 'floating' — joystick appears where the thumb lands; 'sticky' — fixed spot
 export type JoyMode = 'floating' | 'sticky';
+// bean composite rate — the live WebGL+fur bean is the heavy per-frame cost,
+// so this is the real perf lever (the engine itself is vsync-locked anyway)
+export type PerfMode = 'low' | 'balanced' | 'high';
+export const PERF_MS: Record<PerfMode, number> = { low: 66, balanced: 33, high: 16 };
+export const PERF_ORDER: PerfMode[] = ['low', 'balanced', 'high'];
+export const PERF_LABEL: Record<PerfMode, string> = { low: '15 FPS', balanced: '30 FPS', high: '60 FPS' };
 
 export interface DiffPreset {
   label: string;
@@ -58,7 +64,7 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
   return s;
 }
 
-export function loadPicks(): { difficulty: Difficulty; joy: JoyMode } {
+export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfMode } {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
     if (raw) {
@@ -66,18 +72,24 @@ export function loadPicks(): { difficulty: Difficulty; joy: JoyMode } {
       return {
         difficulty: ['easy', 'normal', 'hard'].includes(p.difficulty) ? p.difficulty : 'normal',
         joy: p.joy === 'sticky' ? 'sticky' : 'floating',
+        perf: PERF_ORDER.includes(p.perf) ? p.perf : 'balanced',
       };
     }
   } catch {
     /* fall through */
   }
-  return { difficulty: 'normal', joy: 'floating' };
+  return { difficulty: 'normal', joy: 'floating', perf: 'balanced' };
 }
 
-export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating') {
+export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating', perf: PerfMode = 'balanced') {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf }));
   } catch {
     /* fine */
   }
+}
+
+/** ms between bean composites — read once per scene, not per frame */
+export function perfInterval(): number {
+  return PERF_MS[loadPicks().perf];
 }

@@ -4,7 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { loadStats } from '../meta';
+import { loadStats, perfInterval } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -62,7 +62,8 @@ export class AdventureScene extends Phaser.Scene {
   private heroCv?: HTMLCanvasElement;
   private heroCtx?: CanvasRenderingContext2D;
   private heroImg?: Phaser.GameObjects.Image;
-  private heroLastT = 0; // 30fps throttle on the composite
+  private heroLastT = 0; // throttle on the composite
+  private heroMs = 33; // ms between composites — the Bean FPS pick
   private visH = VH;
   private railY = 0;
   private railX0 = 68; // first card's centre-x — viewLeft is 0, so it hugs the screen edge
@@ -117,6 +118,7 @@ export class AdventureScene extends Phaser.Scene {
     this.boardHit = [];
     this.marching = false;
     this.stripImgs = [];
+    this.heroMs = perfInterval(); // re-read per create — the pick can change
     this.cameras.main.setBackgroundColor(FG.cyan);
     this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
 
@@ -455,8 +457,8 @@ export class AdventureScene extends Phaser.Scene {
     }
 
     // live bean — same pipeline as the lobby: WebGL frame + fur composite
-    // re-uploaded at 30fps; full-rate would churn ~120MB/s of canvas work
-    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg && this.time.now - this.heroLastT >= 33) {
+    // re-uploaded at the user's Bean FPS; full-rate churns ~120MB/s of canvas
+    if (this.hero3d?.ok && this.hero3d.canvas && this.heroCtx && this.heroImg && this.time.now - this.heroLastT >= this.heroMs) {
       this.heroLastT = this.time.now;
       this.hero3d.update(this.time.now);
       this.heroCtx.clearRect(0, 0, 560, 700);
