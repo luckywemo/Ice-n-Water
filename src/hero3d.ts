@@ -16,10 +16,14 @@ const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 // gear bolts a head-mounted extra onto the crown. Pickable cast lives
 // in characters.ts.
 export type BeanShape = 'bean' | 'round' | 'tall';
-export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown';
+export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown' | 'frost';
 export interface BeanModel {
   shape?: BeanShape;
   gear?: BeanGear;
+  /** angry brow-V over the eyes — the hunters' glare */
+  rage?: boolean;
+  /** coat strand length multiplier — the ice runs shaggy */
+  furLen?: number;
 }
 
 export class Hero3D {
@@ -47,6 +51,7 @@ export class Hero3D {
   private gearParts: THREE.Object3D[] = [];
   private gearCv?: HTMLCanvasElement;
   private gearCtx?: CanvasRenderingContext2D;
+  private furLen = 1; // drawFur strand-length multiplier
   // --- animation state ---
   private sq = 0; // jelly: + stretch, − squash
   private sqVel = 0;
@@ -143,6 +148,7 @@ export class Hero3D {
     const faceZ = 0.55 * (shZ / 0.95); // keep the face proud of the surface
     const eyeZ = 0.72 * (shZ / 0.95);
     const eyeX = 0.16 * (shape === 'tall' ? 0.8 : 1);
+    this.furLen = model.furLen ?? 1;
 
     const body = (this.bodyMat = mat(BODY, 0.3));
     const skin = (this.skinMat = mat(SKIN, 0.38));
@@ -196,9 +202,9 @@ export class Hero3D {
         for (let v = 0; v < gp.count; v++)
           gp.setXYZ(
             v,
-            pos.getX(v) + gn.getX(v) * 0.04 * t,
-            pos.getY(v) + gn.getY(v) * 0.04 * t,
-            pos.getZ(v) + gn.getZ(v) * 0.04 * t,
+            pos.getX(v) + gn.getX(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
+            pos.getY(v) + gn.getY(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
+            pos.getZ(v) + gn.getZ(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
           );
         const shellMat = new THREE.MeshStandardMaterial({
           color: BODY,
@@ -268,6 +274,18 @@ export class Hero3D {
     // rides every squash/splat/spin automatically. ---
     {
       const topY = 1.16 + 1.07 * shY; // crown of the torso capsule
+
+      // rage brows — the V-glare that turns a bean into a hunter. Not
+      // headgear, but riding gearParts keeps the fur off them.
+      if (model.rage) {
+        for (const side of [-1, 1] as const) {
+          const brow = mesh(new THREE.CapsuleGeometry(0.045, 0.18, 6, 12), dark, 0, 0, 0);
+          brow.position.set(side * eyeX * 1.15, 1.78, eyeZ + 0.02);
+          brow.rotation.z = side * 0.6; // inner ends dive toward the nose
+          this.gearParts.push(brow);
+        }
+      }
+
       const gear = model.gear ?? 'none';
       if (gear === 'cap' || gear === 'hardhat') {
         const hatMat =
@@ -355,6 +373,31 @@ export class Hero3D {
               Math.sin(a) * 0.165 + 0.02,
             ),
           );
+        }
+      } else if (gear === 'frost') {
+        // icicles — translucent drips hanging off the coat's crown edge,
+        // like the melt is still deciding whether to freeze you
+        const ice = new THREE.MeshPhysicalMaterial({
+          color: 0xc9ecf8,
+          transparent: true,
+          opacity: 0.82,
+          roughness: 0.12,
+          metalness: 0,
+          clearcoat: 1,
+          clearcoatRoughness: 0.1,
+        });
+        for (let i = 0; i < 6; i++) {
+          const x = -0.42 + i * 0.17 + (i % 2) * 0.04;
+          const icicle = mesh(
+            new THREE.ConeGeometry(0.045 + (i % 3) * 0.015, 0.22 + (i % 2) * 0.12, 8),
+            ice,
+            x * shX,
+            topY - 0.42 - (i % 2) * 0.06,
+            0.12 + (i % 3) * 0.05,
+          );
+          icicle.rotation.x = Math.PI; // point down
+          icicle.rotation.z = x * 0.35; // splay with the crown curve
+          this.gearParts.push(icicle);
         }
       }
     }
@@ -449,7 +492,9 @@ export class Hero3D {
       const r = d[i] / 255,
         g = d[i + 1] / 255,
         b = d[i + 2] / 255;
-      return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 > 0.68;
+      // warm-neutral pale only — faces and white speculars. Cool blues
+      // (the ice militia's coat is 0.73 lightness!) must not flood the mask.
+      return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 > 0.68 && r > b - 0.07;
     };
     const face = new Uint8Array(FW * FH);
     let seeded = false;
@@ -626,10 +671,11 @@ export class Hero3D {
       fringe: Strand[] = [];
 
     // interior coat — stride-3 sample of body pixels, layered like theirs
+    const FL = this.furLen;
     for (let y = 4; y < H - 4; y += 3)
       for (let x = 4; x < W - 4; x += 3) {
         if (!body(x, y)) continue;
-        const len = 9 + nz(x, y, 4) * 8;
+        const len = (9 + nz(x, y, 4) * 8) * FL;
         const ang = restAngle(x, y);
         // skip strands that would stroke into the face region
         const tx = x + Math.cos(ang) * len,
@@ -663,7 +709,7 @@ export class Hero3D {
         const out = Math.atan2(ny / nl, nx / nl);
         let an = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
         an += (nz(x, y, 3) - 0.5) * 0.5;
-        const len = 9 + nz(x, y, 4) * 8;
+        const len = (9 + nz(x, y, 4) * 8) * FL;
         fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * 0.7, s: nz(x, y, 8) });
       }
 

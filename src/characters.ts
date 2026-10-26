@@ -11,6 +11,8 @@ export interface CharDef {
   skin: number;
   shape?: BeanShape; // default 'bean'
   gear?: BeanGear; // default 'none'
+  rage?: boolean; // angry brows
+  furLen?: number; // coat strand multiplier — 1 = standard
 }
 
 // the cast takes the named crew's names — every bean is a person, not a
@@ -29,7 +31,17 @@ export const CHARACTERS: CharDef[] = [
 
 // fixed team coats — the player's pick never collides with these
 export const CREW_DEF: CharDef = { id: 'crew', name: 'CREW', body: 0x2e6f8e, skin: 0xe8c9a0 }; // water blue
-export const MILITIA_DEF: CharDef = { id: 'militia', name: 'MILITIA', body: 0x54503e, skin: 0xb8a888, gear: 'hardhat' }; // khaki uniform + site helmet
+// the chasers ARE the ice — pale frozen fur, angry brows, icicle fringe,
+// a shaggier coat. Water crew vs ice militia finally reads on sight.
+export const MILITIA_DEF: CharDef = {
+  id: 'militia',
+  name: 'MILITIA',
+  body: 0x9ccfe8,
+  skin: 0xf4f2e8,
+  gear: 'frost',
+  rage: true,
+  furLen: 1.45,
+};
 
 const KEY = 'iw-char';
 
