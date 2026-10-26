@@ -22,6 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
+import { CHARACTERS, currentChar, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -55,6 +56,8 @@ export class TitleScene extends Phaser.Scene {
   private cardZones: Phaser.GameObjects.Zone[] = [];
   private lobbyArm?: (t0: number) => void;
   private lobbyDrop?: (delayBase: number) => void;
+  private charIdx = 0;
+  private charName?: Phaser.GameObjects.Text;
 
   constructor() {
     super('title');
@@ -359,6 +362,11 @@ export class TitleScene extends Phaser.Scene {
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
 
     this.hero3d = new Hero3D(520, 540);
+    this.charIdx = Math.max(
+      0,
+      CHARACTERS.findIndex((c) => c.id === currentChar().id),
+    );
+    if (this.hero3d.ok) this.hero3d.setVariant(currentChar().body, currentChar().skin);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
       // and kills scene boot. Blit three's frame into a plain 2d canvas instead.
@@ -394,6 +402,36 @@ export class TitleScene extends Phaser.Scene {
         .setDepth(5)
         .setAlpha(0);
       this.tweens.add({ targets: heroImg, alpha: 1, duration: 400, delay: 400 });
+    }
+
+    // character picker — the podium bean IS the selector; ‹ › cycles the cast
+    if (this.hero3d.ok) {
+      const pickY = podTopY + 62; // on the podium's front face
+      const arrowStyle = {
+        fontFamily: FG_FONT,
+        fontSize: '44px',
+        color: '#ffffff',
+        stroke: '#8a3b5c',
+        strokeThickness: 7,
+      };
+      for (const dir of [-1, 1] as const) {
+        this.add
+          .text(podX + dir * 128, pickY, dir < 0 ? '‹' : '›', arrowStyle)
+          .setOrigin(0.5)
+          .setDepth(6)
+          .setInteractive({ useHandCursor: true })
+          .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
+      }
+      this.charName = this.add
+        .text(podX, pickY + 4, CHARACTERS[this.charIdx].name, {
+          fontFamily: FG_FONT,
+          fontSize: '30px',
+          color: '#ffffff',
+          stroke: '#8a3b5c',
+          strokeThickness: 6,
+        })
+        .setOrigin(0.5)
+        .setDepth(6);
     }
 
     // --- name plate — bottom-left ---
@@ -435,6 +473,18 @@ export class TitleScene extends Phaser.Scene {
     this.input.keyboard!.on('keydown-ESC', () => {
       if (this.settingsOpen) this.toggleSettings();
     });
+    this.input.keyboard!.on('keydown-LEFT', () => this.gate(() => this.cycleChar(-1)));
+    this.input.keyboard!.on('keydown-RIGHT', () => this.gate(() => this.cycleChar(1)));
+  }
+
+  private cycleChar(dir: -1 | 1) {
+    this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
+    const ch = CHARACTERS[this.charIdx];
+    this.charName?.setText(ch.name);
+    setChar(ch.id);
+    this.hero3d?.setVariant(ch.body, ch.skin);
+    this.hero3d?.poke(); // little bounce so the swap feels alive
+    sfx.pickup();
   }
 
   private gate(fn: () => void) {

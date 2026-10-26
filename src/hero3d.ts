@@ -17,6 +17,9 @@ export class Hero3D {
   private camera?: THREE.PerspectiveCamera;
   private group?: THREE.Group;
   private torso?: THREE.Mesh;
+  private bodyMat?: THREE.MeshPhysicalMaterial;
+  private skinMat?: THREE.MeshPhysicalMaterial;
+  private shellMats: THREE.MeshStandardMaterial[] = [];
   private flipL?: { root: THREE.Group; elbow: THREE.Group };
   private flipR?: { root: THREE.Group; elbow: THREE.Group };
   private footL?: THREE.Group;
@@ -111,8 +114,8 @@ export class Hero3D {
       return o;
     };
 
-    const body = mat(BODY, 0.3);
-    const skin = mat(SKIN, 0.38);
+    const body = (this.bodyMat = mat(BODY, 0.3));
+    const skin = (this.skinMat = mat(SKIN, 0.38));
     // ojos: MeshBasic — las luces cálidas de la escena teñían de marrón
     // cualquier material iluminado; el basic rinde negro plano siempre
     const dark = new THREE.MeshBasicMaterial({ color: DARK });
@@ -167,16 +170,15 @@ export class Hero3D {
             pos.getY(v) + gn.getY(v) * 0.04 * t,
             pos.getZ(v) + gn.getZ(v) * 0.04 * t,
           );
-        const m = new THREE.Mesh(
-          g,
-          new THREE.MeshStandardMaterial({
-            color: BODY,
-            roughness: 1,
-            alphaMap: furTex,
-            alphaTest: 0.08 + t * 0.6,
-            side: THREE.FrontSide,
-          }),
-        );
+        const shellMat = new THREE.MeshStandardMaterial({
+          color: BODY,
+          roughness: 1,
+          alphaMap: furTex,
+          alphaTest: 0.08 + t * 0.6,
+          side: THREE.FrontSide,
+        });
+        this.shellMats.push(shellMat);
+        const m = new THREE.Mesh(g, shellMat);
         m.position.copy(this.torso.position);
         m.scale.copy(this.torso.scale);
         grp.add(m);
@@ -434,6 +436,7 @@ export class Hero3D {
       this.furCvCtx = this.furCv.getContext('2d', { willReadFrequently: true });
     }
     const uc = this.furCvCtx!;
+    const T = this.furTint;
     const uimg = uc.createImageData(W, H);
     const ud = uimg.data;
     for (let y = 0; y < H; y++)
@@ -441,10 +444,10 @@ export class Hero3D {
         if (!body(x, y)) continue;
         const o = (y * W + x) * 4,
           v = y / H;
-        // undercoat in the fur's own brown — mild vertical darkening only
-        ud[o] = 96 - v * 40;
-        ud[o + 1] = 52 - v * 22;
-        ud[o + 2] = 25 - v * 11;
+        // undercoat in the fur's own shade — mild vertical darkening only
+        ud[o] = (96 - v * 40) * T.r;
+        ud[o + 1] = (52 - v * 22) * T.g;
+        ud[o + 2] = (25 - v * 11) * T.b;
         ud[o + 3] = 255;
       }
     uc.putImageData(uimg, 0, 0);
@@ -459,7 +462,9 @@ export class Hero3D {
       const rg = uc.createRadialGradient(bx, by, 0, bx, by, r);
       rg.addColorStop(
         0,
-        dark ? 'rgba(28,12,4,0.16)' : 'rgba(255,214,160,0.10)',
+        dark
+          ? `rgba(${(28 * T.r) | 0},${(12 * T.g) | 0},${(4 * T.b) | 0},0.16)`
+          : `rgba(${Math.min(255, 255 * T.r) | 0},${(214 * T.g) | 0},${(160 * T.b) | 0},0.10)`,
       );
       rg.addColorStop(1, 'rgba(0,0,0,0)');
       uc.fillStyle = rg;
@@ -557,40 +562,40 @@ export class Hero3D {
     // undercoat strands — darkest, thickest
     for (const s of under) {
       const sh = 42 + s.s * 22;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.6)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.55 * T.g) | 0},${(sh * 0.28 * T.b) | 0},0.6)`;
       ctx.lineWidth = 1.6 + s.s * 1.0;
       stroke(s, false);
     }
     // mid coat + lit tips on the outer half
     for (const s of mid) {
       const sh = 78 + s.s * 26;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},0.85)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.55 * T.g) | 0},${(sh * 0.3 * T.b) | 0},0.85)`;
       ctx.lineWidth = 0.9 + s.s * 0.6;
       stroke(s, false);
     }
     for (const s of mid) {
       const sh = 115 + s.s * 30;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.5)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.6 * T.g) | 0},${(sh * 0.34 * T.b) | 0},0.5)`;
       ctx.lineWidth = (0.9 + s.s * 0.6) * 0.8;
       stroke(s, true);
     }
     // sparse highlights
     for (const s of hi) {
       const sh = 140 + s.s * 28;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.62) | 0},${(sh * 0.36) | 0},0.55)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.62 * T.g) | 0},${(sh * 0.36 * T.b) | 0},0.55)`;
       ctx.lineWidth = 0.7 + s.s * 0.4;
       stroke(s, false);
     }
     // fringe last so it pokes past the silhouette
     for (const s of fringe) {
       const sh = 84 + s.s * 32;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.56) | 0},${(sh * 0.3) | 0},0.8)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.56 * T.g) | 0},${(sh * 0.3 * T.b) | 0},0.8)`;
       ctx.lineWidth = 1.1;
       stroke(s, false);
     }
     for (const s of fringe) {
       const sh = 120 + s.s * 28;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.45)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.6 * T.g) | 0},${(sh * 0.34 * T.b) | 0},0.45)`;
       ctx.lineWidth = 0.9;
       stroke(s, true);
     }
@@ -725,6 +730,121 @@ export class Hero3D {
     grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY + 1.16 * (1 - Math.cos(this.flipX));
     grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
     grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /** re-dress the bean — recolors the vinyl body, fur shells and face oval */
+  setVariant(body: number, skin: number) {
+    this.bodyMat?.color.set(body);
+    this.skinMat?.color.set(skin);
+    for (const m of this.shellMats) m.color.set(body);
+    // the 2D fur overlay draws its strands in code — retint them relative
+    // to the default coat so variants show through the fur too
+    const br = (BODY >> 16) & 0xff,
+      bg = (BODY >> 8) & 0xff,
+      bb = BODY & 0xff;
+    this.furTint = {
+      r: ((body >> 16) & 0xff) / br,
+      g: ((body >> 8) & 0xff) / bg,
+      b: (body & 0xff) / bb,
+    };
+  }
+
+  private furTint = { r: 1, g: 1, b: 1 };
+
+  /** ¾-down camera for sprite baking — classic top-down-art angle: face
+   *  reads, crown shows, feet ground the pose */
+  bakeCam() {
+    if (!this.camera) return;
+    this.camera.position.set(0, 2.7, 4.4);
+    this.camera.lookAt(0, 1.05, 0);
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** deterministic rig pose — sets every animated channel directly (no
+   *  springs, no randomness) and renders immediately. Used by the sprite
+   *  baker to capture run-cycle / idle / splat frames. */
+  poseFor(kind: 'run' | 'idle' | 'splat', ph: number) {
+    const g = this.group;
+    if (!g || !this.renderer || !this.scene || !this.camera) return;
+    const t = ph * Math.PI * 2;
+    // reset every channel update() drives
+    g.rotation.set(0, 0, 0);
+    g.position.set(0, 0, 0);
+    g.scale.set(1, 1, 1);
+    if (this.footL) this.footL.rotation.set(0, -0.18, 0);
+    if (this.footR) this.footR.rotation.set(0, 0.18, 0);
+    if (this.flipL) {
+      this.flipL.root.rotation.set(0, 0, -0.18);
+      this.flipL.elbow.rotation.set(0, 0, 0);
+    }
+    if (this.flipR) {
+      this.flipR.root.rotation.set(0, 0, 0.18);
+      this.flipR.elbow.rotation.set(0, 0, 0);
+    }
+    const eyesFlat = kind === 'splat';
+    if (this.eyeL) {
+      this.eyeL.visible = !eyesFlat;
+      this.eyeL.scale.y = 1;
+      this.eyeL.position.set(-0.16, 1.58, 0.72);
+    }
+    if (this.eyeR) {
+      this.eyeR.visible = !eyesFlat;
+      this.eyeR.scale.y = 1;
+      this.eyeR.position.set(0.16, 1.58, 0.72);
+    }
+    if (this.dizzyL) {
+      this.dizzyL.visible = eyesFlat;
+      this.dizzyL.rotation.z = 0.2;
+    }
+    if (this.dizzyR) {
+      this.dizzyR.visible = eyesFlat;
+      this.dizzyR.rotation.z = -0.2;
+    }
+
+    if (kind === 'run') {
+      // stride cycle — alternating foot lifts, counter-swinging flippers,
+      // bob + waddle roll + a breath of squash on each footfall
+      const q = Math.abs(Math.sin(t)) * 0.09;
+      g.scale.set(1 - q * 0.5, 1 + q, 1 - q * 0.45);
+      g.position.y = Math.abs(Math.sin(t)) * 0.1;
+      g.rotation.z = Math.sin(t) * 0.055;
+      g.rotation.x = 0.14; // forward lean into the run
+      if (this.footL) {
+        this.footL.rotation.x = -Math.max(0, Math.sin(t)) * 0.85;
+        this.footL.rotation.z = -Math.sin(t) * 0.14;
+      }
+      if (this.footR) {
+        this.footR.rotation.x = -Math.max(0, Math.sin(t + Math.PI)) * 0.85;
+        this.footR.rotation.z = Math.sin(t) * 0.14;
+      }
+      if (this.flipL) {
+        this.flipL.root.rotation.z = -0.3 - Math.sin(t) * 0.32;
+        this.flipL.elbow.rotation.z = -Math.sin(t - 0.6) * 0.28;
+      }
+      if (this.flipR) {
+        this.flipR.root.rotation.z = 0.3 - Math.sin(t) * 0.32;
+        this.flipR.elbow.rotation.z = Math.sin(t - 0.6) * 0.28;
+      }
+    } else if (kind === 'idle') {
+      // breathing sway — same channels, a third of the energy
+      const q = Math.sin(t) * 0.03;
+      g.scale.set(1 - q * 0.5, 1 + q, 1 - q * 0.45);
+      g.position.y = Math.sin(t) * 0.045;
+      g.rotation.z = Math.sin(t) * 0.022;
+      g.rotation.y = Math.sin(t * 0.6) * 0.14;
+      if (this.flipL) this.flipL.root.rotation.z = -0.18 - Math.sin(t) * 0.09;
+      if (this.flipR) this.flipR.root.rotation.z = 0.18 + Math.sin(t) * 0.09;
+    } else {
+      // splat — flat on the back (ph scales how flat: 1 = pancake, 0.5 = half up)
+      const splat = 1 - ph * 0.6;
+      g.rotation.x = -1.15 * splat;
+      g.scale.z = 1 - splat * 0.2;
+      g.scale.x = 1 + splat * 0.12;
+      if (this.flipL) this.flipL.root.rotation.z = -0.9;
+      if (this.flipR) this.flipR.root.rotation.z = 0.9;
+    }
 
     this.renderer.render(this.scene, this.camera);
   }

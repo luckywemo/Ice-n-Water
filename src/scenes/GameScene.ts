@@ -15,6 +15,8 @@ import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
+import { bakeBeanSheet } from '../beanbake';
+import { currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -37,6 +39,7 @@ interface RunnerState {
   bobPhase: number;
   label: Phaser.GameObjects.Text;
   personality: Personality;
+  sheet?: string; // baked bean sheet key — anims instead of the flat circle
 }
 
 interface ChaserState {
@@ -55,6 +58,7 @@ interface ChaserState {
   tint?: number; // boss body color (warn flash overrides it temporarily)
   tag?: Phaser.GameObjects.Text; // floating boss name
   rageUntil?: number; // boss move — boiling red, runs you down harder
+  sheet?: string; // baked bean sheet key
   noTagUntil?: number; // icelings get a warm-up before their touch freezes
 }
 
@@ -163,6 +167,9 @@ export class GameScene extends Phaser.Scene {
   private staminaDrainMult = 1;
   private nextBossMoveAt = 0;
   private decoys = new Set<Sprite>();
+  private sheetPlayer: string | null = null;
+  private sheetCrew: string | null = null;
+  private sheetMilitia: string | null = null;
   private exitPos: { x: number; y: number; r: number } | null = null;
   private exitGfx: Phaser.GameObjects.Graphics | null = null;
 
@@ -277,6 +284,18 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, this.arenaW, this.arenaH);
 
     makeTextures(this);
+
+    // baked bean sheets — the 3D lobby rig pre-posed into sprite frames.
+    // First entry pays a few hundred ms; sheets persist in the texture
+    // manager for every later level. No WebGL → flat circles stay.
+    this.sheetPlayer = bakeBeanSheet(this, 'bean-you', currentChar()) ? 'bean-you' : null;
+    this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
+    this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
+      ? 'bean-militia'
+      : null;
+    for (const k of [this.sheetPlayer, this.sheetCrew, this.sheetMilitia])
+      if (k) this.makeBeanAnims(k);
+
     this.buildArena();
     decorateYard(
       this,
@@ -508,29 +527,44 @@ export class GameScene extends Phaser.Scene {
   private spawnEntities() {
     const { arena } = CONFIG;
 
-    this.player = this.physics.add.sprite(this.arenaW * 0.65, this.arenaH * 0.5, 'player');
-    (this.player.body as Body).setCircle(CONFIG.runner.radius + 2);
+    this.player = this.physics.add.sprite(
+      this.arenaW * 0.65,
+      this.arenaH * 0.5,
+      this.sheetPlayer ?? 'player',
+    );
+    this.dressBean(this.player, this.sheetPlayer);
     this.runners.push(this.player);
-    this.rState.set(this.player, this.freshRunner(this.player, 'YOU', null));
+    const pSt = this.freshRunner(this.player, 'YOU', null);
+    pSt.sheet = this.sheetPlayer ?? undefined;
+    this.rState.set(this.player, pSt);
+    if (this.sheetPlayer) this.player.play(this.sheetPlayer + '-idle');
 
     // crowd mutator packs the field with extra bodies — compound streets
     const crowdBonus = this.mutator === 'crowd' ? 3 : 0;
     for (let i = 0; i < this.crewSize + crowdBonus; i++) {
       const p = this.randomFreePos(this.arenaW * 0.35, this.arenaW - 60);
-      const r = this.physics.add.sprite(p.x, p.y, 'runner');
-      (r.body as Body).setCircle(CONFIG.runner.radius + 2);
+      const r = this.physics.add.sprite(p.x, p.y, this.sheetCrew ?? 'runner');
+      this.dressBean(r, this.sheetCrew);
       this.runners.push(r);
       const who = CONFIG.crew[i % CONFIG.crew.length];
-      this.rState.set(r, this.freshRunner(r, who.name, who));
+      const st = this.freshRunner(r, who.name, who);
+      st.sheet = this.sheetCrew ?? undefined;
+      this.rState.set(r, st);
+      if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
     }
 
     // militia — adventure levels can field a whole squad from the first whistle
     for (let i = 0; i < this.initialChasers; i++) {
       const y = (this.arenaH / (this.initialChasers + 1)) * (i + 1);
-      const chaser = this.physics.add.sprite(arena.wall + 40, y, 'chaser');
-      (chaser.body as Body).setCircle(CONFIG.chaser.radius + 2);
+      const chaser = this.physics.add.sprite(
+        arena.wall + 40,
+        y,
+        this.sheetMilitia ?? 'chaser',
+      );
+      this.dressBean(chaser, this.sheetMilitia);
       this.chasers.push(chaser);
       const cst = this.freshChaser(chaser);
+      cst.sheet = this.sheetMilitia ?? undefined;
       // milestone levels are boss fights — the named champion is bigger,
       // hotter, and wears their title over their head
       if (this.level?.boss && i === 0) {
@@ -553,6 +587,45 @@ export class GameScene extends Phaser.Scene {
 
     for (const r of this.runners) this.collideWithWorld(r);
     for (const c of this.chasers) this.collideWithWorld(c);
+  }
+
+  /** bean sprites are 96px frames around a small hitbox — scale down,
+   *  re-center the body circle on the character's belly */
+  private dressBean(spr: Sprite, sheet: string | null) {
+    if (!sheet) return;
+    spr.setScale(0.8);
+    (spr.body as Body).setCircle(20, 48 - 20, 54 - 20);
+  }
+
+  private makeBeanAnims(key: string) {
+    if (this.anims.exists(key + '-run')) return;
+    this.anims.create({
+      key: key + '-run',
+      frames: this.anims.generateFrameNumbers(key, { start: 0, end: 7 }),
+      frameRate: 13,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: key + '-idle',
+      frames: this.anims.generateFrameNumbers(key, { start: 8, end: 11 }),
+      frameRate: 6,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: key + '-splat',
+      frames: this.anims.generateFrameNumbers(key, { start: 12, end: 13 }),
+      frameRate: 5,
+      repeat: -1,
+    });
+  }
+
+  /** drive a bean sprite's run/idle anim + face it along travel */
+  private beanAnim(spr: Sprite, sheet: string | undefined, vx: number, speedSq: number) {
+    if (!sheet) return;
+    if (this.rState.get(spr)?.frozen) return; // splat owns the sprite
+    const want = sheet + (speedSq > 900 ? '-run' : '-idle');
+    if (spr.anims.currentAnim?.key !== want) spr.play(want);
+    if (Math.abs(vx) > 12) spr.setFlipX(vx < 0);
   }
 
   private collideWithWorld(sprite: Sprite) {
@@ -834,14 +907,16 @@ export class GameScene extends Phaser.Scene {
   private addIceling(x: number, y: number) {
     const c = this.lit(
       this.physics.add
-        .sprite(x, y, 'chaser')
-        .setScale(0.65)
+        .sprite(x, y, this.sheetMilitia ?? 'chaser')
+        .setScale(this.sheetMilitia ? 0.5 : 0.65)
         .setTint(CONFIG.colors.frozen)
         .setDepth(3),
     ) as Sprite;
-    (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
+    if (this.sheetMilitia) (c.body as Body).setCircle(16, 48 - 16, 54 - 16);
+    else (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
     this.chasers.push(c);
     const cst = this.freshChaser(c);
+    cst.sheet = this.sheetMilitia ?? undefined;
     cst.speedMult = 0.55; // hunters run cold — you can outpace them
     cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
     cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
@@ -1366,6 +1441,7 @@ export class GameScene extends Phaser.Scene {
     const body = runner.body as Body;
     body.setVelocity(0, 0);
     body.moves = false;
+    if (st.sheet) runner.play(st.sheet + '-splat'); // knocked flat, dizzy eyes
 
     st.iceBlock = this.lit(
       this.add
@@ -1415,8 +1491,10 @@ export class GameScene extends Phaser.Scene {
     sfx.thaw();
     this.burst(runner.x, runner.y, CONFIG.colors.water, 16, 210);
     this.floatText(runner.x, runner.y, 'WATER!');
-    runner.setScale(1.25);
-    this.tweens.add({ targets: runner, scale: 1, duration: 200 });
+    if (st.sheet) runner.play(st.sheet + '-idle');
+    const base = st.sheet ? 0.8 : 1; // beans dress at 0.8
+    runner.setScale(base * 1.25);
+    this.tweens.add({ targets: runner, scale: base, duration: 200 });
 
     if (rescuer && this.rState.get(rescuer)!.isPlayer) this.playerRescues++;
     if (st.isPlayer) this.clearBanner();
@@ -1682,6 +1760,7 @@ export class GameScene extends Phaser.Scene {
     const k = Math.min(1, accel * dt);
     body.velocity.x += (dir.x * speed - body.velocity.x) * k;
     body.velocity.y += (dir.y * speed - body.velocity.y) * k;
+    this.beanAnim(this.player, st.sheet, body.velocity.x, body.velocity.lengthSq());
   }
 
   private updateAiRunner(r: Sprite, delta: number) {
@@ -1730,6 +1809,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       body.setVelocity(st.aiDir.x * speed, st.aiDir.y * speed);
     }
+    this.beanAnim(r, st.sheet, body.velocity.x, body.velocity.lengthSq());
   }
 
   private updateChaser(c: Sprite, delta: number) {
@@ -1821,6 +1901,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       body.setVelocity(st.desired.x, st.desired.y);
     }
+    this.beanAnim(c, st.sheet, body.velocity.x, body.velocity.lengthSq());
   }
 
   /** Militia chatter — a Pidgin bark floats up from a chaser */
