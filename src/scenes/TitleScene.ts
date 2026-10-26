@@ -228,7 +228,7 @@ export class TitleScene extends Phaser.Scene {
       savePicks(this.diff, this.joy);
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('game', { difficulty: this.diff }),
+        this.scene.start('drop', { game: { difficulty: this.diff } }),
       );
     };
     const toOnline = () => {
@@ -358,19 +358,21 @@ export class TitleScene extends Phaser.Scene {
     // contact shadow the hero stands in
     pod.fillStyle(FG.pinkDeep, 0.32).fillEllipse(podX, podTopY + 10, 124, 17);
 
-    this.hero3d = new Hero3D(520, 540);
+    // roomy buffer + deeper camera — hops and flap tips keep margin, same
+    // px/world density as the map bean so it displays identical size
+    this.hero3d = new Hero3D(640, 700, 6.5);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
       // and kills scene boot. Blit three's frame into a plain 2d canvas instead.
       this.heroSrc = this.hero3d.canvas;
       const copy = document.createElement('canvas');
-      copy.width = 520;
-      copy.height = 540;
+      copy.width = 640;
+      copy.height = 700;
       this.heroCtx = copy.getContext('2d')!;
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 240, 'hero_live')
+        .image(podX, podTopY - 205, 'hero_live') // feet planted on the podium face
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
@@ -903,12 +905,12 @@ export class TitleScene extends Phaser.Scene {
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
       // same-task read after render — the webgl buffer is still valid
-      this.heroCtx.clearRect(0, 0, 520, 540);
+      this.heroCtx.clearRect(0, 0, 640, 700);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
       // pettable strand fringe along the rendered silhouette
       if (this.heroImg && !REDUCED_MOTION) {
-        const lx = p ? p.worldX - this.heroImg.x + 260 : -1;
-        const ly = p ? p.worldY - this.heroImg.y + 270 : -1;
+        const lx = p ? p.worldX - this.heroImg.x + 320 : -1;
+        const ly = p ? p.worldY - this.heroImg.y + 350 : -1;
         this.hero3d?.drawFur(this.heroCtx, lx, ly);
       }
       this.heroTex.refresh();

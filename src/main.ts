@@ -6,6 +6,7 @@ import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { NetScene } from './scenes/NetScene';
 import { AdventureScene } from './scenes/AdventureScene';
+import { DropScene } from './scenes/DropScene';
 import { promptModal } from './fgui';
 
 // mobile hygiene: no long-press menus, no pull-to-refresh scroll
@@ -46,7 +47,7 @@ const boot = () =>
       mode: Phaser.Scale.RESIZE, // fill the whole window — no letterbox bars
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene],
+    scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene, DropScene],
   });
 
 const go = () => {
@@ -66,6 +67,8 @@ const go = () => {
       jumpTo('adventure', { advance: Number(arg) || undefined });
     else if (jump === 'gamelevel')
       jumpTo('game', { adventure: levelDef(Number(arg) || 1) });
+    else if (jump === 'drop')
+      jumpTo('drop', { game: { adventure: levelDef(Number(arg) || 1) } });
     else if (jump) jumpTo(jump);
   });
   (window as unknown as { __game: Phaser.Game }).__game = game; // e2e/CDP hook
