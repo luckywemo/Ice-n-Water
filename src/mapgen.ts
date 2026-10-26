@@ -23,13 +23,19 @@ export function seededRng(seed: number): () => number {
   };
 }
 
-export function generateLayout(seed: number): ObstacleRect[] {
-  const { width, height, wall } = CONFIG.arena;
+export function generateLayout(
+  seed: number,
+  width: number = CONFIG.arena.width,
+  height: number = CONFIG.arena.height,
+): ObstacleRect[] {
+  const { wall } = CONFIG.arena;
   const rand = seededRng(seed);
   const pick = (a: number, b: number) => a + rand() * (b - a);
 
   const rects: ObstacleRect[] = [];
-  const GAP = 88; // guaranteed lane width between obstacles
+  const GAP = 100; // guaranteed lane width between obstacles — chase lanes
+  // obstacles scale with the field — bigger map, more cover, same breathing room
+  const areaScale = (width * height) / (CONFIG.arena.width * CONFIG.arena.height);
 
   const overlaps = (x: number, y: number, rw: number, rh: number) =>
     rects.some(
@@ -58,19 +64,19 @@ export function generateLayout(seed: number): ObstacleRect[] {
   const archetype = Math.floor(rand() * 3);
 
   if (archetype === 0) {
-    // STREET BLOCKS — a loose 4×3 grid of buildings; the gaps between
+    // STREET BLOCKS — a loose grid of buildings; the gaps between
     // them become the alleys you duck through mid-chase
-    const cols = 4;
-    const rows = 3;
+    const cols = Math.round(4 * Math.sqrt(areaScale));
+    const rows = Math.round(3 * Math.sqrt(areaScale));
     const iw = width - wall * 2 - 120;
     const ih = height - wall * 2 - 120;
     const cellW = iw / cols;
     const cellH = ih / rows;
     for (let cy = 0; cy < rows; cy++) {
       for (let cx = 0; cx < cols; cx++) {
-        if (rand() < 0.22) continue; // punch a hole — a plaza
-        const rw = pick(cellW * 0.45, cellW * 0.68);
-        const rh = pick(cellH * 0.45, cellH * 0.68);
+        if (rand() < 0.28) continue; // punch a hole — a plaza
+        const rw = pick(cellW * 0.42, cellW * 0.62);
+        const rh = pick(cellH * 0.42, cellH * 0.62);
         const x = wall + 60 + cellW * (cx + 0.5) + pick(-cellW * 0.1, cellW * 0.1);
         const y = wall + 60 + cellH * (cy + 0.5) + pick(-cellH * 0.1, cellH * 0.1);
         tryAdd(x, y, rw, rh);
@@ -78,7 +84,7 @@ export function generateLayout(seed: number): ObstacleRect[] {
     }
   } else if (archetype === 1) {
     // COMPOUNDS — a few L-shaped walls; natural chokepoints + blind corners
-    const clusters = 5;
+    const clusters = Math.round(4 * areaScale);
     for (let i = 0; i < clusters; i++) {
       const cw = pick(240, 340);
       const ch = pick(200, 300);
@@ -105,7 +111,7 @@ export function generateLayout(seed: number): ObstacleRect[] {
     }
   } else {
     // SCATTER — crates, market stalls, parked wahala all over the yard
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < Math.round(15 * areaScale); i++) {
       const rw = pick(60, 210);
       const rh = pick(46, 160);
       tryAdd(

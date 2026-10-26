@@ -4,6 +4,7 @@ import { DISPLAY_FONT, UI_FONT, REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT } from '../fgui';
 import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
+import { currentChar } from '../characters';
 
 // DropScene — the FALL GUYS "populating" beat, retold our way: the furry
 // bean skydives through a cyan sky while the level name lands under it.
@@ -66,10 +67,12 @@ export class DropScene extends Phaser.Scene {
     // the bean, mid-dive — deep + high camera on a tall buffer: spread
     // flippers and trailing feet keep full margins, and the top-down
     // angle keeps the face readable in the belly-first posture
-    const hero = (this.hero3d = new Hero3D(760, 700, 6.5, 3.1, 0.85));
+    const pc = currentChar(); // the skydiver wears your picked bean
+    const hero = (this.hero3d = new Hero3D(760, 700, 6.5, 3.1, 0.85, pc));
     hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
+      hero.setVariant(pc.body, pc.skin);
       const cv = (this.heroCv = document.createElement('canvas'));
       cv.width = 760;
       cv.height = 700;

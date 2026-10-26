@@ -4,6 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
 import { Hero3D } from '../hero3d';
+import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality } from '../meta';
 import {
   TOTAL_LEVELS,
@@ -1012,10 +1013,12 @@ export class AdventureScene extends Phaser.Scene {
     // bigger buffer + deeper camera than the lobby — the pratfall launches
     // ~0.65 world-units and flips around the body centre, so the frame
     // needs real headroom (visible world top 3.29) and flap room (±1.59)
-    const hero = (this.hero3d = new Hero3D(560, 700, 6.5));
+    const pc = currentChar();
+    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 1.3, 1.3, pc));
     hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
+      hero.setVariant(pc.body, pc.skin); // the statue wears your picked coat
       const copy = (this.heroCv = document.createElement('canvas'));
       copy.width = 560;
       copy.height = 700;

@@ -57,7 +57,11 @@ const BOSSES = [
   'THE TRICKSTER KING', 'THE ICE TITAN', 'THE RIVAL SQUAD CAPTAIN', 'THE ICE KING',
 ];
 
-export type ObjectiveKind = 'survive' | 'collect' | 'rescue';
+export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge' | 'hunt';
+// chapter-scaled battlefield twists — each stretch of the road has a mood
+export type Mutator = 'night' | 'storm' | 'market' | 'heat' | 'crowd' | 'decoy';
+// milestone champions get a signature move that escalates by chapter
+export type BossMove = 'summon' | 'rage' | 'blink';
 
 export interface LevelDef {
   n: number; // 1..500
@@ -74,6 +78,9 @@ export interface LevelDef {
   chapter: string; // one of the 10 chapters
   objective: { kind: ObjectiveKind; count: number };
   boss?: string; // set on every 10th level
+  bossMove?: BossMove; // the champion's signature trick
+  mutator?: Mutator; // this stop's battlefield twist
+  twist?: boolean; // collect levels: leftover drops turn to ice and hunt you
 }
 
 const TOWN_FOR = (n: number): { milestone: number; town: string } =>
@@ -81,25 +88,81 @@ const TOWN_FOR = (n: number): { milestone: number; town: string } =>
     ? { milestone: n / LEVELS_PER_MILESTONE, town: MILESTONE_TOWNS[n / LEVELS_PER_MILESTONE - 1] }
     : { milestone: 0, town: '' };
 
-// objective rotation inside each 10-pack — the 10th is always a boss fight
-const OBJ_PATTERN: ObjectiveKind[] = [
-  'survive', 'collect', 'survive', 'rescue', 'survive',
-  'collect', 'survive', 'rescue', 'collect', 'survive',
+// Objective + squad rotation inside each 10-pack — the 10th is always a
+// boss fight. `mates`/`militia` override the difficulty curve for squad
+// variety: some stops stack the squads (4v4 brawl), some leave you alone
+// against a pack (lone wolf), some give you numbers over the militia.
+interface SlotDef {
+  kind: ObjectiveKind;
+  mates?: number; // AI teammates (player is the +1) — null = difficulty curve
+  militia?: number; // exact chaser count — null = difficulty curve
+  twist?: boolean; // collect: drops freeze into hunters, escape through the ring
+}
+const SLOT_PATTERN: SlotDef[] = [
+  { kind: 'survive' }, // 1 — the standard chase
+  { kind: 'collect' }, // 2 — grab the water drops
+  { kind: 'rescue' }, // 3 — thaw your mates
+  { kind: 'survive', mates: 3, militia: 4 }, // 4 — BIG BRAWL: 4v4
+  { kind: 'refuge' }, // 5 — SAFE RING: 5s of cover, can't camp it
+  { kind: 'collect', mates: 1, militia: 4 }, // 6 — OUTNUMBERED: 2v4 scramble
+  { kind: 'survive', mates: 0, militia: 2 }, // 7 — LONE WOLF: just you vs a pair
+  { kind: 'rescue', mates: 3, militia: 1 }, // 8 — SQUAD SUPPORT: 4v1 — you have numbers
+  { kind: 'collect', mates: 1, militia: 2, twist: true }, // 9 — WATER FIGHTS BACK (2v2)
+  { kind: 'survive' }, // 10 — BOSS
+];
+
+// Each chapter's battlefield mood — the deeper you push north, the more the
+// land itself fights you. Deterministic per level so a stop always plays the same.
+const MUTATOR_POOLS: Mutator[][] = [
+  [], // I — STREET LEGENDS: clean learning ground
+  ['crowd'], // II — COMPOUND WARS: families everywhere
+  ['heat'], // III — SCHOOLYARD: afternoon sun drains your sprint
+  ['market', 'crowd'], // IV — MARKET MADNESS: items + bodies everywhere
+  ['storm'], // V — DANFO & DOWNPOURS: the ground never dries
+  ['night'], // VI — FESTIVAL LIGHTS: dusk, spotlight, red glints
+  ['decoy', 'night'], // VII — TRICKSTER GAMES: bitter drops among the water
+  ['storm', 'heat', 'night'], // VIII — SURVIVAL TRIALS: everything at once
+  ['night', 'crowd', 'storm'], // IX — RIVAL ARENAS: hostile territory
+  ['storm', 'night', 'decoy', 'heat'], // X — LEGEND: full chaos
 ];
 
 export function levelDef(n: number): LevelDef {
   const { milestone, town } = TOWN_FOR(n);
   const slot = (n - 1) % LEVELS_PER_MILESTONE;
+  const packIdx = Math.floor((n - 1) / LEVELS_PER_MILESTONE);
   const chapterIdx = Math.min(Math.floor((n - 1) / 50), 9);
-  const kind = OBJ_PATTERN[slot];
+  const def = SLOT_PATTERN[slot];
+  // every other town flips the script on slot 6 — you become the hunter
+  const kind: ObjectiveKind =
+    slot === 5 && def.kind === 'collect' && packIdx % 2 === 1 ? 'hunt' : def.kind;
+  const huntCount = 2 + Math.floor(n / 140); // 2 → 5 runners to tag
+  const pool = MUTATOR_POOLS[chapterIdx];
+  const mutator = pool.length ? pool[(n * 7) % pool.length] : undefined;
+  // champions escalate: early ones summon iceling backup, mid ones rage,
+  // the final ones blink onto your back
+  const bossMove: BossMove | undefined = milestone
+    ? chapterIdx < 3
+      ? 'summon'
+      : chapterIdx < 6
+        ? 'rage'
+        : 'blink'
+    : undefined;
+  // from TRICKSTER GAMES on, the fixed squad matchups field one extra militia
+  const militiaBump =
+    kind !== 'hunt' && def.militia !== undefined && chapterIdx >= 6 ? 1 : 0;
   return {
     n,
     seed: (n * 2654435761) >>> 0,
-    chasers: Math.min(1 + Math.floor((n - 1) / 60), 6) + (milestone ? 1 : 0),
-    reinforcements: Math.min(1 + Math.floor(n / 150), 3),
+    chasers:
+      kind === 'hunt'
+        ? 0
+        : (def.militia ?? Math.min(1 + Math.floor((n - 1) / 60), 6)) +
+          militiaBump +
+          (milestone ? 1 : 0),
+    reinforcements: kind === 'hunt' ? 0 : Math.min(1 + Math.floor(n / 150), 3),
     chaserMult: Math.min(0.85 + n * 0.0013, 1.5),
     seconds: Math.min(45 + Math.round(n * 0.15), 120) + (milestone ? 15 : 0),
-    crew: n < 100 ? 4 : n < 300 ? 3 : 2,
+    crew: kind === 'hunt' ? huntCount + 2 : (def.mates ?? (n < 100 ? 4 : n < 300 ? 3 : 2)),
     events: n > 5,
     milestone,
     town,
@@ -112,18 +175,132 @@ export function levelDef(n: number): LevelDef {
           ? 3 + Math.floor(n / 90) // 3 → 8 water drops
           : kind === 'rescue'
             ? 1 + Math.floor(n / 130) // 1 → 4 mates
-            : 0,
+            : kind === 'hunt'
+              ? huntCount
+              : 0,
     },
     boss: n % LEVELS_PER_MILESTONE === 0 ? BOSSES[chapterIdx] : undefined,
+    bossMove,
+    mutator,
+    twist: def.twist || undefined,
   };
 }
 
 /** human-readable objective — shared by the map card, HUD and level banner */
 export function objectiveText(def: LevelDef): string {
   const o = def.objective;
-  if (o.kind === 'collect') return `collect ${o.count} water drops`;
+  if (o.kind === 'collect')
+    return def.twist ? `collect ${o.count} drops — then run` : `collect ${o.count} water drops`;
   if (o.kind === 'rescue') return `thaw ${o.count} mates`;
+  if (o.kind === 'refuge') return `last ${def.seconds}s · hide in the gold ring`;
+  if (o.kind === 'hunt') return `tag ${o.count} runners — you're the chaser`;
   return `last ${def.seconds}s`;
+}
+
+/** intro card shown before the round — first taste of each mechanic,
+ *  plus a town card at every milestone boss */
+export interface LevelIntro {
+  title: string;
+  body: string;
+}
+export function levelIntro(def: LevelDef): LevelIntro | null {
+  if (def.boss) {
+    const moveHint =
+      def.bossMove === 'summon'
+        ? ' He calls iceling backup.'
+        : def.bossMove === 'rage'
+          ? ' He rages — do not be near when he boils.'
+          : def.bossMove === 'blink'
+            ? ' He blinks — watch your back.'
+            : '';
+    return {
+      title: `${def.town.toUpperCase()} — MILESTONE ${def.milestone}`,
+      body: `${def.boss} holds this stop.${moveHint}\n${def.chasers} militia on the field — take the crown.`,
+    };
+  }
+  // each new chapter opens with its own card — the land changes its rules
+  const CHAPTER_INTRO: Record<number, LevelIntro> = {
+    51: {
+      title: 'CHAPTER II — COMPOUND WARS',
+      body: 'The compounds are packed — extra bodies everywhere.\nMore cover for you. More chaos for everyone.',
+    },
+    101: {
+      title: 'CHAPTER III — SCHOOLYARD SHOWDOWN',
+      body: 'Afternoon sun dey burn — sprint drains faster here.\nPace the RUN button or pay for it.',
+    },
+    151: {
+      title: 'CHAPTER IV — MARKET MADNESS',
+      body: 'Market day! Slippers, juju, pure water everywhere.\nGrab what you can carry — the militia dey come too.',
+    },
+    201: {
+      title: 'CHAPTER V — DANFO & DOWNPOURS',
+      body: 'Rain season — the ground never dries.\nEverybody slides. Learn to drift or learn to fall.',
+    },
+    251: {
+      title: 'CHAPTER VI — FESTIVAL LIGHTS',
+      body: 'Dusk has fallen — you run inside your own spotlight.\nThe militia are only red glints in the dark.',
+    },
+    301: {
+      title: 'CHAPTER VII — TRICKSTER GAMES',
+      body: 'Not every drop is water — bitter kola wears the same coat.\nWatch the colour before you grab.',
+    },
+    351: {
+      title: 'CHAPTER VIII — SURVIVAL TRIALS',
+      body: 'Heat, storm, night — everything at once.\nThe road does not love you anymore.',
+    },
+    401: {
+      title: 'CHAPTER IX — RIVAL ARENAS',
+      body: 'Elite militia territory — they blink, they rage,\nand the squads field one extra body. Respect the crown.',
+    },
+    451: {
+      title: 'CHAPTER X — LEGEND OF THE ROAD',
+      body: 'Every trick the road taught you, all at once.\nMaiduguri is watching. Finish it.',
+    },
+  };
+  if (CHAPTER_INTRO[def.n]) return CHAPTER_INTRO[def.n];
+  const FIRST: Record<number, LevelIntro> = {
+    1: {
+      title: 'WELCOME TO THE ROAD',
+      body: 'They chase. You run. You freeze —\nyour crew can thaw you back.\nSurvive the clock to push north.',
+    },
+    2: {
+      title: 'NEW: WATER DROPS',
+      body: 'Grab the drops scattered across the map.\nCollect the count shown before the clock dies.',
+    },
+    3: {
+      title: 'NEW: THAW',
+      body: 'Frozen mates need you — touch them to bring them back.\nThaw the count shown to clear the stop.',
+    },
+    4: {
+      title: 'NEW: BIG BRAWL',
+      body: '4 vs 4 — full squads on the field.\nYour mates pull heat off you. Use them.',
+    },
+    5: {
+      title: 'NEW: THE SAFE RING',
+      body: 'The gold ring makes you untaggable — for 5 seconds.\nCover drains while you hide, cools while you run.\nNo camping.',
+    },
+    6: {
+      title: 'NEW: OUTNUMBERED + STREET CHAOS',
+      body: '2 vs 4 — and from here the street fights back too:\ndanfo, NEPA blackouts, rain.',
+    },
+    7: {
+      title: 'NEW: LONE WOLF',
+      body: "Just you out there — nobody to thaw you.\nOne freeze and the run is over. Don't get touched.",
+    },
+    8: {
+      title: 'NEW: SQUAD SUPPORT',
+      body: '4 vs 1 — your numbers, their lone hunter.\nShame them. Rescue anyone who slips.',
+    },
+    9: {
+      title: 'NEW: WATER FIGHTS BACK',
+      body: 'Collect the drops — then the leftovers freeze into hunters.\nReach the gold EXIT ring alive to clear the stop.',
+    },
+    16: {
+      title: "NEW: YOU'RE IT!",
+      body: 'The script flips — YOU chase them now.\nTag the count shown before the clock dies.\nFrozen runners stay down on hunt stops.',
+    },
+  };
+  return FIRST[def.n] ?? null;
 }
 
 // ---------- progress (localStorage) ----------

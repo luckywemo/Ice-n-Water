@@ -36,3 +36,10 @@ shots/
 # shot probe output + its chrome profile — keep shot.mjs, drop the rest
 .shots/*.png
 .shots/.profile/
+
+# generated promo media — captured locally, never pushed
+twitter/*.png
+twitter/*.gif
+cover.png
+cover-new.png
+image_*.png

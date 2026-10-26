@@ -11,12 +11,30 @@ const BODY = 0x8a4f24; // glossy milk-chocolate brown
 const SKIN = 0xecc98e; // warm pale tan face oval
 const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 
+// model vocabulary — the shared skeleton gets dressed differently:
+// shape reshapes the torso capsule (+ fur shells + face/limb placement),
+// gear bolts a head-mounted extra onto the crown. Pickable cast lives
+// in characters.ts.
+export type BeanShape = 'bean' | 'round' | 'tall';
+export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown' | 'frost';
+export interface BeanModel {
+  shape?: BeanShape;
+  gear?: BeanGear;
+  /** angry brow-V over the eyes — the hunters' glare */
+  rage?: boolean;
+  /** coat strand length multiplier — the ice runs shaggy */
+  furLen?: number;
+}
+
 export class Hero3D {
   private renderer?: THREE.WebGLRenderer;
   private scene?: THREE.Scene;
   private camera?: THREE.PerspectiveCamera;
   private group?: THREE.Group;
   private torso?: THREE.Mesh;
+  private bodyMat?: THREE.MeshPhysicalMaterial;
+  private skinMat?: THREE.MeshPhysicalMaterial;
+  private shellMats: THREE.MeshStandardMaterial[] = [];
   private flipL?: { root: THREE.Group; elbow: THREE.Group };
   private flipR?: { root: THREE.Group; elbow: THREE.Group };
   private footL?: THREE.Group;
@@ -25,6 +43,15 @@ export class Hero3D {
   private eyeR?: THREE.Mesh;
   private dizzyL?: THREE.Group; // X-cross eyes shown while flattened
   private dizzyR?: THREE.Group;
+  private eyeXs = 0.16; // shape-dependent eye placement — gaze/pose resets use these
+  private eyeZs = 0.72;
+  private faceMesh?: THREE.Mesh;
+  private shadowMesh?: THREE.Mesh;
+  private shellMeshes: THREE.Mesh[] = [];
+  private gearParts: THREE.Object3D[] = [];
+  private gearCv?: HTMLCanvasElement;
+  private gearCtx?: CanvasRenderingContext2D;
+  private furLen = 1; // drawFur strand-length multiplier
   // --- animation state ---
   private sq = 0; // jelly: + stretch, − squash
   private sqVel = 0;
@@ -74,7 +101,7 @@ export class Hero3D {
   private W = 520;
   private H = 540;
 
-  constructor(w: number, h: number, camZ = 5.0, camY = 1.3, lookY = 1.3) {
+  constructor(w: number, h: number, camZ = 5.0, camY = 1.3, lookY = 1.3, model: BeanModel = {}) {
     this.W = w;
     this.H = h;
     try {
@@ -114,8 +141,20 @@ export class Hero3D {
       return o;
     };
 
-    const body = mat(BODY, 0.3);
-    const skin = mat(SKIN, 0.38);
+    // body silhouette — 'round' is the chubby low-rider, 'tall' the lanky
+    // runner. Every placement that touches the skin (face, eyes, flippers,
+    // feet, gear) derives from these scales.
+    const shape = model.shape ?? 'bean';
+    const shX = shape === 'round' ? 1.22 : shape === 'tall' ? 0.8 : 1;
+    const shY = shape === 'round' ? 0.9 : shape === 'tall' ? 1.1 : 1;
+    const shZ = shape === 'round' ? 1.18 : shape === 'tall' ? 0.78 : 0.95;
+    const faceZ = 0.55 * (shZ / 0.95); // keep the face proud of the surface
+    const eyeZ = 0.72 * (shZ / 0.95);
+    const eyeX = 0.16 * (shape === 'tall' ? 0.8 : 1);
+    this.furLen = model.furLen ?? 1;
+
+    const body = (this.bodyMat = mat(BODY, 0.3));
+    const skin = (this.skinMat = mat(SKIN, 0.38));
     // ojos: MeshBasic — las luces cálidas de la escena teñían de marrón
     // cualquier material iluminado; el basic rinde negro plano siempre
     const dark = new THREE.MeshBasicMaterial({ color: DARK });
@@ -124,7 +163,7 @@ export class Hero3D {
     // pointing shoe, toes angled slightly out
     const footG = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.27, 0.32, 0.04);
+      root.position.set(side * 0.27 * shX, 0.32, 0.04);
       root.rotation.y = side * 0.18; // toes out
       const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.3, 6, 14), body);
       f.rotation.x = Math.PI / 2; // capsule axis points forward (+z)
@@ -139,7 +178,7 @@ export class Hero3D {
 
     // the bean — one tall capsule body, belly-forward like the reference
     this.torso = mesh(new THREE.CapsuleGeometry(0.66, 0.82, 10, 32), body, 0, 1.16, 0);
-    this.torso.scale.set(1, 1, 0.95);
+    this.torso.scale.set(shX, shY, shZ);
 
     // shell fur — N copies of the torso displaced along normals with a
     // strand-dot alpha texture; alphaTest rises per shell so the coat
@@ -166,22 +205,22 @@ export class Hero3D {
         for (let v = 0; v < gp.count; v++)
           gp.setXYZ(
             v,
-            pos.getX(v) + gn.getX(v) * 0.04 * t,
-            pos.getY(v) + gn.getY(v) * 0.04 * t,
-            pos.getZ(v) + gn.getZ(v) * 0.04 * t,
+            pos.getX(v) + gn.getX(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
+            pos.getY(v) + gn.getY(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
+            pos.getZ(v) + gn.getZ(v) * 0.04 * t * (1 + (this.furLen - 1) * 0.5),
           );
-        const m = new THREE.Mesh(
-          g,
-          new THREE.MeshStandardMaterial({
-            color: BODY,
-            roughness: 1,
-            alphaMap: furTex,
-            alphaTest: 0.08 + t * 0.6,
-            side: THREE.FrontSide,
-          }),
-        );
+        const shellMat = new THREE.MeshStandardMaterial({
+          color: BODY,
+          roughness: 1,
+          alphaMap: furTex,
+          alphaTest: 0.08 + t * 0.6,
+          side: THREE.FrontSide,
+        });
+        this.shellMats.push(shellMat);
+        const m = new THREE.Mesh(g, shellMat);
         m.position.copy(this.torso.position);
         m.scale.copy(this.torso.scale);
+        this.shellMeshes.push(m);
         grp.add(m);
       }
     }
@@ -190,7 +229,7 @@ export class Hero3D {
     // elbow joint so the tip bends. Held just off the body surface.
     const flipper = (side: -1 | 1) => {
       const root = new THREE.Group();
-      root.position.set(side * 0.65, 1.42, 0.0);
+      root.position.set(side * 0.65 * shX, 1.42, 0.0);
       const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.34, 6, 14), body);
       upper.position.y = -0.22;
       upper.scale.set(0.38, 1, 1.15); // broad face pressed to the body's side
@@ -209,16 +248,17 @@ export class Hero3D {
     this.flipR = flipper(1);
 
     // face oval — big pale patch high on the front, proud of the surface
-    mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, 0.55).scale.set(0.86, 1.05, 0.38);
+    this.faceMesh = mesh(new THREE.SphereGeometry(0.46, 30, 24), skin, 0, 1.58, faceZ);
+    this.faceMesh.scale.set(0.86 * shX, 1.05, 0.38);
     // eyes — two black pills, close-set
     const eye = (x: number) =>
-      mesh(new THREE.CapsuleGeometry(0.05, 0.12, 6, 14), dark, x, 1.58, 0.72);
-    this.eyeL = eye(-0.16);
-    this.eyeR = eye(0.16);
+      mesh(new THREE.CapsuleGeometry(0.05, 0.12, 6, 14), dark, x, 1.58, eyeZ);
+    this.eyeL = eye(-eyeX);
+    this.eyeR = eye(eyeX);
     // dizzy X-eyes — two crossed bars per eye, swapped in while flattened
     const dizzyEye = (x: number) => {
       const g = new THREE.Group();
-      g.position.set(x, 1.58, 0.72);
+      g.position.set(x, 1.58, eyeZ);
       for (const rz of [Math.PI / 4, -Math.PI / 4]) {
         const b = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.2, 0.03), dark);
         b.rotation.z = rz;
@@ -228,8 +268,142 @@ export class Hero3D {
       grp.add(g);
       return g;
     };
-    this.dizzyL = dizzyEye(-0.16);
-    this.dizzyR = dizzyEye(0.16);
+    this.dizzyL = dizzyEye(-eyeX);
+    this.dizzyR = dizzyEye(eyeX);
+    this.eyeXs = eyeX;
+    this.eyeZs = eyeZ;
+
+    // --- gear — head-mounted extras, one per model. Lives in grp so it
+    // rides every squash/splat/spin automatically. ---
+    {
+      const topY = 1.16 + 1.07 * shY; // crown of the torso capsule
+
+      // rage brows — the V-glare that turns a bean into a hunter. Not
+      // headgear, but riding gearParts keeps the fur off them.
+      if (model.rage) {
+        for (const side of [-1, 1] as const) {
+          const brow = mesh(new THREE.CapsuleGeometry(0.045, 0.18, 6, 12), dark, 0, 0, 0);
+          brow.position.set(side * eyeX * 1.15, 1.78, eyeZ + 0.02);
+          brow.rotation.z = side * 0.6; // inner ends dive toward the nose
+          this.gearParts.push(brow);
+        }
+      }
+
+      const gear = model.gear ?? 'none';
+      if (gear === 'cap' || gear === 'hardhat') {
+        const hatMat =
+          gear === 'cap' ? mat(0x23262e, 0.55) : mat(0xffc400, 0.4); // conductor dark / site yellow
+        const dome = mesh(
+          new THREE.SphereGeometry(0.36, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+          hatMat,
+          0,
+          topY - 0.16,
+          0.02,
+        );
+        dome.scale.set(shX * 1.05, 0.8, shZ * 1.05);
+        this.gearParts.push(dome);
+        if (gear === 'cap') {
+          // brim — half-disc sticking forward like a baseball cap
+          const brim = mesh(
+            new THREE.CylinderGeometry(0.36, 0.36, 0.045, 24, 1, false, 0, Math.PI),
+            hatMat,
+            0,
+            topY - 0.13,
+            0.14,
+          );
+          brim.rotation.y = -Math.PI / 2; // flat edge faces back, bill out +z
+          brim.scale.z = shZ;
+          this.gearParts.push(brim);
+        } else {
+          // helmet — full brim ring all the way round
+          const rim = mesh(
+            new THREE.CylinderGeometry(0.44, 0.44, 0.035, 24),
+            hatMat,
+            0,
+            topY - 0.15,
+            0.01,
+          );
+          rim.scale.set(shX, 1, shZ);
+          this.gearParts.push(rim);
+        }
+      } else if (gear === 'band') {
+        // sweatband — FRONT ARC only (arc=π sweeps local +x→+y→−x = world
+        // +x→+z→−x after rotation.x): a full ring's back half would stamp
+        // over the face during the gear re-draw
+        const band = mesh(
+          new THREE.TorusGeometry(0.58, 0.06, 10, 36, Math.PI),
+          mat(0xd23b3b, 0.6),
+          0,
+          1.85 + (shY - 1) * 0.4,
+          0.02,
+        );
+        band.rotation.x = Math.PI / 2;
+        band.scale.set(shX, shZ, 1); // z of the ring plane
+        this.gearParts.push(band);
+      } else if (gear === 'spikes') {
+        // mohawk — five coat-coloured cones fanned LEFT-TO-RIGHT across the
+        // crown so the whole row reads from the front view
+        for (let i = 0; i < 5; i++) {
+          const x = -0.3 + i * 0.15;
+          const spike = mesh(
+            new THREE.ConeGeometry(0.095, 0.46 - Math.abs(i - 2) * 0.07, 10),
+            body,
+            x * shX,
+            topY - 0.12 - Math.abs(x) * 0.35,
+            0.02,
+          );
+          spike.rotation.z = -x * 0.9; // fan outward along the crown curve
+          this.gearParts.push(spike);
+        }
+      } else if (gear === 'crown') {
+        // the Oba's crown — small gold circlet, five points
+        const gold = new THREE.MeshStandardMaterial({
+          color: 0xf6c90e,
+          metalness: 0.75,
+          roughness: 0.3,
+        });
+        const circlet = mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.14, 16), gold, 0, topY - 0.02, 0);
+        circlet.rotation.z = 0.1; // worn at a jaunty tilt
+        this.gearParts.push(circlet);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          this.gearParts.push(
+            mesh(
+              new THREE.ConeGeometry(0.032, 0.11, 8),
+              gold,
+              Math.cos(a) * 0.165,
+              topY + 0.1,
+              Math.sin(a) * 0.165 + 0.02,
+            ),
+          );
+        }
+      } else if (gear === 'frost') {
+        // icicles — translucent drips hanging off the coat's crown edge,
+        // like the melt is still deciding whether to freeze you
+        const ice = new THREE.MeshPhysicalMaterial({
+          color: 0xc9ecf8,
+          transparent: true,
+          opacity: 0.82,
+          roughness: 0.12,
+          metalness: 0,
+          clearcoat: 1,
+          clearcoatRoughness: 0.1,
+        });
+        for (let i = 0; i < 6; i++) {
+          const x = -0.42 + i * 0.17 + (i % 2) * 0.04;
+          const icicle = mesh(
+            new THREE.ConeGeometry(0.045 + (i % 3) * 0.015, 0.22 + (i % 2) * 0.12, 8),
+            ice,
+            x * shX,
+            topY - 0.42 - (i % 2) * 0.06,
+            0.12 + (i % 3) * 0.05,
+          );
+          icicle.rotation.x = Math.PI; // point down
+          icicle.rotation.z = x * 0.35; // splay with the crown curve
+          this.gearParts.push(icicle);
+        }
+      }
+    }
 
     // soft contact shadow — grounds the feet on the podium
     const shC = document.createElement('canvas');
@@ -251,6 +425,7 @@ export class Hero3D {
     );
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.set(0, 0.005, 0.15);
+    this.shadowMesh = shadow;
     grp.add(shadow);
 
     // environment reflections — the toy-render sheen lives here
@@ -323,7 +498,9 @@ export class Hero3D {
       const r = d[i] / 255,
         g = d[i + 1] / 255,
         b = d[i + 2] / 255;
-      return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 > 0.68;
+      // warm-neutral pale only — faces and white speculars. Cool blues
+      // (the ice militia's coat is 0.73 lightness!) must not flood the mask.
+      return (Math.max(r, g, b) + Math.min(r, g, b)) / 2 > 0.68 && r > b - 0.07;
     };
     const face = new Uint8Array(FW * FH);
     let seeded = false;
@@ -440,6 +617,7 @@ export class Hero3D {
       this.furCvCtx = this.furCv.getContext('2d', { willReadFrequently: true });
     }
     const uc = this.furCvCtx!;
+    const T = this.furTint;
     const uimg = uc.createImageData(W, H);
     const ud = uimg.data;
     for (let y = 0; y < H; y++)
@@ -447,10 +625,10 @@ export class Hero3D {
         if (!body(x, y)) continue;
         const o = (y * W + x) * 4,
           v = y / H;
-        // undercoat in the fur's own brown — mild vertical darkening only
-        ud[o] = 96 - v * 40;
-        ud[o + 1] = 52 - v * 22;
-        ud[o + 2] = 25 - v * 11;
+        // undercoat in the fur's own shade — mild vertical darkening only
+        ud[o] = (96 - v * 40) * T.r;
+        ud[o + 1] = (52 - v * 22) * T.g;
+        ud[o + 2] = (25 - v * 11) * T.b;
         ud[o + 3] = 255;
       }
     uc.putImageData(uimg, 0, 0);
@@ -465,7 +643,9 @@ export class Hero3D {
       const rg = uc.createRadialGradient(bx, by, 0, bx, by, r);
       rg.addColorStop(
         0,
-        dark ? 'rgba(28,12,4,0.16)' : 'rgba(255,214,160,0.10)',
+        dark
+          ? `rgba(${(28 * T.r) | 0},${(12 * T.g) | 0},${(4 * T.b) | 0},0.16)`
+          : `rgba(${Math.min(255, 255 * T.r) | 0},${(214 * T.g) | 0},${(160 * T.b) | 0},0.10)`,
       );
       rg.addColorStop(1, 'rgba(0,0,0,0)');
       uc.fillStyle = rg;
@@ -487,7 +667,8 @@ export class Hero3D {
       down = Math.PI / 2;
     const q = this.furQ,
       stride = 3 / Math.sqrt(q.density),
-      fstride = 5 / Math.sqrt(q.density);
+      fstride = 5 / Math.sqrt(q.density),
+      FL = this.furLen; // per-model coat length — multiplies the tier's fluff
     const restAngle = (x: number, y: number) => {
       const fromCow = Math.atan2(y - cowY, x - cowX);
       const clump = (Math.sin(x * 0.04) + Math.cos(y * 0.035)) * 0.3;
@@ -501,12 +682,11 @@ export class Hero3D {
       hi: Strand[] = [],
       fringe: Strand[] = [];
 
-    // interior coat
-
+    // interior coat — fractional stride sample of body pixels
     for (let y = 4; y < H - 4; y += stride)
       for (let x = 4; x < W - 4; x += stride) {
         if (!body(x, y)) continue;
-        const len = (9 + nz(x, y, 4) * 8) * q.fluff;
+        const len = (9 + nz(x, y, 4) * 8) * q.fluff * FL;
         const ang = restAngle(x, y);
         // skip strands that would stroke into the face region
         const tx = x + Math.cos(ang) * len,
@@ -540,7 +720,7 @@ export class Hero3D {
         const out = Math.atan2(ny / nl, nx / nl);
         let an = out + (((down - out + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * 0.25;
         an += (nz(x, y, 3) - 0.5) * q.mess;
-        const len = (9 + nz(x, y, 4) * 8) * q.fluff;
+        const len = (9 + nz(x, y, 4) * 8) * q.fluff * FL;
         fringe.push({ x, y, a: an, l: len, c: (nz(x, y, 5) - 0.5) * len * q.mess, s: nz(x, y, 8) });
       }
 
@@ -569,44 +749,46 @@ export class Hero3D {
     // undercoat strands — darkest, thickest
     for (const s of under) {
       const sh = 42 + s.s * 22;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.28) | 0},0.6)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.55 * T.g) | 0},${(sh * 0.28 * T.b) | 0},0.6)`;
       ctx.lineWidth = 1.6 + s.s * 1.0;
       stroke(s, false);
     }
     // mid coat + lit tips on the outer half
     for (const s of mid) {
       const sh = 78 + s.s * 26;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.55) | 0},${(sh * 0.3) | 0},0.85)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.55 * T.g) | 0},${(sh * 0.3 * T.b) | 0},0.85)`;
       ctx.lineWidth = 0.9 + s.s * 0.6;
       stroke(s, false);
     }
     for (const s of mid) {
       const sh = 115 + s.s * 30;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.5)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.6 * T.g) | 0},${(sh * 0.34 * T.b) | 0},0.5)`;
       ctx.lineWidth = (0.9 + s.s * 0.6) * 0.8;
       stroke(s, true);
     }
     // sparse highlights
     for (const s of hi) {
       const sh = 140 + s.s * 28;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.62) | 0},${(sh * 0.36) | 0},0.55)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.62 * T.g) | 0},${(sh * 0.36 * T.b) | 0},0.55)`;
       ctx.lineWidth = 0.7 + s.s * 0.4;
       stroke(s, false);
     }
     // fringe last so it pokes past the silhouette
     for (const s of fringe) {
       const sh = 84 + s.s * 32;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.56) | 0},${(sh * 0.3) | 0},0.8)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.56 * T.g) | 0},${(sh * 0.3 * T.b) | 0},0.8)`;
       ctx.lineWidth = 1.1;
       stroke(s, false);
     }
     for (const s of fringe) {
       const sh = 120 + s.s * 28;
-      ctx.strokeStyle = `rgba(${sh | 0},${(sh * 0.6) | 0},${(sh * 0.34) | 0},0.45)`;
+      ctx.strokeStyle = `rgba(${(sh * T.r) | 0},${(sh * 0.6 * T.g) | 0},${(sh * 0.34 * T.b) | 0},0.45)`;
       ctx.lineWidth = 0.9;
       stroke(s, true);
     }
     ctx.restore();
+    // gear stays vinyl-clean — re-stamp it over the finished coat
+    if (this.gearCv) ctx.drawImage(this.gearCv, 0, 0);
   }
 
   update(t: number) {
@@ -737,11 +919,11 @@ export class Hero3D {
 
     // gaze — eyes drift, body leans toward the cursor
     if (this.eyeL) {
-      this.eyeL.position.x = -0.16 + this.gx * 0.07;
+      this.eyeL.position.x = -this.eyeXs + this.gx * 0.07;
       this.eyeL.position.y = 1.58 + this.gy * 0.05;
     }
     if (this.eyeR) {
-      this.eyeR.position.x = 0.16 + this.gx * 0.07;
+      this.eyeR.position.x = this.eyeXs + this.gx * 0.07;
       this.eyeR.position.y = 1.58 + this.gy * 0.05;
     }
 
@@ -753,6 +935,154 @@ export class Hero3D {
     grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY + 1.16 * (1 - Math.cos(this.flipX));
     grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
     grp.rotation.z = Math.sin(s * 1.1) * (this.skydiving ? 0.11 : 0.02) * idle - this.gx * 0.06;
+
+    // gear pass — render gear alone into a side canvas so drawFur can
+    // re-stamp it AFTER the strand pass (fur must not grow on hats)
+    if (this.gearParts.length) {
+      const hidden = (
+        [
+          this.torso,
+          ...this.shellMeshes,
+          this.faceMesh,
+          this.eyeL,
+          this.eyeR,
+          this.dizzyL,
+          this.dizzyR,
+          this.flipL?.root,
+          this.flipR?.root,
+          this.footL,
+          this.footR,
+          this.shadowMesh,
+        ] as (THREE.Object3D | undefined)[]
+      ).filter((o): o is THREE.Object3D => !!o);
+      const was = hidden.map((o) => o.visible);
+      for (const o of hidden) o.visible = false;
+      this.renderer.render(this.scene, this.camera);
+      if (!this.gearCv) {
+        this.gearCv = document.createElement('canvas');
+        this.gearCv.width = this.W;
+        this.gearCv.height = this.H;
+        this.gearCtx = this.gearCv.getContext('2d')!;
+      }
+      this.gearCtx!.clearRect(0, 0, this.W, this.H);
+      this.gearCtx!.drawImage(this.renderer.domElement, 0, 0);
+      hidden.forEach((o, i) => (o.visible = was[i]));
+    }
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /** re-dress the bean — recolors the vinyl body, fur shells and face oval */
+  setVariant(body: number, skin: number) {
+    this.bodyMat?.color.set(body);
+    this.skinMat?.color.set(skin);
+    for (const m of this.shellMats) m.color.set(body);
+    // the 2D fur overlay draws its strands in code — retint them relative
+    // to the default coat so variants show through the fur too
+    const br = (BODY >> 16) & 0xff,
+      bg = (BODY >> 8) & 0xff,
+      bb = BODY & 0xff;
+    this.furTint = {
+      r: ((body >> 16) & 0xff) / br,
+      g: ((body >> 8) & 0xff) / bg,
+      b: (body & 0xff) / bb,
+    };
+  }
+
+  private furTint = { r: 1, g: 1, b: 1 };
+
+  /** ¾-down camera for sprite baking — classic top-down-art angle: face
+   *  reads, crown shows, feet ground the pose */
+  bakeCam() {
+    if (!this.camera) return;
+    this.camera.position.set(0, 2.95, 4.5);
+    this.camera.lookAt(0, 1.15, 0);
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** deterministic rig pose — sets every animated channel directly (no
+   *  springs, no randomness) and renders immediately. Used by the sprite
+   *  baker to capture run-cycle / idle / splat frames. */
+  poseFor(kind: 'run' | 'idle' | 'splat', ph: number) {
+    const g = this.group;
+    if (!g || !this.renderer || !this.scene || !this.camera) return;
+    const t = ph * Math.PI * 2;
+    // reset every channel update() drives
+    g.rotation.set(0, 0, 0);
+    g.position.set(0, 0, 0);
+    g.scale.set(1, 1, 1);
+    if (this.footL) this.footL.rotation.set(0, -0.18, 0);
+    if (this.footR) this.footR.rotation.set(0, 0.18, 0);
+    if (this.flipL) {
+      this.flipL.root.rotation.set(0, 0, -0.18);
+      this.flipL.elbow.rotation.set(0, 0, 0);
+    }
+    if (this.flipR) {
+      this.flipR.root.rotation.set(0, 0, 0.18);
+      this.flipR.elbow.rotation.set(0, 0, 0);
+    }
+    const eyesFlat = kind === 'splat';
+    if (this.eyeL) {
+      this.eyeL.visible = !eyesFlat;
+      this.eyeL.scale.y = 1;
+      this.eyeL.position.set(-this.eyeXs, 1.58, this.eyeZs);
+    }
+    if (this.eyeR) {
+      this.eyeR.visible = !eyesFlat;
+      this.eyeR.scale.y = 1;
+      this.eyeR.position.set(this.eyeXs, 1.58, this.eyeZs);
+    }
+    if (this.dizzyL) {
+      this.dizzyL.visible = eyesFlat;
+      this.dizzyL.rotation.z = 0.2;
+    }
+    if (this.dizzyR) {
+      this.dizzyR.visible = eyesFlat;
+      this.dizzyR.rotation.z = -0.2;
+    }
+
+    if (kind === 'run') {
+      // stride cycle — alternating foot lifts, counter-swinging flippers,
+      // bob + waddle roll + a breath of squash on each footfall
+      const q = Math.abs(Math.sin(t)) * 0.09;
+      g.scale.set(1 - q * 0.5, 1 + q, 1 - q * 0.45);
+      g.position.y = Math.abs(Math.sin(t)) * 0.1;
+      g.rotation.z = Math.sin(t) * 0.055;
+      g.rotation.x = 0.14; // forward lean into the run
+      if (this.footL) {
+        this.footL.rotation.x = -Math.max(0, Math.sin(t)) * 0.85;
+        this.footL.rotation.z = -Math.sin(t) * 0.14;
+      }
+      if (this.footR) {
+        this.footR.rotation.x = -Math.max(0, Math.sin(t + Math.PI)) * 0.85;
+        this.footR.rotation.z = Math.sin(t) * 0.14;
+      }
+      if (this.flipL) {
+        this.flipL.root.rotation.z = -0.3 - Math.sin(t) * 0.32;
+        this.flipL.elbow.rotation.z = -Math.sin(t - 0.6) * 0.28;
+      }
+      if (this.flipR) {
+        this.flipR.root.rotation.z = 0.3 - Math.sin(t) * 0.32;
+        this.flipR.elbow.rotation.z = Math.sin(t - 0.6) * 0.28;
+      }
+    } else if (kind === 'idle') {
+      // breathing sway — same channels, a third of the energy
+      const q = Math.sin(t) * 0.03;
+      g.scale.set(1 - q * 0.5, 1 + q, 1 - q * 0.45);
+      g.position.y = Math.sin(t) * 0.045;
+      g.rotation.z = Math.sin(t) * 0.022;
+      g.rotation.y = Math.sin(t * 0.6) * 0.14;
+      if (this.flipL) this.flipL.root.rotation.z = -0.18 - Math.sin(t) * 0.09;
+      if (this.flipR) this.flipR.root.rotation.z = 0.18 + Math.sin(t) * 0.09;
+    } else {
+      // splat — flat on the back (ph scales how flat: 1 = pancake, 0.5 = half up)
+      const splat = 1 - ph * 0.6;
+      g.rotation.x = -1.15 * splat;
+      g.scale.z = 1 - splat * 0.2;
+      g.scale.x = 1 + splat * 0.12;
+      if (this.flipL) this.flipL.root.rotation.z = -0.9;
+      if (this.flipR) this.flipR.root.rotation.z = 0.9;
+    }
 
     this.renderer.render(this.scene, this.camera);
   }
