@@ -1010,7 +1010,7 @@ export class AdventureScene extends Phaser.Scene {
     // ~0.65 world-units and flips around the body centre, so the frame
     // needs real headroom (visible world top 3.29) and flap room (±1.59)
     const pc = currentChar();
-    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, pc));
+    const hero = (this.hero3d = new Hero3D(560, 700, 6.5, 1.3, 1.3, pc));
     if (hero.ok && hero.canvas) {
       hero.trickOn = true; // the map bean does the pratfall routine
       hero.setVariant(pc.body, pc.skin); // the statue wears your picked coat
@@ -1152,7 +1152,7 @@ export class AdventureScene extends Phaser.Scene {
     sfx.shortWhistle();
     this.cameras.main.fadeOut(220, 0, 0, 0);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('game', { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) }),
+      this.scene.start('drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } }),
     );
   }
 

@@ -60,6 +60,9 @@ export class Hero3D {
   /** enables the pratfall routine — launch, midair backflip, flat splat,
    *  dizzy eyes, recover. The map statue's signature; lobby leaves it off. */
   trickOn = false;
+  /** skydive pose for the drop-in loading screen — arms out, feet trailing,
+   *  belly leaned toward camera. Suppresses hops/tricks while set. */
+  skydiving = false;
   private tricking = false;
   private flipX = 0; // airborne backflip angle
   private dizzyUntil = 0;
@@ -98,7 +101,7 @@ export class Hero3D {
   private W = 520;
   private H = 540;
 
-  constructor(w: number, h: number, camZ = 5.0, model: BeanModel = {}) {
+  constructor(w: number, h: number, camZ = 5.0, camY = 1.3, lookY = 1.3, model: BeanModel = {}) {
     this.W = w;
     this.H = h;
     try {
@@ -444,8 +447,8 @@ export class Hero3D {
     this.camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 20);
     // framed with hop headroom — crown + hop lift stays in view; the map's
     // pratfall passes camZ>5 for flip + splat headroom on a taller buffer
-    this.camera.position.set(0, 1.3, camZ);
-    this.camera.lookAt(0, 1.3, 0);
+    this.camera.position.set(0, camY, camZ);
+    this.camera.lookAt(0, lookY, 0);
 
     this.ok = true;
   }
@@ -795,31 +798,47 @@ export class Hero3D {
     this.sq = Math.max(-0.45, Math.min(0.5, this.sq + this.sqVel * dt));
     grp.scale.set(1 - this.sq * 0.5, 1 + this.sq, 1 - this.sq * 0.45);
 
-    // flippers — idle wave, hard flap while airborne, elbow trails a beat
-    const flap = Math.sin(s * 3.4) * 0.1 * idle + (this.hopY > 0 ? Math.sin(s * 18) * 0.45 : 0);
-    const bend = Math.sin(s * 3.4 - 0.7) * 0.18 * idle + (this.hopY > 0 ? Math.sin(s * 18 - 0.8) * 0.3 : 0);
-    if (this.flipL) {
-      this.flipL.root.rotation.z = -0.18 - flap + this.sq * 0.3;
-      this.flipL.elbow.rotation.z = -bend;
-    }
-    if (this.flipR) {
-      this.flipR.root.rotation.z = 0.18 + flap - this.sq * 0.3;
-      this.flipR.elbow.rotation.z = bend;
-    }
+    if (this.skydiving) {
+      // T-pose dive — arms spread horizontal, trembling in the wind
+      const wind = Math.sin(s * 9) * 0.05 * idle + Math.sin(s * 23) * 0.025 * idle;
+      if (this.flipL) {
+        this.flipL.root.rotation.z = -1.3 + wind;
+        this.flipL.elbow.rotation.z = -0.1;
+      }
+      if (this.flipR) {
+        this.flipR.root.rotation.z = 1.3 - wind;
+        this.flipR.elbow.rotation.z = 0.1;
+      }
+      // feet trail up behind the dive — the leaner it gets the higher they kick
+      if (this.footL) this.footL.rotation.x = 0.9;
+      if (this.footR) this.footR.rotation.x = 0.9;
+    } else {
+      // flippers — idle wave, hard flap while airborne, elbow trails a beat
+      const flap = Math.sin(s * 3.4) * 0.1 * idle + (this.hopY > 0 ? Math.sin(s * 18) * 0.45 : 0);
+      const bend = Math.sin(s * 3.4 - 0.7) * 0.18 * idle + (this.hopY > 0 ? Math.sin(s * 18 - 0.8) * 0.3 : 0);
+      if (this.flipL) {
+        this.flipL.root.rotation.z = -0.18 - flap + this.sq * 0.3;
+        this.flipL.elbow.rotation.z = -bend;
+      }
+      if (this.flipR) {
+        this.flipR.root.rotation.z = 0.18 + flap - this.sq * 0.3;
+        this.flipR.elbow.rotation.z = bend;
+      }
 
-    // feet — alternating waddle wiggle; toes kick down mid-hop
-    const kick = this.hopY > 0 ? 0.55 : 0;
-    if (this.footL) {
-      this.footL.rotation.z = -Math.sin(s * 1.8) * 0.1 * idle;
-      this.footL.rotation.x = -kick - Math.sin(s * 2.2) * 0.05 * idle;
-    }
-    if (this.footR) {
-      this.footR.rotation.z = Math.sin(s * 1.8 + 1.2) * 0.1 * idle;
-      this.footR.rotation.x = -kick - Math.sin(s * 2.2 + 0.9) * 0.05 * idle;
+      // feet — alternating waddle wiggle; toes kick down mid-hop
+      const kick = this.hopY > 0 ? 0.55 : 0;
+      if (this.footL) {
+        this.footL.rotation.z = -Math.sin(s * 1.8) * 0.1 * idle;
+        this.footL.rotation.x = -kick - Math.sin(s * 2.2) * 0.05 * idle;
+      }
+      if (this.footR) {
+        this.footR.rotation.z = Math.sin(s * 1.8 + 1.2) * 0.1 * idle;
+        this.footR.rotation.x = -kick - Math.sin(s * 2.2 + 0.9) * 0.05 * idle;
+      }
     }
 
     // scheduled hop — stretch at take-off, squash on landing
-    if (!REDUCED_MOTION && !this.trickOn && t > this.nextHop) {
+    if (!REDUCED_MOTION && !this.trickOn && !this.skydiving && t > this.nextHop) {
       this.nextHop = t + 5200 + Math.random() * 5200;
       if (this.hopY === 0) {
         this.hopV = 2.7;
@@ -828,7 +847,7 @@ export class Hero3D {
     }
     // the pratfall routine — launch, midair backflip, SPLAT flat on the
     // podium, X-eyes while it lies there, then it staggers back up
-    if (this.trickOn && !REDUCED_MOTION && t > this.nextTrick) {
+    if (this.trickOn && !this.skydiving && !REDUCED_MOTION && t > this.nextTrick) {
       this.nextTrick = t + 4200 + Math.random() * 4600;
       if (this.hopY === 0) {
         this.hopV = 3.6;
@@ -859,7 +878,7 @@ export class Hero3D {
     const splat = dizzy ? Math.min(1, Math.max(0, (splatT - 300) / 1100)) : 0;
     // rotation.x −66°: flat on its back, feet toward camera, face tilted
     // up enough that the X-eyes still read
-    grp.rotation.x = this.flipX - splat * 1.15;
+    grp.rotation.x = this.flipX - splat * 1.15 + (this.skydiving ? 0.22 : 0); // belly tips down — the high camera keeps the face readable
     // lying flat → world-Y thinness comes from local Z; squash it into a
     // pancake and let it spread sideways under the impact
     grp.scale.z *= 1 - splat * 0.2;
@@ -907,7 +926,7 @@ export class Hero3D {
     // idle — breathing bob, slow sway, gaze lean, user spin
     grp.position.y = Math.sin(s * 1.6) * 0.045 * idle + this.hopY + 1.16 * (1 - Math.cos(this.flipX));
     grp.rotation.y = this.yaw + Math.sin(s * 0.7) * 0.18 * idle + this.gx * 0.22;
-    grp.rotation.z = Math.sin(s * 1.1) * 0.02 * idle - this.gx * 0.06;
+    grp.rotation.z = Math.sin(s * 1.1) * (this.skydiving ? 0.11 : 0.02) * idle - this.gx * 0.06;
 
     // gear pass — render gear alone into a side canvas so drawFur can
     // re-stamp it AFTER the strand pass (fur must not grow on hats)
