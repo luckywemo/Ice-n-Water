@@ -51,10 +51,21 @@ export const CHAPTERS = [
   'RIVAL ARENAS', 'LEGEND OF THE ROAD',
 ];
 
-const BOSSES = [
-  'THE PLAYGROUND CHAMPION', 'THE COMPOUND CAPTAIN', 'THE HEAD PREFECT',
-  'THE MARKET CHAMPION', 'THE MOTOR PARK MARSHAL', 'THE FESTIVAL GUARDIAN',
-  'THE TRICKSTER KING', 'THE ICE TITAN', 'THE RIVAL SQUAD CAPTAIN', 'THE ICE KING',
+// the champion who holds each milestone — the real royal title of that
+// town's people. Baale = quarter head under an Oba (Lagos neighborhoods),
+// Oba/Baale across Yorubaland, Igwe/Eze/Obi in the East, Amanyanabo/Obong
+// downriver, then the Emirs, Sultan and Shehu as the road runs north.
+const MILESTONE_BOSSES = [
+  'OBA OF LAGOS', 'OBA OF IKOYI', 'BAALE OF SURULERE', 'BAALE OF YABA', 'OBA OF IKEJA',
+  'AYANGBUREN OF IKORODU', 'OLOJA OF EPE', 'AHOLU OF BADAGRY', 'BAALE OF AGEGE', 'BAALE OF OSHODI',
+  'ALAKE OF EGBALAND', 'OLUBADAN OF IBADAN', 'ATAOJA OF OSOGBO', 'OONI OF IFE', 'DEJI OF AKURE',
+  'EWI OF ADO-EKITI', 'OSEMAWE OF ONDO', 'OBA OF BENIN', 'OLU OF WARRI', 'ASAGBA OF ASABA',
+  'OBI OF ONITSHA', 'EZE UZU OF AWKA', 'IGWE OF ENUGU', 'IGWE OF ABAKALIKI', 'EZE OF OWERRI',
+  'IGWE OF UMUAHIA', 'EZE OF ABA', 'AMANYANABO OF PORT HARCOURT', 'AMANYANABO OF YENAGOA', 'OBONG OF CALABAR',
+  'OBONG OF UYO', 'CHIEF OF OGOJA', 'TOR TIV OF MAKURDI', 'MAIGARI OF LOKOJA', 'EMIR OF ILORIN',
+  'EMIR OF MINNA', 'ESU OF ABUJA', 'EMIR OF KADUNA', 'EMIR OF ZAZZAU', 'EMIR OF KANO',
+  'EMIR OF KATSINA', 'SULTAN OF SOKOTO', 'EMIR OF GWANDU', 'EMIR OF ZAMFARA', 'EMIR OF DUTSE',
+  'EMIR OF BAUCHI', 'EMIR OF GOMBE', 'LAMIDO OF ADAMAWA', 'EMIR OF MURI', 'SHEHU OF BORNO',
 ];
 
 export type ObjectiveKind = 'survive' | 'collect' | 'rescue' | 'refuge' | 'hunt';
@@ -179,7 +190,7 @@ export function levelDef(n: number): LevelDef {
               ? huntCount
               : 0,
     },
-    boss: n % LEVELS_PER_MILESTONE === 0 ? BOSSES[chapterIdx] : undefined,
+    boss: n % LEVELS_PER_MILESTONE === 0 ? MILESTONE_BOSSES[milestone - 1] : undefined,
     bossMove,
     mutator,
     twist: def.twist || undefined,

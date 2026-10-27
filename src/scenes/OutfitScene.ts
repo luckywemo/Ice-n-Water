@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Hero3D } from '../hero3d';
 import { REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
-import { CHARACTERS, CharDef, currentChar, currentPick, setChar } from '../characters';
+import { CHARACTERS, CharDef, charUnlocked, currentChar, currentPick, setChar } from '../characters';
 import { perfInterval, furQuality } from '../meta';
 import { Sfx } from '../audio';
 
@@ -339,6 +339,41 @@ export class OutfitScene extends Phaser.Scene {
     }
   }
 
+  /** a locked runner — greyed portrait behind a padlock, milestone tells
+   *  which champion to beat. No pointer zone: it can't be picked. */
+  private lockedTile(gx: number, gy: number, def: CharDef) {
+    const g = this.add.graphics();
+    g.fillStyle(0x0a0710, 0.3).fillRoundedRect(gx + 3, gy + 4, TILE, TILE, 12);
+    g.fillStyle(0x6fa8bd, 1).fillRoundedRect(gx, gy, TILE, TILE, 12);
+    this.drawMiniBean(g, gx + TILE / 2, gy + TILE / 2 - 8, def);
+    g.fillStyle(0x0a2030, 0.55).fillRoundedRect(gx, gy, TILE, TILE, 12); // veil
+    // padlock — shackle + body, drawn not emoji'd
+    const lx = gx + TILE / 2,
+      ly = gy + TILE / 2 - 10;
+    g.lineStyle(4, 0xffffff, 0.9).strokeCircle(lx, ly - 8, 8);
+    g.fillStyle(0xffffff, 0.95).fillRoundedRect(lx - 11, ly - 9, 22, 19, 5);
+    g.fillStyle(0x0a2030, 1).fillCircle(lx, ly - 1, 3).fillRect(lx - 1.5, ly, 3, 6);
+    g.fillStyle(0x0a0710, 0.4).fillRoundedRect(gx + 6, gy + TILE - 26, TILE - 12, 20, 6);
+    const hint = this.add
+      .text(lx, ly + 24, `MILESTONE ${def.unlockAt}`, {
+        fontFamily: FG_BODY,
+        fontSize: '9px',
+        fontStyle: '800',
+        color: '#cfe8f5',
+      })
+      .setOrigin(0.5);
+    const name = this.add
+      .text(gx + TILE / 2, gy + TILE - 16, def.name, {
+        fontFamily: FG_BODY,
+        fontSize: '10px',
+        fontStyle: '800',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.65);
+    this.grid!.add([g, hint, name]);
+  }
+
   /** swatch tile frame — rim, hover ring, equipped check */
   private tile(
     gx: number,
@@ -407,6 +442,7 @@ export class OutfitScene extends Phaser.Scene {
       CHARACTERS.forEach((def, i) => {
         const gx = GRID_X + (i % COLS) * (TILE + TILE_GAP);
         const gy = GRID_Y + Math.floor(i / COLS) * (TILE + TILE_GAP);
+        if (!charUnlocked(def)) return this.lockedTile(gx, gy, def);
         this.tile(
           gx,
           gy,

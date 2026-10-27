@@ -22,7 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { CHARACTERS, currentChar, setChar } from '../characters';
+import { CHARACTERS, charUnlocked, currentChar, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -498,7 +498,11 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private cycleChar(dir: -1 | 1) {
-    this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
+    // locked runners don't cycle in — keep stepping until a free one lands
+    for (let k = 0; k < CHARACTERS.length; k++) {
+      this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
+      if (charUnlocked(CHARACTERS[this.charIdx])) break;
+    }
     const ch = CHARACTERS[this.charIdx];
     this.charName?.setText(ch.name);
     setChar(ch.id);
