@@ -22,7 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { CHARACTERS, charUnlocked, currentChar, runnerName, setChar } from '../characters';
+import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -62,6 +62,8 @@ export class TitleScene extends Phaser.Scene {
   private lobbyDrop?: (delayBase: number) => void;
   private charIdx = 0;
   private charName?: Phaser.GameObjects.Text;
+  private charTitle?: Phaser.GameObjects.Text; // TITLE line under the runner's name on the podium
+  private refreshCharPlate?: () => void;
   private askName?: () => void; // the NAME YOUR RUNNER modal — reused for the first-run gate
 
   constructor() {
@@ -444,16 +446,34 @@ export class TitleScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true })
           .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
       }
+      // stacked plate — username on top, TITLE under it
+      const whoOf = () => (playerName() || CHARACTERS[this.charIdx].name).toUpperCase();
+      const titleOf = () => charTitleShort(CHARACTERS[this.charIdx]) || 'RUNNER';
       this.charName = this.add
-        .text(podX, pickY + 4, runnerName(CHARACTERS[this.charIdx]), {
+        .text(podX, pickY - 12, whoOf(), {
           fontFamily: FG_FONT,
-          fontSize: '30px',
+          fontSize: '26px',
           color: '#ffffff',
           stroke: '#8a3b5c',
           strokeThickness: 6,
         })
         .setOrigin(0.5)
         .setDepth(6);
+      this.charTitle = this.add
+        .text(podX, pickY + 18, titleOf(), {
+          fontFamily: FG_FONT,
+          fontSize: '16px',
+          fontStyle: 'italic',
+          color: '#ffd54f',
+          stroke: '#8a3b5c',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5)
+        .setDepth(6);
+      this.refreshCharPlate = () => {
+        this.charName?.setText(whoOf());
+        this.charTitle?.setText(titleOf());
+      };
     }
 
     // --- name plate — bottom-left ---
@@ -462,7 +482,7 @@ export class TitleScene extends Phaser.Scene {
     );
     this.events.on('runner-renamed', () => {
       nameT.setText(playerName() || 'your runner');
-      this.charName?.setText(runnerName(CHARACTERS[this.charIdx]));
+      this.refreshCharPlate?.();
     });
 
     // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
@@ -509,7 +529,7 @@ export class TitleScene extends Phaser.Scene {
       if (charUnlocked(CHARACTERS[this.charIdx])) break;
     }
     const ch = CHARACTERS[this.charIdx];
-    this.charName?.setText(runnerName(ch));
+    this.refreshCharPlate?.();
     setChar(ch.id);
     // shape/gear change the mesh itself — retint can't do it, so the rig
     // is rebuilt and the frame-blit picks up the new canvas automatically
