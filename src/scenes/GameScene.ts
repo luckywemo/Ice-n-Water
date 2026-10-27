@@ -16,7 +16,7 @@ import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta'
 import { TouchControls } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { bakeBeanSheet } from '../beanbake';
-import { currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
+import { currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -40,6 +40,7 @@ interface RunnerState {
   label: Phaser.GameObjects.Text;
   personality: Personality;
   sheet?: string; // baked bean sheet key — anims instead of the flat circle
+  drawScale?: number; // presentation scale — beans 0.8, boss 1.45, icelings 0.5
 }
 
 interface ChaserState {
@@ -60,6 +61,7 @@ interface ChaserState {
   rageUntil?: number; // boss move — boiling red, runs you down harder
   sheet?: string; // baked bean sheet key
   noTagUntil?: number; // icelings get a warm-up before their touch freezes
+  drawScale?: number; // boss 1.45, icelings 0.5, regular militia 0.8
 }
 
 type ItemType = 'slippers' | 'charm' | 'water';
@@ -174,6 +176,10 @@ export class GameScene extends Phaser.Scene {
   private sheetPlayer: string | null = null;
   private sheetCrew: string | null = null;
   private sheetMilitia: string | null = null;
+  private sheetBoss: string | null = null; // milestone champion's own look
+  private hintText!: Phaser.GameObjects.Text;
+  private hintChip!: Phaser.GameObjects.Graphics;
+  private hintGone = false; // hint bar retired after the first few rounds
   private exitPos: { x: number; y: number; r: number } | null = null;
   private exitGfx: Phaser.GameObjects.Graphics | null = null;
 
@@ -299,7 +305,19 @@ export class GameScene extends Phaser.Scene {
     this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
       ? 'bean-militia'
       : null;
-    for (const k of [this.sheetPlayer, this.sheetCrew, this.sheetMilitia])
+    // milestone champion — own coat, own crown
+    this.sheetBoss = null;
+    if (this.level?.boss && BOSS_MODELS[this.level.boss]) {
+      const bKey =
+        'bean-boss-' + this.level.boss.toLowerCase().replace(/[^a-z]+/g, '-');
+      this.sheetBoss = bakeBeanSheet(this, bKey, {
+        ...MILITIA_DEF,
+        ...BOSS_MODELS[this.level.boss],
+      })
+        ? bKey
+        : null;
+    }
+    for (const k of [this.sheetPlayer, this.sheetCrew, this.sheetMilitia, this.sheetBoss])
       if (k) this.makeBeanAnims(k);
 
     this.buildArena();
@@ -385,6 +403,19 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.scale.on('resize', this.relayout, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
+    // a phone call / app switch mid-round pauses instead of feeding you to the ice
+    const onBlurPause = () => {
+      if (
+        document.visibilityState === 'hidden' &&
+        (this.phase === 'play' || this.phase === 'countdown')
+      ) {
+        this.togglePause();
+      }
+    };
+    document.addEventListener('visibilitychange', onBlurPause);
+    this.events.once('shutdown', () =>
+      document.removeEventListener('visibilitychange', onBlurPause),
+    );
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
     this.input.on('pointerdown', this.onPauseTap, this);
@@ -542,6 +573,7 @@ export class GameScene extends Phaser.Scene {
     this.runners.push(this.player);
     const pSt = this.freshRunner(this.player, 'YOU', null);
     pSt.sheet = this.sheetPlayer ?? undefined;
+    pSt.drawScale = this.sheetPlayer ? 0.8 : 1;
     this.rState.set(this.player, pSt);
     if (this.sheetPlayer) this.player.play(this.sheetPlayer + '-idle');
 
@@ -555,6 +587,7 @@ export class GameScene extends Phaser.Scene {
       const who = CONFIG.crew[i % CONFIG.crew.length];
       const st = this.freshRunner(r, who.name, who);
       st.sheet = this.sheetCrew ?? undefined;
+      st.drawScale = this.sheetCrew ? 0.8 : 1;
       this.rState.set(r, st);
       if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
     }
@@ -562,23 +595,24 @@ export class GameScene extends Phaser.Scene {
     // militia — adventure levels can field a whole squad from the first whistle
     for (let i = 0; i < this.initialChasers; i++) {
       const y = (this.arenaH / (this.initialChasers + 1)) * (i + 1);
-      const chaser = this.physics.add.sprite(
-        arena.wall + 40,
-        y,
-        this.sheetMilitia ?? 'chaser',
-      );
-      this.dressBean(chaser, this.sheetMilitia);
+      // milestone champions wear their own baked look, not the rank-and-file
+      const boss = Boolean(this.level?.boss && i === 0);
+      const sheet = boss ? (this.sheetBoss ?? this.sheetMilitia) : this.sheetMilitia;
+      const chaser = this.physics.add.sprite(arena.wall + 40, y, sheet ?? 'chaser');
+      this.dressBean(chaser, sheet);
       this.chasers.push(chaser);
       const cst = this.freshChaser(chaser);
-      cst.sheet = this.sheetMilitia ?? undefined;
+      cst.sheet = sheet ?? undefined;
+      cst.drawScale = sheet ? 0.8 : 1;
       // milestone levels are boss fights — the named champion is bigger,
       // hotter, and wears their title over their head
-      if (this.level?.boss && i === 0) {
+      if (boss) {
+        cst.drawScale = 1.45;
         chaser.setScale(1.45);
         cst.speedMult = 1.15;
         cst.tint = 0xff8080;
         cst.tag = this.add
-          .text(chaser.x, chaser.y - 44, this.level.boss, {
+          .text(chaser.x, chaser.y - 44, this.level!.boss!, {
             fontFamily: DISPLAY_FONT,
             fontSize: '13px',
             color: '#ffb0b0',
@@ -923,6 +957,7 @@ export class GameScene extends Phaser.Scene {
     this.chasers.push(c);
     const cst = this.freshChaser(c);
     cst.sheet = this.sheetMilitia ?? undefined;
+    cst.drawScale = this.sheetMilitia ? 0.5 : 0.65;
     cst.speedMult = 0.55; // hunters run cold — you can outpace them
     cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
     cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
@@ -1083,7 +1118,7 @@ export class GameScene extends Phaser.Scene {
 
     const isTouch = TouchControls.isTouchDevice();
     const exitLabel = this.level ? 'T — the road' : 'T — title';
-    const hintText = this.pin(
+    this.hintText = this.pin(
       this.add.text(0, 0, isTouch
           ? 'left thumb — move   ·   RUN — sprint   ·   H₂O — use item   ·   ↻ — restart'
           : `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`,
@@ -1092,16 +1127,25 @@ export class GameScene extends Phaser.Scene {
       0.5, 1, 0, -12,
     );
     // dark keycap chip behind the hint — the "Select Ⓛ" affordance
-    const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
-    chip
+    this.hintChip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+    this.hintChip
       .fillStyle(0x0a1420, 0.6)
       .fillRoundedRect(
-        -hintText.width / 2 - 14,
-        -hintText.height - 9,
-        hintText.width + 28,
-        hintText.height + 11,
+        -this.hintText.width / 2 - 14,
+        -this.hintText.height - 9,
+        this.hintText.width + 28,
+        this.hintText.height + 11,
         9,
       );
+    // the strip retires after your first rounds — reappears while paused
+    const hintSeen = Number(localStorage.getItem('iw-hint-seen') ?? '0');
+    this.hintGone = hintSeen >= 3;
+    if (this.hintGone) {
+      this.hintText.setVisible(false);
+      this.hintChip.setVisible(false);
+    } else {
+      localStorage.setItem('iw-hint-seen', String(hintSeen + 1));
+    }
 
     this.staminaGfx = this.add.graphics().setDepth(9);
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
@@ -1471,6 +1515,7 @@ export class GameScene extends Phaser.Scene {
     this.burst(runner.x, runner.y, CONFIG.colors.frozen, 18, 230);
     this.shake(110, 0.005);
     this.hitstop(85);
+    this.buzz(st.isPlayer ? 90 : 25); // your phone jolts when YOU go down
 
     if (st.isPlayer) {
       this.playerFreezes++;
@@ -1509,7 +1554,7 @@ export class GameScene extends Phaser.Scene {
     this.burst(runner.x, runner.y, CONFIG.colors.water, 16, 210);
     this.floatText(runner.x, runner.y, 'WATER!');
     if (st.sheet) runner.play(st.sheet + '-idle');
-    const base = st.sheet ? 0.8 : 1; // beans dress at 0.8
+    const base = st.drawScale ?? (st.sheet ? 0.8 : 1);
     runner.setScale(base * 1.25);
     this.tweens.add({ targets: runner, scale: base, duration: 200 });
 
@@ -1720,6 +1765,7 @@ export class GameScene extends Phaser.Scene {
       this.chasers.push(c);
       const cst = this.freshChaser(c);
       cst.sheet = this.sheetMilitia ?? undefined;
+      cst.drawScale = this.sheetMilitia ? 0.8 : 1;
       this.cState.set(c, cst);
       if (this.sheetMilitia) c.play(this.sheetMilitia + '-idle');
       this.collideWithWorld(c);
@@ -1939,6 +1985,12 @@ export class GameScene extends Phaser.Scene {
     const line = lines[Math.floor(Math.random() * lines.length)];
     this.floatText(c.x, c.y - 22, line, '#e84848');
     sfx.voice(line);
+  }
+
+  /** haptics — phone jolts on tags/wins; no-op on desktop and browsers
+   *  without the Vibration API */
+  private buzz(pattern: number | number[]) {
+    if (TouchControls.isTouchDevice()) navigator.vibrate?.(pattern);
   }
 
   private barkNear(runner: Sprite, kind: BarkKind, chance = 0.5) {
@@ -2324,6 +2376,7 @@ export class GameScene extends Phaser.Scene {
 
     if (militiaWon) {
       sfx.lose();
+      this.buzz(140);
       this.playResultRibbon(false, timedOut);
       landResult(
         this.level
@@ -2337,6 +2390,7 @@ export class GameScene extends Phaser.Scene {
       this.shake(250, 0.01);
     } else {
       sfx.win();
+      this.buzz([40, 60, 40, 60, 120]);
       let stars = 0;
       if (this.level) {
         // ★ survive · ★★ at most one freeze · ★★★ untouched
@@ -2415,6 +2469,9 @@ export class GameScene extends Phaser.Scene {
     this.time.paused = true; // freezes the event clock — no bus/NEPA/rain mid-pause
     this.tweens.pauseAll(); // entity anims freeze; menu tweens added after are unaffected
     this.buildPauseMenu();
+    // the retired controls strip borrows the pause menu
+    this.hintText?.setVisible(true).setDepth(45);
+    this.hintChip?.setVisible(true).setDepth(44);
   }
 
   private resume() {
@@ -2429,6 +2486,9 @@ export class GameScene extends Phaser.Scene {
     this.time.paused = false;
     this.tweens.resumeAll();
     this.touch?.setActive(true);
+    // hint strip goes back to whatever it was before the pause
+    this.hintText?.setVisible(!this.hintGone).setDepth(10);
+    this.hintChip?.setVisible(!this.hintGone).setDepth(9);
   }
 
   /** pause card — a menu, so paper card + candy pills (unlike the banner-only result) */
@@ -2738,19 +2798,21 @@ export class GameScene extends Phaser.Scene {
         shadow?: Phaser.GameObjects.Sprite;
         bobPhase?: number;
         iceBlock?: Phaser.GameObjects.Sprite | null;
+        drawScale?: number;
       },
     ) => {
       const body = s.body as Body;
       if (st.shadow) st.shadow.setPosition(s.x, s.y + CONFIG.runner.radius + 2);
       s.setDepth(2 + s.y * 0.002);
+      const ds = st.drawScale ?? 1;
       const speed = Math.hypot(body.velocity.x, body.velocity.y);
       if (!st.frozen && speed > 12) {
         const target = Math.atan2(body.velocity.y, body.velocity.x);
         s.rotation = Phaser.Math.Angle.RotateTo(s.rotation, target, 9 * dt);
         const bob = st.bobPhase !== undefined ? 1 + Math.sin(t / 70 + st.bobPhase) * 0.045 : 1;
-        s.setScale(bob);
+        s.setScale(bob * ds);
       } else if (!st.frozen) {
-        s.setScale(1);
+        s.setScale(ds);
       }
       if (st.iceBlock) st.iceBlock.setPosition(s.x, s.y);
     };

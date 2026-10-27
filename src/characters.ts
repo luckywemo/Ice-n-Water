@@ -43,6 +43,22 @@ export const MILITIA_DEF: CharDef = {
   furLen: 1.45,
 };
 
+// milestone champions — the ice militia's named elite. Spread over
+// MILITIA_DEF so they keep the frozen coat/brows/icicles, but each boss
+// gets a silhouette + headgear you can read at a glance.
+export const BOSS_MODELS: Record<string, Partial<CharDef>> = {
+  'THE PLAYGROUND CHAMPION': { gear: 'band' }, // the athlete
+  'THE COMPOUND CAPTAIN': { gear: 'hardhat' }, // the warden
+  'THE HEAD PREFECT': { gear: 'cap', shape: 'tall' }, // lanky + strict
+  'THE MARKET CHAMPION': { gear: 'band', shape: 'round' }, // the big trader
+  'THE MOTOR PARK MARSHAL': { gear: 'cap' }, // conductor cap
+  'THE FESTIVAL GUARDIAN': { gear: 'spikes' }, // spiky masquerade
+  'THE TRICKSTER KING': { gear: 'spikes', shape: 'tall' }, // lanky spikes
+  'THE ICE TITAN': { shape: 'round', furLen: 1.7 }, // giant shaggy mass — keeps the icicles
+  'THE RIVAL SQUAD CAPTAIN': { gear: 'band', shape: 'tall' },
+  'THE ICE KING': { gear: 'crown', shape: 'tall' }, // THE crown
+};
+
 const KEY = 'iw-char';
 
 export function currentChar(): CharDef {
