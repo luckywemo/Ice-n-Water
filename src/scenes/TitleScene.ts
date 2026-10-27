@@ -22,7 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { CHARACTERS, charUnlocked, currentChar, setChar } from '../characters';
+import { CHARACTERS, charUnlocked, currentChar, runnerName, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -62,6 +62,7 @@ export class TitleScene extends Phaser.Scene {
   private lobbyDrop?: (delayBase: number) => void;
   private charIdx = 0;
   private charName?: Phaser.GameObjects.Text;
+  private askName?: () => void; // the NAME YOUR RUNNER modal — reused for the first-run gate
 
   constructor() {
     super('title');
@@ -264,11 +265,11 @@ export class TitleScene extends Phaser.Scene {
       this.promptOpen = true;
       void promptModal(this, {
         title: 'NAME YOUR RUNNER',
-        sub: 'shows on the board + in online lobbies',
+        sub: 'max 10 letters — shows on the board + in online lobbies',
         label: 'RUNNER NAME',
         placeholder: 'your name',
         value: playerName(),
-        maxLen: 14,
+        maxLen: 10,
         okLabel: 'SAVE',
       }).then((n) => {
         this.promptOpen = false;
@@ -277,6 +278,7 @@ export class TitleScene extends Phaser.Scene {
         this.events.emit('runner-renamed');
       });
     };
+    this.askName = renameRunner;
 
     this.topBar = fgTopBar(
       this,
@@ -443,7 +445,7 @@ export class TitleScene extends Phaser.Scene {
           .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
       }
       this.charName = this.add
-        .text(podX, pickY + 4, CHARACTERS[this.charIdx].name, {
+        .text(podX, pickY + 4, runnerName(CHARACTERS[this.charIdx]), {
           fontFamily: FG_FONT,
           fontSize: '30px',
           color: '#ffffff',
@@ -458,7 +460,10 @@ export class TitleScene extends Phaser.Scene {
     const nameT = fgNamePlate(this, visL + 40, visB - 80, 240, 48, playerName() || 'your runner', () =>
       this.gate(renameRunner),
     );
-    this.events.on('runner-renamed', () => nameT.setText(playerName() || 'your runner'));
+    this.events.on('runner-renamed', () => {
+      nameT.setText(playerName() || 'your runner');
+      this.charName?.setText(runnerName(CHARACTERS[this.charIdx]));
+    });
 
     // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
     fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
@@ -504,7 +509,7 @@ export class TitleScene extends Phaser.Scene {
       if (charUnlocked(CHARACTERS[this.charIdx])) break;
     }
     const ch = CHARACTERS[this.charIdx];
-    this.charName?.setText(ch.name);
+    this.charName?.setText(runnerName(ch));
     setChar(ch.id);
     // shape/gear change the mesh itself — retint can't do it, so the rig
     // is rebuilt and the frame-blit picks up the new canvas automatically
@@ -622,6 +627,9 @@ export class TitleScene extends Phaser.Scene {
 
   private revealLobby() {
     const now = this.time.now;
+    // first run — nobody enters the lobby unnamed. The modal owns input
+    // (promptOpen blocks the gates) until a name lands or they cancel.
+    if (!playerName()) this.askName?.();
     this.lobbyArm?.(now);
     // lockup icicle decos ride the reveal timeline, not create-time
     for (const d of this.iceDecos) {

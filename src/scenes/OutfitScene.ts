@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Hero3D } from '../hero3d';
 import { REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
-import { CHARACTERS, CharDef, charUnlocked, currentChar, currentPick, setChar } from '../characters';
+import { CHARACTERS, CharDef, charTitle, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
 import { perfInterval, furQuality } from '../meta';
 import { Sfx } from '../audio';
 
@@ -285,9 +285,18 @@ export class OutfitScene extends Phaser.Scene {
     this.refreshHead();
   }
 
+  /** strip labels shrink-wrap: 'OONI OF IFE' fits at 10px,
+   *  'AMANYANABO OF PORT HARCOURT' wraps two lines at 7px */
+  private fitLabel(t: Phaser.GameObjects.Text, text: string) {
+    t.setText(text);
+    const len = text.length;
+    t.setFontSize(len <= 13 ? 10 : len <= 20 ? 8 : 7);
+    t.setWordWrapWidth(TILE - 16, true).setLineSpacing(len > 20 ? -2 : 0);
+  }
+
   private refreshHead() {
     const ch = currentChar();
-    this.headName?.setText(ch.name);
+    this.headName?.setText(runnerName(ch));
     const tag =
       this.tab === 'coat'
         ? 'COLOUR'
@@ -363,14 +372,16 @@ export class OutfitScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const name = this.add
-      .text(gx + TILE / 2, gy + TILE - 16, def.name, {
+      .text(gx + TILE / 2, gy + TILE - 16, '', {
         fontFamily: FG_BODY,
         fontSize: '10px',
         fontStyle: '800',
         color: '#ffffff',
+        align: 'center',
       })
       .setOrigin(0.5)
       .setAlpha(0.65);
+    this.fitLabel(name, charTitle(def)); // the boss's name in full — BAALE OF SURULERE
     this.grid!.add([g, hint, name]);
   }
 
@@ -409,13 +420,15 @@ export class OutfitScene extends Phaser.Scene {
     };
     paint(false);
     const name = this.add
-      .text(gx + TILE / 2, gy + TILE - 16, label, {
+      .text(gx + TILE / 2, gy + TILE - 16, '', {
         fontFamily: FG_BODY,
         fontSize: '10px',
         fontStyle: '800',
         color: '#ffffff',
+        align: 'center',
       })
       .setOrigin(0.5);
+    this.fitLabel(name, label);
     const z = this.add
       .zone(gx, gy, TILE, TILE)
       .setOrigin(0, 0)
@@ -446,7 +459,7 @@ export class OutfitScene extends Phaser.Scene {
         this.tile(
           gx,
           gy,
-          def.name,
+          def.unlockAt ? charTitle(def) : def.name, // champs wear the full title — 'BAALE OF SURULERE'
           def.id === ch.id,
           (g) => this.drawMiniBean(g, gx + TILE / 2, gy + TILE / 2 - 8, def),
           () => this.pickChar(def),

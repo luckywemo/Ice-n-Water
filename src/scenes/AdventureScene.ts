@@ -1197,7 +1197,7 @@ export class AdventureScene extends Phaser.Scene {
       label: 'RUNNER NAME',
       placeholder: 'your name',
       value: playerName(),
-      maxLen: 14,
+      maxLen: 10,
       okLabel: 'SAVE',
       depth: 80,
       field: { base: FG.cyan, ring: 0x1fa9e8, crown: 0x0f7fb8 },

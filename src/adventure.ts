@@ -55,7 +55,7 @@ export const CHAPTERS = [
 // town's people. Baale = quarter head under an Oba (Lagos neighborhoods),
 // Oba/Baale across Yorubaland, Igwe/Eze/Obi in the East, Amanyanabo/Obong
 // downriver, then the Emirs, Sultan and Shehu as the road runs north.
-const MILESTONE_BOSSES = [
+export const MILESTONE_BOSSES = [
   'OBA OF LAGOS', 'OBA OF IKOYI', 'BAALE OF SURULERE', 'BAALE OF YABA', 'OBA OF IKEJA',
   'AYANGBUREN OF IKORODU', 'OLOJA OF EPE', 'AHOLU OF BADAGRY', 'BAALE OF AGEGE', 'BAALE OF OSHODI',
   'ALAKE OF EGBALAND', 'OLUBADAN OF IBADAN', 'ATAOJA OF OSOGBO', 'OONI OF IFE', 'DEJI OF AKURE',

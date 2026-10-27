@@ -3,7 +3,8 @@
 // gear = head-mounted extra. Shape/gear change the actual MODEL, not
 // just the paint — they build different meshes on the shared skeleton.
 import type { BeanGear, BeanShape } from './hero3d';
-import { adventureProgress, LEVELS_PER_MILESTONE } from './adventure';
+import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES } from './adventure';
+import { playerName } from './leaderboard';
 
 export interface CharDef {
   id: string;
@@ -77,6 +78,23 @@ export function charUnlocked(def: CharDef): boolean {
 
 export function unlockedChars(): CharDef[] {
   return CHARACTERS.filter(charUnlocked);
+}
+
+/** the champion's full title — 'BAALE OF SURULERE', 'SHEHU OF BORNO' */
+export function charTitle(def: CharDef): string {
+  return def.unlockAt ? MILESTONE_BOSSES[def.unlockAt - 1] : '';
+}
+
+/** just the noun — 'BAALE', 'EMIR', 'SHEHU' */
+export function charTitleShort(def: CharDef): string {
+  return charTitle(def).split(' OF ')[0];
+}
+
+/** who the runner IS — beaten champions take the player's name + title:
+ *  'MUHAMMAD | BAALE'. The free hero is just you: 'MUHAMMAD'. */
+export function runnerName(def: CharDef): string {
+  const who = (playerName() || def.name).toUpperCase().slice(0, 10);
+  return def.unlockAt ? `${who} | ${charTitleShort(def)}` : who;
 }
 
 export function currentChar(): CharDef {
