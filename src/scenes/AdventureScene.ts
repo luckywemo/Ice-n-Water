@@ -731,28 +731,14 @@ export class AdventureScene extends Phaser.Scene {
       .rectangle(width / 2, height / 2, width + 60, height + 60, 0x081420, 0.22)
       .setInteractive(); // swallow taps — sized to the letterboxed view
 
-    // ---- the standings board, styled on their 43-QUALIFIED screen: a cyan
-    // scoreboard prop on yellow posts, a lime count-banner over its top edge,
-    // and a 4×8 tile grid — green for ranked runners, pink for open slots ----
-    const pw = Math.min(880, width - 48);
-    const ph = Math.min(548, height - 84);
-    const px = (width - pw) / 2;
-    const py = (height - ph) / 2 + 20;
-
-    // suspending posts + rope lattice under the board (carnival-sign garnish)
-    const posts = this.add.graphics();
-    const postY = py + ph;
-    for (const fx of [px + pw * 0.12, px + pw * 0.88]) {
-      posts.fillStyle(0x8a5a1e, 1).fillRect(fx - 9, postY + 8, 18, height - postY);
-      posts.fillStyle(0xe8b23a, 1).fillRect(fx - 9, postY, 18, height - postY);
-    }
-    posts.lineStyle(3, 0xf7d774, 0.55);
-    for (let i = 0; i <= 10; i++) {
-      const nx = px + pw * 0.08 + (pw * 0.84 * i) / 10;
-      posts.lineBetween(nx, postY + 4, nx + 26, postY + 56);
-      posts.lineBetween(nx + 26, postY + 4, nx, postY + 56);
-    }
-    posts.lineStyle(4, 0xe8b23a, 0.9).lineBetween(px + pw * 0.06, postY + 6, px + pw * 0.94, postY + 6);
+    // ---- the standings board, styled on their 43-QUALIFIED screen: a full-
+    // bleed cyan scoreboard takeover (every modal covers the whole screen — no
+    // max sizes), a lime count-banner hanging from the top edge, and a 4×8
+    // tile grid — green for ranked runners, pink for open slots ----
+    const pw = width;
+    const ph = height;
+    const px = 0;
+    const py = 0;
 
     // the board face — cyan slab, deeper rim, white hairline, dark under-shadow
     const board = this.add.graphics();
@@ -761,11 +747,11 @@ export class AdventureScene extends Phaser.Scene {
     board.fillStyle(FG.cyan, 1).fillRoundedRect(px, py, pw, ph, 20);
     board.lineStyle(3, 0xffffff, 0.55).strokeRoundedRect(px + 8, py + 8, pw - 16, ph - 16, 14);
 
-    // lime count-banner overlapping the board's top edge — "NN ON THE BOARD!"
+    // lime count-banner hanging flush from the top edge — "NN ON THE BOARD!"
     const bw = 400,
       bh = 58,
       bx = width / 2 - bw / 2,
-      by = py - 24;
+      by = 0;
     const banG = this.add.graphics();
     banG.fillStyle(0x2e7d1f, 1).fillRoundedRect(bx + 3, by + 5, bw, bh, 14);
     banG.fillStyle(0x5fd62a, 1).fillRoundedRect(bx, by, bw, bh, 14);
@@ -783,13 +769,14 @@ export class AdventureScene extends Phaser.Scene {
     const COLS_N = 8,
       ROWS_N = 4; // top 32 only
     const gx = px + 26,
-      gy = py + 54;
+      gy = by + bh + 12; // clear the hanging banner
     const gw = pw - 52,
-      gh = ph - 54 - 86; // footer keeps ~86px
+      gh = ph - gy - 96; // footer keeps ~96px
     const cw = gw / COLS_N,
       ch = gh / ROWS_N;
-    const tw = Math.min(cw - 8, 96),
-      th = Math.min(ch - 8, 78);
+    const tw = cw - 10,
+      th = ch - 10; // tiles fill their cells — the board scales with the screen
+    const fs = Math.max(1, Math.min(1.7, th / 84)); // tile text scales with size
     this.boardTiles = [];
     for (let i = 0; i < COLS_N * ROWS_N; i++) {
       const tx = gx + (i % COLS_N) * cw + (cw - tw) / 2;
@@ -802,20 +789,25 @@ export class AdventureScene extends Phaser.Scene {
       };
       paint(FG.pink, FG.pinkDeep); // open slot until a runner lands
       const rank = this.add
-        .text(tx + 7, ty + 6, '', { fontFamily: UI_FONT, fontSize: '10px', fontStyle: '800', color: '#0b4f10' })
+        .text(tx + 8, ty + 7, '', {
+          fontFamily: UI_FONT,
+          fontSize: `${Math.round(10 * fs)}px`,
+          fontStyle: '800',
+          color: '#0b4f10',
+        })
         .setOrigin(0, 0);
       const name = this.add
-        .text(tx + tw / 2, ty + th / 2 - 6, '', {
+        .text(tx + tw / 2, ty + th / 2 - 5 * fs, '', {
           fontFamily: FG_FONT,
-          fontSize: '13px',
+          fontSize: `${Math.round(13 * fs)}px`,
           color: '#ffffff',
         })
         .setOrigin(0.5)
         .setShadow(0, 2, '#0b4f10', 0, true, false);
       const stat = this.add
-        .text(tx + tw / 2, ty + th - 16, '', {
+        .text(tx + tw / 2, ty + th - 14 * fs, '', {
           fontFamily: UI_FONT,
-          fontSize: '10px',
+          fontSize: `${Math.round(10 * fs)}px`,
           fontStyle: '700',
           color: '#d8ffd0',
         })
@@ -909,7 +901,7 @@ export class AdventureScene extends Phaser.Scene {
       { x: scx - 36, y: scy - 22, w: 72, h: 44, fn: doSet },
     ];
 
-    layer.add([bg, dim, posts, board, banG, this.boardBanner, ...this.boardTiles.map((t) => t.c), me, hint, cdG, close, nameLbl, sg, setBtn]);
+    layer.add([bg, dim, board, banG, this.boardBanner, ...this.boardTiles.map((t) => t.c), me, hint, cdG, close, nameLbl, sg, setBtn]);
 
     this.renderBoard();
   }

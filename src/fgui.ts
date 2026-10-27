@@ -845,13 +845,20 @@ export function promptModal(
   const dim = track(
     scene.add.rectangle(-vw, -vh, vw * 3, vh * 3, 0x081420, 0.22).setOrigin(0).setInteractive(),
   );
-  const pw = Math.min(440, vw - 40);
-  const ph = 250;
+  // full-bleed takeover — every modal covers the whole screen, no max sizes.
+  // sf0 surfaces get camera-zoomed about the centre, so draw at vw/zoom to
+  // land exactly edge-to-edge at any zoom. Content stays clustered around
+  // centre; only close/esc pin to the (panel = screen) corners.
+  const cz = scene.cameras.main.zoom || 1;
+  const pw = vw / cz;
+  const ph = vh / cz;
   track(panel(scene, cx - pw / 2, cy - ph / 2, pw, ph), depth + 1);
+  // swallow card taps so they don't fall through to the dim (which cancels)
+  track(scene.add.zone(cx - pw / 2, cy - ph / 2, pw, ph).setOrigin(0, 0).setInteractive(), depth + 1);
   // header — pink Titan One, deep-pink shadow: the ONLINE card's signature
   track(
     scene.add
-      .text(cx, cy - ph / 2 + 46, title, {
+      .text(cx, cy - 118, title, {
         fontFamily: DISPLAY_FONT,
         fontSize: '30px',
         color: '#e84393',
@@ -863,7 +870,7 @@ export function promptModal(
   if (sub) {
     track(
       scene.add
-        .text(cx, cy - ph / 2 + 78, sub, {
+        .text(cx, cy - 84, sub, {
           fontFamily: UI_FONT,
           fontSize: '14px',
           fontStyle: '600',
@@ -876,7 +883,7 @@ export function promptModal(
   if (label) {
     track(
       scene.add
-        .text(cx, cy - ph / 2 + 108, label, {
+        .text(cx, cy - 48, label, {
           fontFamily: UI_FONT,
           fontSize: '12px',
           fontStyle: '800',
@@ -943,14 +950,14 @@ export function promptModal(
     dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
     closeT.on('pointerdown', () => cleanup(null));
 
-    const ok = pillButton(scene, cx - 78, cy + ph / 2 - 50, 140, okLabel, {
+    const ok = pillButton(scene, cx - 78, cy + 84, 140, okLabel, {
       fill: UI.danfo,
       textColor: UI.ink,
       fontSize: 15,
       depth: depth + 2,
       onDown: () => cleanup(el.value.trim()),
     });
-    const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
+    const cancel = pillButton(scene, cx + 78, cy + 84, 140, 'CANCEL', {
       fill: UI.ink,
       fontSize: 15,
       depth: depth + 2,

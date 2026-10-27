@@ -432,8 +432,9 @@ export class GameScene extends Phaser.Scene {
       .setDepth(28)
       .setScrollFactor(0);
 
-    const pw = Math.min(560 / z, (w * 0.86) / z);
-    const ph = 250;
+    // full-bleed takeover — pinned HUD lands at drawn·hf, so draw at screen/hf
+    const pw = w / this.hf;
+    const ph = h / this.hf;
     const card = panel(this, -pw / 2, -ph / 2, pw, ph, { depth: 0 });
     const title = this.add
       .text(0, -ph / 2 + 30, intro.title, {
@@ -2527,10 +2528,12 @@ export class GameScene extends Phaser.Scene {
     this.touch?.setActive(true);
   }
 
-  /** pause card — a menu, so paper card + candy pills (unlike the banner-only result) */
+  /** pause card — a menu, so paper card + candy pills (unlike the banner-only result).
+   *  Full-bleed takeover: pinned HUD lands at drawn·hf on screen, so the card
+   *  draws at screen/hf to cover 100%. */
   private buildPauseMenu() {
-    const W = 330;
-    const H = 340;
+    const W = this.scale.width / this.hf;
+    const H = this.scale.height / this.hf;
     const cy = -10;
     const track = <T extends HudItem['obj']>(o: T, ax = 0.5, ay = 0.5, ox = 0, oy = 0): T => {
       this.pin(o, ax, ay, ox, oy);
@@ -2539,7 +2542,7 @@ export class GameScene extends Phaser.Scene {
     };
 
     const dim = this.add.graphics().setDepth(40);
-    dim.fillStyle(0x0a1420, 0.62).fillRect(-1600, -1200, 3200, 2400);
+    dim.fillStyle(0x0a1420, 0.62).fillRect(-W / 2 - 60, cy - H / 2 - 60, W + 120, H + 120);
     track(dim);
     track(panel(this, -W / 2, cy - H / 2, W, H, { depth: 41 }), 0.5, 0.5, 0, 0);
 

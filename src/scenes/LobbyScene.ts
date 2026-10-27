@@ -50,14 +50,15 @@ export class LobbyScene extends Phaser.Scene {
     this.lobbyPhase = 'menu';
     this.cameras.main.fadeIn(300, 247, 189, 20); // from the lobby yellow — seamless
 
-    // one card, two states — menu swaps to the room view in place
-    const cw = 640;
-    const ch = 500;
+    // one card, two states — menu swaps to the room view in place.
+    // Full-bleed takeover: the card IS the screen; the content block (~500px
+    // tall) stays vertically centred inside it.
+    const cw = width;
+    const ch = height;
     const cx = width / 2;
-    // leave room for the BACK pill under the card on short screens
-    const cy0 = Math.min(height / 2 - ch / 2 + 10, height - ch - 74);
-    fgBackdrop(this, width, height, cx, cy0 + ch * 0.42);
-    panel(this, cx - cw / 2, cy0, cw, ch, { depth: 3 });
+    const cy0 = Math.max(4, (height - 500) / 2);
+    fgBackdrop(this, width, height, cx, cy0 + 210);
+    panel(this, 0, 0, cw, ch, { depth: 3 });
     this.menuGroup = this.add.container(0, 0).setDepth(5);
     this.roomGroup = this.add.container(0, 0).setDepth(5).setVisible(false);
 
@@ -179,7 +180,7 @@ export class LobbyScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.menuGroup.add(this.statusText);
 
-    pillButton(this, cx, cy0 + ch + 42, 140, 'BACK', {
+    pillButton(this, cx, ch - 44, 140, 'BACK', {
       fill: UI.ink,
       textColor: UI.paper,
       fontSize: 14,
@@ -238,10 +239,9 @@ export class LobbyScene extends Phaser.Scene {
           fontFamily: UI_FONT,
           fontSize: '13px',
           fontStyle: '800',
-          color: '#ffffff',
+          color: '#7a8a99', // sits on the paper card now — ink, not white
         })
-        .setOrigin(0.5, 1)
-      .setShadow(0, 2, '#a06e00', 0, true, false);
+        .setOrigin(0.5, 1);
     this.input.keyboard!.on('keydown-ESC', () => this.leave());
 
     // window resized — rebuild the layout (TitleScene does the same).

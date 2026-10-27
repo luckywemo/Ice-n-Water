@@ -466,13 +466,15 @@ export class NetScene extends Phaser.Scene {
     this.endLayer = layer;
 
     layer.add(this.add.rectangle(-width, -height, width * 3, height * 3, 0x000000, 0.62).setOrigin(0));
-    // result card — same paper panel as the solo end card
-    const cw = 560;
-    const ch = 330;
-    layer.add(panel(this, width / 2 - cw / 2, height / 2 - ch / 2, cw, ch, { alpha: 0.97 }));
+    // result card — full-bleed takeover; layer is hf-scaled, so the drawn
+    // panel needs width/hf to cover the screen and content centres on cw/2
+    const hf = hudFactor(width, height);
+    const cw = width / hf;
+    const ch = height / hf;
+    layer.add(panel(this, 0, 0, cw, ch, { alpha: 0.97 }));
     layer.add(
       this.add
-        .text(width / 2, height / 2 - 80, s.winner === 'ice' ? 'ICE WINS' : 'WATER WINS', {
+        .text(cw / 2, ch / 2 - 80, s.winner === 'ice' ? 'ICE WINS' : 'WATER WINS', {
           fontFamily: DISPLAY_FONT,
           fontSize: '52px',
           color: s.winner === 'ice' ? '#e84848' : '#0f7fb8',
@@ -482,7 +484,7 @@ export class NetScene extends Phaser.Scene {
     );
     layer.add(
       this.add
-        .text(width / 2, height / 2 - 14, s.message, {
+        .text(cw / 2, ch / 2 - 14, s.message, {
           fontFamily: UI_FONT,
           fontSize: '18px',
           color: '#5a7184',
@@ -500,9 +502,9 @@ export class NetScene extends Phaser.Scene {
       layer.add(pg);
     };
     const isHost = this.room.sessionId === s.host;
-    if (isHost) drawPill(width / 2, height / 2 + 53, 230, 50, UI.leaf);
+    if (isHost) drawPill(cw / 2, ch / 2 + 53, 230, 50, UI.leaf);
     const again = this.add
-      .text(width / 2, height / 2 + 49, isHost ? 'PLAY AGAIN  (space)' : 'waiting for host to rematch…', {
+      .text(cw / 2, ch / 2 + 49, isHost ? 'PLAY AGAIN  (space)' : 'waiting for host to rematch…', {
         fontFamily: DISPLAY_FONT,
         fontSize: '17px',
         color: isHost ? '#1c1626' : '#5a7184',
@@ -515,9 +517,9 @@ export class NetScene extends Phaser.Scene {
         if (this.room.state.phase === 'ended') this.room.send('restart');
       });
     }
-    drawPill(width / 2, height / 2 + 104, 190, 46, UI.ink);
+    drawPill(cw / 2, ch / 2 + 104, 190, 46, UI.ink);
     const leaveBtn = this.add
-      .text(width / 2, height / 2 + 100, 'LEAVE  (esc)', {
+      .text(cw / 2, ch / 2 + 100, 'LEAVE  (esc)', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#f5efe0',
@@ -526,11 +528,17 @@ export class NetScene extends Phaser.Scene {
       .setPadding(14, 10, 14, 10);
     layer.add(leaveBtn);
     // screen-space tap rects — container children miss input under camera scroll
+    // hit rects are screen px — local coords land at local·hf, so map the
+    // pill rects through the same transform
+    const sr = (lx: number, ly: number, w: number, h: number) => ({
+      x: (lx - w / 2) * hf,
+      y: (ly - h / 2) * hf,
+      w: w * hf,
+      h: h * hf,
+    });
     this.endHit = [
-      ...(isHost
-        ? [{ x: width / 2 - 110, y: height / 2 + 30, w: 220, h: 46, fn: () => this.room.send('restart') }]
-        : []),
-      { x: width / 2 - 90, y: height / 2 + 82, w: 180, h: 44, fn: () => this.leave() },
+      ...(isHost ? [{ ...sr(cw / 2, ch / 2 + 53, 230, 50), fn: () => this.room.send('restart') }] : []),
+      { ...sr(cw / 2, ch / 2 + 104, 190, 46), fn: () => this.leave() },
     ];
     this.relayout();
   }

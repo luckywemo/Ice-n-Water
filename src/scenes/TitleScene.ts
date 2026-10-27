@@ -700,13 +700,15 @@ export class TitleScene extends Phaser.Scene {
     isTouch: boolean,
     vis: { l: number; t: number; r: number; b: number },
   ) {
-    const W = 560;
-    const H = isTouch ? 476 : 600; // desktop fits the Key hints row
-    const visW = vis.r - vis.l;
-    const visH = vis.b - vis.t;
-    const cx = vis.l + visW * 0.66;
-    const cy = vis.t + visH * 0.5;
-    const top = cy - H / 2;
+    // full-bleed takeover — the cyan card covers the whole visible screen,
+    // like every other modal. Rows then span edge to edge, FG-style.
+    const W = vis.r - vis.l;
+    const H = vis.b - vis.t;
+    const visW = W;
+    const visH = H;
+    const cx = vis.l + visW / 2;
+    const cy = vis.t + visH / 2;
+    const top = vis.t;
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
 
     // zones gated by cardZones — enabled only while the card is open
@@ -731,7 +733,19 @@ export class TitleScene extends Phaser.Scene {
     field.lineStyle(2, 0xffffff, 0.05);
     for (let r = 80; r < visW * 0.9; r += 96)
       field.strokeCircle(vis.l + visW * 0.95, vis.t + visH * 0.04, r);
-    // SETTINGS header tab — their top-left chamfered label, white-rimmed
+    card.add([dimZ, field]);
+
+    // ---- the cyan card — their settings face, not our paper. Drawn first so
+    // it underlays everything; the tab, cogs and rows all sit on top of it ----
+    const cg = this.add.graphics();
+    cg.fillStyle(0x0a0710, 0.5).fillRoundedRect(cx - W / 2 + 6, cy - H / 2 + 8, W, H, 18);
+    cg.fillStyle(0xffffff, 1).fillRoundedRect(cx - W / 2 - 2, cy - H / 2 - 2, W + 4, H + 4, 18);
+    cg.fillStyle(FG.cyan, 1).fillRoundedRect(cx - W / 2, cy - H / 2, W, H, 16);
+    cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
+    card.add(cg);
+
+    // SETTINGS header tab — their top-left chamfered label, white-rimmed,
+    // drawn on the card surface
     const tabPts = [
       { x: vis.l, y: vis.t },
       { x: vis.l + 176, y: vis.t },
@@ -739,9 +753,10 @@ export class TitleScene extends Phaser.Scene {
       { x: vis.l + 160, y: vis.t + 48 },
       { x: vis.l, y: vis.t + 48 },
     ];
-    field.fillStyle(0x000000, 1).fillPoints(tabPts, true);
-    field.lineStyle(2.5, 0xffffff, 0.9).strokePoints(tabPts, true);
-    card.add([dimZ, field]);
+    const tabG = this.add.graphics();
+    tabG.fillStyle(0x000000, 1).fillPoints(tabPts, true);
+    tabG.lineStyle(2.5, 0xffffff, 0.9).strokePoints(tabPts, true);
+    card.add(tabG);
     const gear = (gx: number, gy: number, gr: number, teeth: number) => {
       const key = `fg_gear_${Math.round(gr)}`;
       const c = gr + 6;
@@ -770,7 +785,7 @@ export class TitleScene extends Phaser.Scene {
         ctx.fill();
         this.textures.addCanvas(key, cv);
       }
-      card.add(this.add.image(gx, gy, key).setAlpha(0.92));
+      card.add(this.add.image(gx, gy, key).setAlpha(0.16)); // faint stamps on the cyan card
     };
     // diagonal cluster — small cog nests down-right of the big one
     gear(vis.l + visW * 0.16, vis.t + visH * 0.36, Math.min(visW, visH) * 0.15, 9);
@@ -802,16 +817,6 @@ export class TitleScene extends Phaser.Scene {
       this.add.zone(cx - W / 2, cy - H / 2, W, H).setOrigin(0, 0).setInteractive(),
     );
     card.add(swallow);
-
-    // ---- the cyan card — their settings face, not our paper ----
-    const cg = this.add.graphics();
-    cg.fillStyle(0x0a0710, 0.5).fillRoundedRect(cx - W / 2 + 6, cy - H / 2 + 8, W, H, 18);
-    cg.fillStyle(0xffffff, 1).fillRoundedRect(cx - W / 2 - 2, cy - H / 2 - 2, W + 4, H + 4, 18);
-    cg.fillStyle(FG.cyan, 1).fillRoundedRect(cx - W / 2, cy - H / 2, W, H, 16);
-    cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
-    card.add(cg);
-
-
 
     // ---- section bar — dark beveled tag like MOUSE SETTINGS/CONTROL BINDING ----
     const section = (y: number, title: string) => {
@@ -930,7 +935,7 @@ export class TitleScene extends Phaser.Scene {
       );
     };
 
-    let y = top + 34;
+    let y = top + 70; // clear of the SETTINGS header tab
     section(y, 'GAME');
     y += 48;
     this.diffVal = selector(y, 'Difficulty', () => DIFFS[this.diff].label, (dir) => {
