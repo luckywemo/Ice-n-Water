@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-import { CONFIG } from './config';
-import { UI_FONT, DISPLAY_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, HUD_SCALE } from './ui';
+import { UI_FONT, DISPLAY_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, viewZoom, hudFactor } from './ui';
 import { JoyMode, loadPicks } from './meta';
 
 // Virtual joystick (left thumb) + sprint/water buttons (right thumb).
@@ -30,6 +29,8 @@ export class TouchControls {
   private pauseBtn: Phaser.GameObjects.Container | null = null;
   private hudItems: HudItem[] = [];
   private relayout: () => void = () => {};
+  private hs = 1; // rendered scale of authored px under live zoom + HUD shrink
+  private hf = 1; // HUD shrink factor (small screens)
 
   static isTouchDevice(): boolean {
     // primary-input check, not capability — a touchscreen laptop still has a
@@ -53,18 +54,20 @@ export class TouchControls {
 
     scene.input.addPointer(2);
 
+    this.hf = hudFactor(scene.scale.width, scene.scale.height);
+    this.hs = this.hf / viewZoom(scene.scale.width, scene.scale.height);
     this.base = scene.add
       .circle(0, 0, 62, 0x12293f, 0.4)
       .setStrokeStyle(2, UI.ice, 0.5)
       .setDepth(30)
       .setVisible(false)
-      .setScale(HUD_SCALE)
+      .setScale(this.hs)
       .setScrollFactor(0);
     this.thumb = scene.add
       .circle(0, 0, 26, UI.ice, 0.55)
       .setDepth(31)
       .setVisible(false)
-      .setScale(HUD_SCALE)
+      .setScale(this.hs)
       .setScrollFactor(0);
 
     this.sprintBtn = this.makeButton(scene, 44, 'RUN', 0xf7bd14, '#17151f');
@@ -76,15 +79,20 @@ export class TouchControls {
     // pin: sprint bottom-right, water just above-left of it, restart top-left
     this.pin(this.sprintBtn, 1, 1, -80, -96);
     this.pin(this.waterBtn, 1, 1, -180, -150);
-    this.pin(this.restartBtn, 0, 0, 446, 34);
-    if (this.pauseBtn) this.pin(this.pauseBtn, 0, 0, 502, 34);
+    this.pin(this.restartBtn, 0, 0, 384, 34); // hugs the HUD card's right edge
+    if (this.pauseBtn) this.pin(this.pauseBtn, 0, 0, 438, 34);
 
     this.relayout = () => {
       const w = scene.scale.width;
       const h = scene.scale.height;
-      layoutHud(this.hudItems, w, h, CONFIG.camera.zoom);
+      const z = viewZoom(w, h);
+      this.hf = hudFactor(w, h);
+      this.hs = this.hf / z;
+      layoutHud(this.hudItems, w, h, z, this.hf);
+      this.base.setScale(this.hs);
+      this.thumb.setScale(this.hs);
       if (this.sticky) {
-        this.joyCenter.set(120, h - 118); // fixed home in screen coords
+        this.joyCenter.set(120 * this.hf, h - 118 * this.hf); // fixed home in screen coords
         this.placeAt(this.base, this.joyCenter.x, this.joyCenter.y);
         this.placeAt(this.thumb, this.joyCenter.x, this.joyCenter.y);
       }
@@ -105,7 +113,7 @@ export class TouchControls {
       // floating: stick spawns where the thumb lands on the left side;
       // sticky: stick stays put — thumb must land near its fixed home
       const inZone = this.sticky
-        ? Phaser.Math.Distance.Between(p.x, p.y, this.joyCenter.x, this.joyCenter.y) <= 95
+        ? Phaser.Math.Distance.Between(p.x, p.y, this.joyCenter.x, this.joyCenter.y) <= 95 * this.hf
         : p.x < w * 0.55 && p.y > h * 0.35;
       if (this.joyPointerId < 0 && inZone) {
         this.joyPointerId = p.id;
@@ -116,20 +124,20 @@ export class TouchControls {
         }
         this.thumb.setVisible(true);
       }
-      if (this.sprintPointerId < 0 && this.inside(p, this.sprintBtn, 52)) {
+      if (this.sprintPointerId < 0 && this.inside(p, this.sprintBtn, 52 * this.hf)) {
         this.sprintPointerId = p.id;
         this.sprint = true;
-        this.sprintBtn.setScale(0.9 * HUD_SCALE);
+        this.sprintBtn.setScale(0.9 * this.hs);
       }
-      if (this.inside(p, this.waterBtn, 46)) {
+      if (this.inside(p, this.waterBtn, 46 * this.hf)) {
         cbs.onWater();
         this.tapFlash(scene, this.waterBtn);
       }
-      if (this.inside(p, this.restartBtn, 30)) {
+      if (this.inside(p, this.restartBtn, 30 * this.hf)) {
         cbs.onRestart();
         this.tapFlash(scene, this.restartBtn);
       }
-      if (this.pauseBtn && this.inside(p, this.pauseBtn, 30)) {
+      if (this.pauseBtn && this.inside(p, this.pauseBtn, 30 * this.hf)) {
         cbs.onPause?.();
         this.tapFlash(scene, this.pauseBtn);
       }
@@ -138,7 +146,7 @@ export class TouchControls {
     scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (!this.active || p.id !== this.joyPointerId || !p.isDown) return;
       const v = new Phaser.Math.Vector2(p.x - this.joyCenter.x, p.y - this.joyCenter.y);
-      const max = 62;
+      const max = 62 * this.hf;
       if (v.length() > max) v.setLength(max);
       this.dir.copy(v).scale(1 / max);
       this.placeAt(this.thumb, this.joyCenter.x + v.x, this.joyCenter.y + v.y);
@@ -157,7 +165,7 @@ export class TouchControls {
       if (p.id === this.sprintPointerId) {
         this.sprintPointerId = -1;
         this.sprint = false;
-        this.sprintBtn.setScale(HUD_SCALE);
+        this.sprintBtn.setScale(this.hs);
       }
     };
     scene.input.on('pointerup', release);
@@ -192,7 +200,7 @@ export class TouchControls {
   ): T {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
-    const pos = screenToHudWorld(sx, sy, w, h, CONFIG.camera.zoom);
+    const pos = screenToHudWorld(sx, sy, w, h, viewZoom(w, h));
     return obj.setPosition(pos.x, pos.y);
   }
 
@@ -225,13 +233,13 @@ export class TouchControls {
   private inside(p: Phaser.Input.Pointer, btn: Phaser.GameObjects.Container, r: number): boolean {
     const it = this.hudItems.find((i) => i.obj === (btn as unknown as HudItem['obj']));
     if (!it) return false;
-    const sx = it.ax * this.scene.scale.width + it.ox;
-    const sy = it.ay * this.scene.scale.height + it.oy;
+    const sx = it.ax * this.scene.scale.width + it.ox * this.hf;
+    const sy = it.ay * this.scene.scale.height + it.oy * this.hf;
     return Phaser.Math.Distance.Between(p.x, p.y, sx, sy) <= r;
   }
 
   private tapFlash(scene: Phaser.Scene, btn: Phaser.GameObjects.Container) {
-    scene.tweens.add({ targets: btn, scale: 0.85 * HUD_SCALE, duration: 80, yoyo: true });
+    scene.tweens.add({ targets: btn, scale: 0.85 * this.hs, duration: 80, yoyo: true });
   }
 }
 
