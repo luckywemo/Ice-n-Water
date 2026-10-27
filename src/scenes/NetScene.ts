@@ -466,15 +466,18 @@ export class NetScene extends Phaser.Scene {
     this.endLayer = layer;
 
     layer.add(this.add.rectangle(-width, -height, width * 3, height * 3, 0x000000, 0.62).setOrigin(0));
-    // result card — full-bleed takeover; layer is hf-scaled, so the drawn
-    // panel needs width/hf to cover the screen and content centres on cw/2
+    // result card — same paper panel as the solo end card. Children of this
+    // pinned layer land on screen at local·hf — so the screen centre in local
+    // coords is viewport/(2·hf), otherwise the card drifts left on mobile.
     const hf = hudFactor(width, height);
-    const cw = width / hf;
-    const ch = height / hf;
-    layer.add(panel(this, 0, 0, cw, ch, { alpha: 0.97 }));
+    const cw = 560;
+    const ch = 330;
+    const cx = width / (2 * hf);
+    const cy = height / (2 * hf);
+    layer.add(panel(this, cx - cw / 2, cy - ch / 2, cw, ch, { alpha: 0.97 }));
     layer.add(
       this.add
-        .text(cw / 2, ch / 2 - 80, s.winner === 'ice' ? 'ICE WINS' : 'WATER WINS', {
+        .text(cx, cy - 80, s.winner === 'ice' ? 'ICE WINS' : 'WATER WINS', {
           fontFamily: DISPLAY_FONT,
           fontSize: '52px',
           color: s.winner === 'ice' ? '#e84848' : '#0f7fb8',
@@ -484,7 +487,7 @@ export class NetScene extends Phaser.Scene {
     );
     layer.add(
       this.add
-        .text(cw / 2, ch / 2 - 14, s.message, {
+        .text(cx, cy - 14, s.message, {
           fontFamily: UI_FONT,
           fontSize: '18px',
           color: '#5a7184',
@@ -502,9 +505,9 @@ export class NetScene extends Phaser.Scene {
       layer.add(pg);
     };
     const isHost = this.room.sessionId === s.host;
-    if (isHost) drawPill(cw / 2, ch / 2 + 53, 230, 50, UI.leaf);
+    if (isHost) drawPill(cx, cy + 53, 230, 50, UI.leaf);
     const again = this.add
-      .text(cw / 2, ch / 2 + 49, isHost ? 'PLAY AGAIN  (space)' : 'waiting for host to rematch…', {
+      .text(cx, cy + 49, isHost ? 'PLAY AGAIN  (space)' : 'waiting for host to rematch…', {
         fontFamily: DISPLAY_FONT,
         fontSize: '17px',
         color: isHost ? '#1c1626' : '#5a7184',
@@ -517,9 +520,9 @@ export class NetScene extends Phaser.Scene {
         if (this.room.state.phase === 'ended') this.room.send('restart');
       });
     }
-    drawPill(cw / 2, ch / 2 + 104, 190, 46, UI.ink);
+    drawPill(cx, cy + 104, 190, 46, UI.ink);
     const leaveBtn = this.add
-      .text(cw / 2, ch / 2 + 100, 'LEAVE  (esc)', {
+      .text(cx, cy + 100, 'LEAVE  (esc)', {
         fontFamily: DISPLAY_FONT,
         fontSize: '15px',
         color: '#f5efe0',
@@ -527,18 +530,19 @@ export class NetScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setPadding(14, 10, 14, 10);
     layer.add(leaveBtn);
-    // screen-space tap rects — container children miss input under camera scroll
-    // hit rects are screen px — local coords land at local·hf, so map the
-    // pill rects through the same transform
-    const sr = (lx: number, ly: number, w: number, h: number) => ({
-      x: (lx - w / 2) * hf,
-      y: (ly - h / 2) * hf,
-      w: w * hf,
-      h: h * hf,
+    // screen-space tap rects — container children miss input under camera
+    // scroll; local coords land at ·hf on screen, so map them through hf
+    const sr = (lx: number, ly: number, lw: number, lh: number) => ({
+      x: lx * hf,
+      y: ly * hf,
+      w: lw * hf,
+      h: lh * hf,
     });
     this.endHit = [
-      ...(isHost ? [{ ...sr(cw / 2, ch / 2 + 53, 230, 50), fn: () => this.room.send('restart') }] : []),
-      { ...sr(cw / 2, ch / 2 + 104, 190, 46), fn: () => this.leave() },
+      ...(isHost
+        ? [{ ...sr(cx - 110, cy + 30, 220, 46), fn: () => this.room.send('restart') }]
+        : []),
+      { ...sr(cx - 90, cy + 82, 180, 44), fn: () => this.leave() },
     ];
     this.relayout();
   }

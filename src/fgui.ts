@@ -839,26 +839,24 @@ export function promptModal(
   };
 
   // the ONLINE underlay: yellow field + concentric rings + crown stamps,
-  // then a light veil so the modal reads over the field. Overscan is large
-  // because scrollFactor(0) still scales about the view centre under zoom.
-  track(fgCrownField(scene, vw, vh, cx, cy, field?.base, field?.ring, field?.crown));
+  // then a light veil so the modal reads over the field. The backdrop must
+  // always cover 100% of the screen — sf0 surfaces still scale about the
+  // view centre under camera zoom, so divide the span by the zoom (min 1 —
+  // zoomed-in cameras over-cover fine as-is).
+  const cz = Math.min(scene.cameras.main.zoom || 1, 1);
+  track(fgCrownField(scene, vw / cz, vh / cz, cx, cy, field?.base, field?.ring, field?.crown));
   const dim = track(
-    scene.add.rectangle(-vw, -vh, vw * 3, vh * 3, 0x081420, 0.22).setOrigin(0).setInteractive(),
+    scene.add.rectangle(-vw / cz, -vh / cz, (vw * 3) / cz, (vh * 3) / cz, 0x081420, 0.22).setOrigin(0).setInteractive(),
   );
-  // full-bleed takeover — every modal covers the whole screen, no max sizes.
-  // sf0 surfaces get camera-zoomed about the centre, so draw at vw/zoom to
-  // land exactly edge-to-edge at any zoom. Content stays clustered around
-  // centre; only close/esc pin to the (panel = screen) corners.
-  const cz = scene.cameras.main.zoom || 1;
-  const pw = vw / cz;
-  const ph = vh / cz;
+  const pw = Math.min(440, vw - 40);
+  const ph = 250;
   track(panel(scene, cx - pw / 2, cy - ph / 2, pw, ph), depth + 1);
-  // swallow card taps so they don't fall through to the dim (which cancels)
+  // swallows taps on the card body so they don't reach the dim's tap-to-cancel
   track(scene.add.zone(cx - pw / 2, cy - ph / 2, pw, ph).setOrigin(0, 0).setInteractive(), depth + 1);
   // header — pink Titan One, deep-pink shadow: the ONLINE card's signature
   track(
     scene.add
-      .text(cx, cy - 118, title, {
+      .text(cx, cy - ph / 2 + 46, title, {
         fontFamily: DISPLAY_FONT,
         fontSize: '30px',
         color: '#e84393',
@@ -870,7 +868,7 @@ export function promptModal(
   if (sub) {
     track(
       scene.add
-        .text(cx, cy - 84, sub, {
+        .text(cx, cy - ph / 2 + 78, sub, {
           fontFamily: UI_FONT,
           fontSize: '14px',
           fontStyle: '600',
@@ -883,7 +881,7 @@ export function promptModal(
   if (label) {
     track(
       scene.add
-        .text(cx, cy - 48, label, {
+        .text(cx, cy - ph / 2 + 108, label, {
           fontFamily: UI_FONT,
           fontSize: '12px',
           fontStyle: '800',
@@ -950,14 +948,14 @@ export function promptModal(
     dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
     closeT.on('pointerdown', () => cleanup(null));
 
-    const ok = pillButton(scene, cx - 78, cy + 84, 140, okLabel, {
+    const ok = pillButton(scene, cx - 78, cy + ph / 2 - 50, 140, okLabel, {
       fill: UI.danfo,
       textColor: UI.ink,
       fontSize: 15,
       depth: depth + 2,
       onDown: () => cleanup(el.value.trim()),
     });
-    const cancel = pillButton(scene, cx + 78, cy + 84, 140, 'CANCEL', {
+    const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
       fill: UI.ink,
       fontSize: 15,
       depth: depth + 2,
