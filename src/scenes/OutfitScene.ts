@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { Hero3D } from '../hero3d';
 import { REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
-import { CHARACTERS, CharDef, charTitle, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
+import { CHARACTERS, CharDef, charTitle, charTitleShort, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
+import { playerName } from '../leaderboard';
 import { perfInterval, furQuality } from '../meta';
 import { Sfx } from '../audio';
 
@@ -296,16 +297,9 @@ export class OutfitScene extends Phaser.Scene {
 
   private refreshHead() {
     const ch = currentChar();
-    this.headName?.setText(runnerName(ch));
-    const tag =
-      this.tab === 'coat'
-        ? 'COLOUR'
-        : ch.gear && ch.gear !== 'none'
-          ? 'GEARED'
-          : ch.shape && ch.shape !== 'bean'
-            ? ch.shape.toUpperCase()
-            : 'RUNNER';
-    this.headTag?.setText(tag);
+    // podium convention — name on the left, the champion's title tagged right
+    this.headName?.setText((playerName() || ch.name || 'RUNNER').toUpperCase().slice(0, 10));
+    this.headTag?.setText(this.tab === 'coat' ? 'COLOUR' : charTitleShort(ch) || 'RUNNER');
   }
 
   // ---- tile helpers ----
