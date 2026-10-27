@@ -2,7 +2,7 @@
 // body = vinyl/fur colour, skin = face oval, shape = body silhouette,
 // gear = head-mounted extra. Shape/gear change the actual MODEL, not
 // just the paint — they build different meshes on the shared skeleton.
-import type { BeanGear, BeanShape } from './hero3d';
+import type { BeanDress, BeanGear, BeanShape } from './hero3d';
 import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES, levelDef } from './adventure';
 import type { BossMove } from './adventure';
 import { playerName } from './leaderboard';
@@ -14,6 +14,7 @@ export interface CharDef {
   skin: number;
   shape?: BeanShape; // default 'bean'
   gear?: BeanGear; // default 'none'
+  dress?: BeanDress; // champion's regalia — robe, strip, beads, whisk
   rage?: boolean; // angry brows
   furLen?: number; // coat strand multiplier — 1 = standard
   unlockAt?: number; // milestone boss (1..50) that frees this runner — unset = free
@@ -23,7 +24,21 @@ export interface CharDef {
 // title (charTitle), not a person. Only the free hero keeps a name.
 export const CHARACTERS: CharDef[] = [
   { id: 'koko', name: 'NGOZI', body: 0x8a4f24, skin: 0xecc98e }, // the hero — classic chocolate, yours from GO
-  { id: 'agbalumo', body: 0xb56a26, skin: 0xf2d9a6, shape: 'round', unlockAt: 3 }, // BAALE OF SURULERE — chubby
+  {
+    id: 'agbalumo',
+    body: 0xf2eee2, // the white agbada — the robe IS the body vinyl
+    skin: 0xf2d9a6,
+    shape: 'round', // the Baale's settled frame
+    gear: 'fila', // abeti-aja — cap, never a crown; he is no Oba
+    unlockAt: 3, // BAALE OF SURULERE
+    dress: {
+      strip: 0x2f2b6e, // indigo aso-oke embroidery
+      shoe: 0x2f2b6e, // indigo sandals to match the fila
+      bead: 0xe8622a, // coral — one strand, a chief's station
+      whisk: true, // irukere — he summons his compound heads
+      line: 0xbfe8f4, // icy sleeve lining — he holds the stop for ICE
+    },
+  },
   { id: 'kola', body: 0x553219, skin: 0xd9ad78, unlockAt: 6 }, // AYANGBUREN OF IKORODU — dark roast
   { id: 'zobo', body: 0x8a2f3d, skin: 0xecc4a0, shape: 'tall', unlockAt: 9 }, // BAALE OF AGEGE — lanky red
   { id: 'palmie', body: 0x4f6b35, skin: 0xe2cf9e, gear: 'band', unlockAt: 12 }, // OLUBADAN OF IBADAN — sweatband

@@ -16,7 +16,21 @@ const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 // gear bolts a head-mounted extra onto the crown. Pickable cast lives
 // in characters.ts.
 export type BeanShape = 'bean' | 'round' | 'tall';
-export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown' | 'frost';
+export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown' | 'frost' | 'fila';
+/** the champion's regalia — an agbada robe read on the bean. robe = torso
+ *  vinyl colour (the cloth itself), strip = the chest embroidery strip,
+ *  shoe = footwear, bead = coral strand colour (unset = no necklace),
+ *  whisk = irukere horsetail in the right hand, line = sleeve lining —
+ *  the icy blue flash inside the agbada's wide sleeves. Robed beans run
+ *  smooth: the fur shells hide and drawFur no-ops. */
+export interface BeanDress {
+  robe?: number;
+  strip?: number;
+  shoe?: number;
+  bead?: number;
+  whisk?: boolean;
+  line?: number;
+}
 export interface BeanModel {
   shape?: BeanShape;
   gear?: BeanGear;
@@ -24,6 +38,8 @@ export interface BeanModel {
   rage?: boolean;
   /** coat strand length multiplier — the ice runs shaggy */
   furLen?: number;
+  /** champion's robe — agbada, strip, beads, whisk */
+  dress?: BeanDress;
 }
 
 export class Hero3D {
@@ -49,6 +65,7 @@ export class Hero3D {
   private shadowMesh?: THREE.Mesh;
   private shellMeshes: THREE.Mesh[] = [];
   private gearParts: THREE.Object3D[] = [];
+  private dressed = false; // robed champion — fur overlay suppressed
   private gearCv?: HTMLCanvasElement;
   private gearCtx?: CanvasRenderingContext2D;
   private furLen = 1; // drawFur strand-length multiplier
@@ -402,6 +419,195 @@ export class Hero3D {
           icicle.rotation.z = x * 0.35; // splay with the crown curve
           this.gearParts.push(icicle);
         }
+      } else if (gear === 'fila') {
+        // abeti-aja — the Yoruba chief's cap. A squat tapered wrap hugging
+        // the dome (wider at the rim), tilted back and to the right like it
+        // was just settled on, two pointed ear-flaps standing off the top
+        // corners, a pale trim line at the rim.
+        const indigo = 0x2f2b6e;
+        const filaMat = mat(indigo, 0.5);
+        const wrap = mesh(
+          new THREE.CylinderGeometry(0.5, 0.64, 0.28, 28, 1, true),
+          filaMat,
+          0,
+          topY - 0.16,
+          0.01,
+        );
+        wrap.scale.set(shX, 1, shZ);
+        wrap.rotation.set(-0.1, 0, 0.14); // back-right tilt — how a fila sits
+        this.gearParts.push(wrap);
+        // closed crown of the cap — slight peak so it doesn't read hollow
+        const peak = mesh(
+          new THREE.CylinderGeometry(0.18, 0.5, 0.14, 28),
+          filaMat,
+          0,
+          topY - 0.01,
+          0.01,
+        );
+        peak.scale.set(shX, 1, shZ);
+        peak.rotation.set(-0.1, 0, 0.14);
+        this.gearParts.push(peak);
+        // the two ear-flaps — diamond-section cones kicked outward at the
+        // top corners; THE silhouette that says abeti-aja, not bucket
+        for (const side of [-1, 1] as const) {
+          const ear = mesh(
+            new THREE.ConeGeometry(0.13, 0.3, 4),
+            filaMat,
+            side * 0.42 * shX,
+            topY + 0.1,
+            0.3 * shZ,
+          );
+          ear.rotation.y = Math.PI / 4; // flat faces to camera
+          ear.rotation.z = -side * 0.5; // tips point up-and-out
+          ear.rotation.x = -0.12;
+          this.gearParts.push(ear);
+        }
+        // rim trim — pale thread line along the wrap's lower edge
+        const trim = mesh(
+          new THREE.TorusGeometry(0.63, 0.018, 8, 40),
+          mat(0xe8e2f2, 0.5),
+          0,
+          topY - 0.26,
+          0.01,
+        );
+        trim.rotation.x = Math.PI / 2;
+        trim.rotation.z = 0.14;
+        trim.scale.set(shX, shZ, 1);
+        this.gearParts.push(trim);
+      }
+    }
+
+    // --- dress — the champion's regalia. The robe IS the body vinyl (the
+    // CharDef's body paints it); here we bolt on the parts that make it an
+    // agbada: chest embroidery strip, coral beads, sleeve lining, irukere.
+    // Robed beans run smooth — shells hide, the 2D fur pass skips. ---
+    if (model.dress) {
+      const d = model.dress;
+      this.dressed = true;
+      for (const m of this.shellMeshes) m.visible = false;
+
+      // chest strip — a curved panel hugging the torso ellipse, textured
+      // with the agbada's indigo embroidery: border threads, running
+      // diamonds, the interlocked knot at the hem
+      if (d.strip !== undefined) {
+        const cv = document.createElement('canvas');
+        cv.width = 96;
+        cv.height = 256;
+        const c = cv.getContext('2d')!;
+        const ind = '#' + d.strip.toString(16).padStart(6, '0');
+        c.fillStyle = ind;
+        c.fillRect(0, 0, 96, 256);
+        c.strokeStyle = 'rgba(255,255,255,0.85)';
+        c.lineWidth = 3;
+        c.strokeRect(7, 4, 82, 248); // border threads
+        c.lineWidth = 2;
+        c.strokeRect(14, 10, 68, 236);
+        // running diamond + bar motif down the strip
+        c.fillStyle = 'rgba(255,255,255,0.8)';
+        for (let y = 24; y < 190; y += 30) {
+          c.save();
+          c.translate(48, y);
+          c.rotate(Math.PI / 4);
+          c.fillRect(-7, -7, 14, 14);
+          c.restore();
+          c.fillRect(30, y + 11, 36, 3);
+        }
+        // the knot glyph — two interlocked squares
+        for (const [ox, s] of [[-11, 26], [11, 26]] as const) {
+          c.save();
+          c.translate(48 + ox, 216);
+          c.rotate(Math.PI / 4);
+          c.lineWidth = 5;
+          c.strokeRect(-s / 2, -s / 2, s, s);
+          c.restore();
+        }
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const ARC = 0.72; // ~41° of the chest — the art's strip width
+        const stripMesh = mesh(
+          new THREE.CylinderGeometry(0.678, 0.678, 1.28, 24, 1, true, -ARC / 2, ARC),
+          new THREE.MeshStandardMaterial({
+            map: tex,
+            transparent: false,
+            roughness: 0.55,
+            metalness: 0,
+            side: THREE.DoubleSide,
+          }),
+          0,
+          1.02,
+          0,
+        );
+        stripMesh.scale.set(shX, shY, shZ);
+        this.gearParts.push(stripMesh);
+      }
+
+      // coral beads — a strand draped on the chest below the face oval.
+      // Vertical ring facing camera (NOT the band's horizontal hoop);
+      // tilted so the top tucks toward the neck and the bottom swings
+      // proud over the belly — how a necklace hangs on a round chest.
+      if (d.bead !== undefined) {
+        const beads = mesh(
+          new THREE.TorusGeometry(0.42, 0.055, 10, 32, Math.PI * 1.2),
+          mat(d.bead, 0.32),
+          0,
+          1.32,
+          0.62 * shZ,
+        );
+        beads.rotation.x = -0.42; // bottom swings proud of the belly, top tucks under the chin
+        beads.rotation.z = Math.PI * 0.9; // arc centre at the chest's bottom
+        this.gearParts.push(beads);
+      }
+
+      // shoes + sleeve lining — indigo feet, icy-blue inner sleeves (the
+      // ICE-side accent under the agbada's wide sleeves)
+      if (d.shoe !== undefined) {
+        const shoeMat = mat(d.shoe, 0.45);
+        for (const foot of [this.footL, this.footR])
+          foot?.traverse((o) => {
+            if (o instanceof THREE.Mesh) o.material = shoeMat;
+          });
+      }
+      if (d.line !== undefined) {
+        const lineMat = mat(d.line, 0.35);
+        for (const fl of [this.flipL, this.flipR])
+          fl?.elbow.traverse((o) => {
+            if (o instanceof THREE.Mesh) o.material = lineMat;
+          });
+      }
+
+      // irukere — the horsetail whisk of office, held in the right hand so
+      // it rides the arm's idle sway: gold-wrapped handle, flared cream
+      // tail, frost gathering at the tips (he holds the stop for ICE)
+      if (d.whisk && this.flipR) {
+        const w = new THREE.Group();
+        const gold = new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.6, roughness: 0.35 });
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.042, 0.26, 10), gold);
+        w.add(handle);
+        // horsetail — loose thin strands splayed around a soft core so it
+        // reads as tail hair, not a paper cone
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc2, roughness: 0.95 });
+        const core = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.4, 10), hairMat);
+        core.rotation.x = Math.PI;
+        core.position.y = -0.33;
+        w.add(core);
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * Math.PI * 2;
+          const s = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.017, 0.46, 5), hairMat);
+          s.position.set(Math.cos(a) * 0.055, -0.32, Math.sin(a) * 0.055);
+          s.rotation.set(Math.sin(a) * 0.16, 0, Math.cos(a) * 0.16); // fan out
+          w.add(s);
+        }
+        // frost tips — icy beads clinging to the strand ends
+        const iceM = new THREE.MeshStandardMaterial({ color: 0xdff4fc, roughness: 0.25 });
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * Math.PI * 2;
+          const crys = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5), iceM);
+          crys.position.set(Math.cos(a) * 0.09, -0.56 - (i % 2) * 0.03, Math.sin(a) * 0.09);
+          w.add(crys);
+        }
+        w.position.set(0.02, -0.42, 0.16);
+        w.rotation.z = -0.35; // angled off the wrist, strands splayed out
+        this.flipR.elbow.add(w);
       }
     }
 
@@ -474,6 +680,7 @@ export class Hero3D {
    *  Call AFTER the WebGL frame is drawn into `ctx`.
    *  `px,py` = pointer in canvas pixels, negative = no petting. */
   drawFur(ctx: CanvasRenderingContext2D, px: number, py: number) {
+    if (this.dressed) return; // the agbada is smooth cloth — no shag coat
     const W = this.W,
       H = this.H,
       CELLS = 8,
