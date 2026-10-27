@@ -447,7 +447,7 @@ export class TitleScene extends Phaser.Scene {
           .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
       }
       // stacked plate — username on top, TITLE under it
-      const whoOf = () => (playerName() || CHARACTERS[this.charIdx].name).toUpperCase();
+      const whoOf = () => (playerName() || CHARACTERS[this.charIdx].name || 'RUNNER').toUpperCase();
       const titleOf = () => charTitleShort(CHARACTERS[this.charIdx]) || 'RUNNER';
       this.charName = this.add
         .text(podX, pickY - 12, whoOf(), {
