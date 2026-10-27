@@ -446,9 +446,14 @@ export class TitleScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true })
           .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
       }
-      // stacked plate — username on top, TITLE under it
+      // stacked plate — username on top, TITLE under it; the plate itself
+      // is the switch: click cycles the whole cast, locked ones preview
       const whoOf = () => (playerName() || CHARACTERS[this.charIdx].name || 'RUNNER').toUpperCase();
-      const titleOf = () => charTitleShort(CHARACTERS[this.charIdx]) || 'RUNNER';
+      const lockedOf = () => !charUnlocked(CHARACTERS[this.charIdx]);
+      const titleOf = () => {
+        const c = CHARACTERS[this.charIdx];
+        return lockedOf() ? `LOCKED · ${charTitleShort(c)}` : charTitleShort(c) || 'RUNNER';
+      };
       this.charName = this.add
         .text(podX, pickY - 12, whoOf(), {
           fontFamily: FG_FONT,
@@ -458,7 +463,9 @@ export class TitleScene extends Phaser.Scene {
           strokeThickness: 6,
         })
         .setOrigin(0.5)
-        .setDepth(6);
+        .setDepth(6)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.gate(() => this.cycleChar(1)));
       this.charTitle = this.add
         .text(podX, pickY + 18, titleOf(), {
           fontFamily: FG_FONT,
@@ -469,10 +476,12 @@ export class TitleScene extends Phaser.Scene {
           strokeThickness: 4,
         })
         .setOrigin(0.5)
-        .setDepth(6);
+        .setDepth(6)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.gate(() => this.cycleChar(1)));
       this.refreshCharPlate = () => {
         this.charName?.setText(whoOf());
-        this.charTitle?.setText(titleOf());
+        this.charTitle?.setText(titleOf()).setColor(lockedOf() ? '#ffb3c8' : '#ffd54f');
       };
     }
 
@@ -523,14 +532,12 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private cycleChar(dir: -1 | 1) {
-    // locked runners don't cycle in — keep stepping until a free one lands
-    for (let k = 0; k < CHARACTERS.length; k++) {
-      this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
-      if (charUnlocked(CHARACTERS[this.charIdx])) break;
-    }
+    // the whole cast previews on the podium — a locked runner shows itself
+    // but doesn't equip; setChar only fires when a free one lands
+    this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
     const ch = CHARACTERS[this.charIdx];
     this.refreshCharPlate?.();
-    setChar(ch.id);
+    if (charUnlocked(ch)) setChar(ch.id);
     // shape/gear change the mesh itself — retint can't do it, so the rig
     // is rebuilt and the frame-blit picks up the new canvas automatically
     if (this.hero3d) {
