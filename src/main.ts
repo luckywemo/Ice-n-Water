@@ -7,6 +7,7 @@ import { LobbyScene } from './scenes/LobbyScene';
 import { NetScene } from './scenes/NetScene';
 import { AdventureScene } from './scenes/AdventureScene';
 import { DropScene } from './scenes/DropScene';
+import { OutfitScene } from './scenes/OutfitScene';
 import { promptModal } from './fgui';
 
 // mobile hygiene: no long-press menus, no pull-to-refresh scroll
@@ -47,7 +48,7 @@ const boot = () =>
       mode: Phaser.Scale.RESIZE, // fill the whole window — no letterbox bars
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene, DropScene],
+    scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene, DropScene, OutfitScene],
   });
 
 const go = () => {

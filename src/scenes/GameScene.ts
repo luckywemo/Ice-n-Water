@@ -290,7 +290,7 @@ export class GameScene extends Phaser.Scene {
     // First entry pays a few hundred ms; sheets persist in the texture
     // manager for every later level. No WebGL → flat circles stay.
     const me = currentChar();
-    const youKey = `bean-you-${me.id}`; // per-character key — a swapped pick can't reuse a stale sheet
+    const youKey = `bean-you-${me.id}-${me.body.toString(16)}`; // per-look key — a swapped pick or repaint can't reuse a stale sheet
     this.sheetPlayer = bakeBeanSheet(this, youKey, me) ? youKey : null;
     this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
     this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)

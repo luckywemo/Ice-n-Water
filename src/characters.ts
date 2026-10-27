@@ -45,11 +45,35 @@ export const MILITIA_DEF: CharDef = {
 
 const KEY = 'iw-char';
 
-export function currentChar(): CharDef {
-  const id = localStorage.getItem(KEY);
-  return CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0];
+// the wardrobe pick — id chooses the runner, body optionally repaints
+// their coat (the outfit screen's COLOUR tab). Legacy values were bare
+// id strings — read both.
+export interface CharPick {
+  id: string;
+  body?: number;
 }
 
-export function setChar(id: string) {
-  localStorage.setItem(KEY, id);
+export function currentPick(): CharPick {
+  const raw = localStorage.getItem(KEY);
+  if (raw?.startsWith('{')) {
+    try {
+      const p = JSON.parse(raw) as CharPick;
+      if (p.id) return { id: p.id, body: p.body };
+    } catch {
+      /* fall through */
+    }
+  }
+  return { id: raw ?? CHARACTERS[0].id };
+}
+
+export function currentChar(): CharDef {
+  const p = currentPick();
+  const def = CHARACTERS.find((c) => c.id === p.id) ?? CHARACTERS[0];
+  return p.body === undefined ? def : { ...def, body: p.body };
+}
+
+// body omitted → keep the current coat paint; null → clear the override
+export function setChar(id: string, body?: number | null) {
+  const keep = body === undefined ? currentPick().body : body ?? undefined;
+  localStorage.setItem(KEY, JSON.stringify(keep === undefined ? { id } : { id, body: keep }));
 }

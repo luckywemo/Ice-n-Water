@@ -285,6 +285,16 @@ export class TitleScene extends Phaser.Scene {
         { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
         { icon: 'edit', onDown: () => this.gate(renameRunner) },
         {
+          icon: 'hanger',
+          onDown: () =>
+            this.gate(() => {
+              this.cameras.main.fadeOut(160, 0x2b, 0xb8, 0xf0);
+              this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
+                this.scene.start('outfit'),
+              );
+            }),
+        },
+        {
           icon: 'sliders',
           onDown: () => {
             if (!this.started) return this.dismissSplash();
@@ -946,7 +956,7 @@ export class TitleScene extends Phaser.Scene {
   private toggleSettings() {
     if (!this.settingsCard) return;
     this.settingsOpen = !this.settingsOpen;
-    this.topBar?.setActive(2, this.settingsOpen); // the sliders tab goes pink while its card is open
+    this.topBar?.setActive(3, this.settingsOpen); // the sliders tab goes pink while its card is open
     const card = this.settingsCard;
     // kill any in-flight close tween — its onComplete would setVisible(false)
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
