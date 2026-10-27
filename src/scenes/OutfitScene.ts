@@ -79,15 +79,15 @@ export class OutfitScene extends Phaser.Scene {
     // header plaque — CUSTOMISE › OUTFITS, their dark chamfered tab
     const hp = this.add.graphics().setDepth(5);
     const pts = [
-      { x: 18, y: 0 },
-      { x: 300, y: 0 },
-      { x: 284, y: 44 },
-      { x: 18, y: 44 },
+      { x: 0, y: 0 },
+      { x: 282, y: 0 },
+      { x: 266, y: 44 },
+      { x: 0, y: 44 },
     ];
     hp.fillStyle(FG.bar, 1).fillPoints(pts, true);
     hp.lineStyle(2.5, 0xffffff, 0.9).strokePoints(pts, true);
     this.add
-      .text(38, 23, 'CUSTOMISE › OUTFITS', {
+      .text(20, 23, 'CUSTOMISE › OUTFITS', {
         fontFamily: FG_FONT,
         fontSize: '21px',
         color: '#ffffff',
