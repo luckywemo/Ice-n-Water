@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { UI_FONT, DISPLAY_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, viewZoom, hudFactor } from './ui';
-import { JoyMode } from './meta';
+import { JoyMode, loadPicks } from './meta';
 
 // Virtual joystick (left thumb) + sprint/water buttons (right thumb).
 // Only exists on touch devices — dead simple to ignore on desktop.
@@ -33,7 +33,13 @@ export class TouchControls {
   private hf = 1; // HUD shrink factor (small screens)
 
   static isTouchDevice(): boolean {
-    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // primary-input check, not capability — a touchscreen laptop still has a
+    // fine primary pointer (mouse/trackpad) and wants the desktop treatment;
+    // only a coarse primary (phone/tablet thumb) counts as touch
+    const mq = (q: string) => window.matchMedia?.(q).matches ?? false;
+    if (mq('(pointer: coarse)')) return true;
+    if (mq('(pointer: fine)')) return false;
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0; // fallback
   }
 
   constructor(
@@ -235,4 +241,10 @@ export class TouchControls {
   private tapFlash(scene: Phaser.Scene, btn: Phaser.GameObjects.Container) {
     scene.tweens.add({ targets: btn, scale: 0.85 * this.hs, duration: 80, yoyo: true });
   }
+}
+
+/** keyboard-hint chrome — never renders on touch (there are no keys);
+ *  desktop users can kill it in Settings › GAME › Key hints */
+export function keyHintsOn(): boolean {
+  return !TouchControls.isTouchDevice() && loadPicks().hints;
 }

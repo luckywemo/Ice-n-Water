@@ -3,6 +3,24 @@
 export type Difficulty = 'easy' | 'normal' | 'hard';
 // 'floating' — joystick appears where the thumb lands; 'sticky' — fixed spot
 export type JoyMode = 'floating' | 'sticky';
+// bean composite rate — the live WebGL+fur bean is the heavy per-frame cost,
+// so this is the real perf lever (the engine itself is vsync-locked anyway)
+export type PerfMode = 'low' | 'balanced' | 'high';
+export const PERF_MS: Record<PerfMode, number> = { low: 66, balanced: 33, high: 16 };
+export const PERF_ORDER: PerfMode[] = ['low', 'balanced', 'high'];
+export const PERF_LABEL: Record<PerfMode, string> = { low: '15 FPS', balanced: '30 FPS', high: '60 FPS' };
+// the FPS pick also carries the coat preset — low is trimmed+thin+cheap,
+// high is shaggy+plush+pricier. Balanced values are the reference look.
+export interface FurQuality {
+  fluff: number; // strand length scale
+  mess: number; // angle + curve jitter amplitude
+  density: number; // sampling density (1 ≈ one strand per 3px)
+}
+export const FUR_Q: Record<PerfMode, FurQuality> = {
+  low: { fluff: 0.7, mess: 0.22, density: 0.7 },
+  balanced: { fluff: 0.85, mess: 0.3, density: 1.0 },
+  high: { fluff: 1.0, mess: 0.4, density: 1.6 },
+};
 
 export interface DiffPreset {
   label: string;
@@ -58,7 +76,7 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
   return s;
 }
 
-export function loadPicks(): { difficulty: Difficulty; joy: JoyMode } {
+export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfMode; hints: boolean } {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
     if (raw) {
@@ -66,18 +84,35 @@ export function loadPicks(): { difficulty: Difficulty; joy: JoyMode } {
       return {
         difficulty: ['easy', 'normal', 'hard'].includes(p.difficulty) ? p.difficulty : 'normal',
         joy: p.joy === 'sticky' ? 'sticky' : 'floating',
+        perf: PERF_ORDER.includes(p.perf) ? p.perf : 'balanced',
+        hints: p.hints !== false, // on by default — the settings toggle writes false
       };
     }
   } catch {
     /* fall through */
   }
-  return { difficulty: 'normal', joy: 'floating' };
+  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true };
 }
 
-export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating') {
+export function savePicks(
+  difficulty: Difficulty,
+  joy: JoyMode = 'floating',
+  perf: PerfMode = 'balanced',
+  hints = true,
+) {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints }));
   } catch {
     /* fine */
   }
+}
+
+/** ms between bean composites — read once per scene, not per frame */
+export function perfInterval(): number {
+  return PERF_MS[loadPicks().perf];
+}
+
+/** the coat preset riding on the Bean FPS pick */
+export function furQuality(): FurQuality {
+  return FUR_Q[loadPicks().perf];
 }

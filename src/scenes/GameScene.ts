@@ -13,10 +13,11 @@ import {
 } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
-import { TouchControls } from '../mobile';
+import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { bakeBeanSheet } from '../beanbake';
-import { currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
+import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
+import type { BossMove } from '../adventure';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -28,6 +29,8 @@ interface RunnerState {
   stamina: number;
   sprinting: boolean;
   slipperUntil: number;
+  skillUntil?: number; // inherited champion skill — rage burst window
+  backupUntil?: number; // summoned mate peels off after this
   charm: boolean;
   water: number;
   aiDir: Phaser.Math.Vector2;
@@ -132,6 +135,10 @@ export class GameScene extends Phaser.Scene {
   private lastEvent: EventKind | null = null;
   private slipperyUntil = 0;
   private helpUntil = 0; // COME SAVE ME ping — brave mates come running
+  private playerMove?: BossMove; // inherited from the beaten champion
+  private moveReadyAt = 0; // champion skills run a 14s cooldown
+  private lastDir = new Phaser.Math.Vector2(1, 0); // blink dashes where you're headed
+  private backup?: Sprite; // the summoned mate — one helper at a time
   private zoom: number = CONFIG.camera.zoom; // live camera zoom — viewZoom() adapts it to the screen
   private hf = 1; // HUD shrink factor for small screens
   private lastDotDock = -1;
@@ -299,7 +306,8 @@ export class GameScene extends Phaser.Scene {
     // First entry pays a few hundred ms; sheets persist in the texture
     // manager for every later level. No WebGL → flat circles stay.
     const me = currentChar();
-    const youKey = `bean-you-${me.id}`; // per-character key — a swapped pick can't reuse a stale sheet
+    this.playerMove = charMove(me); // beaten champions pass their boss's skill
+    const youKey = `bean-you-${me.id}-${me.body.toString(16)}`; // per-look key — a swapped pick or repaint can't reuse a stale sheet
     this.sheetPlayer = bakeBeanSheet(this, youKey, me) ? youKey : null;
     this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
     this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
@@ -384,7 +392,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.keys = this.input.keyboard!.addKeys(
-      'W,A,S,D,SHIFT,E,R,T,M,UP,DOWN,LEFT,RIGHT,SPACE,ESC',
+      'W,A,S,D,SHIFT,E,R,T,M,F,UP,DOWN,LEFT,RIGHT,SPACE,ESC',
     ) as Record<string, Phaser.Input.Keyboard.Key>;
     this.input.keyboard!.addCapture([
       Phaser.Input.Keyboard.KeyCodes.UP,
@@ -697,6 +705,7 @@ export class GameScene extends Phaser.Scene {
       stamina: 1,
       sprinting: false,
       slipperUntil: 0,
+      skillUntil: 0,
       charm: false,
       water: 0,
       aiDir: new Phaser.Math.Vector2(0, 0),
@@ -1061,7 +1070,9 @@ export class GameScene extends Phaser.Scene {
     this.itemText = this.pin(
       this.add.text(0, 0, '', { ...style, fontSize: '16px', align: 'right' })
         .setOrigin(1, 0)
-        .setDepth(10),
+        .setDepth(10)
+        .setInteractive()
+        .on('pointerdown', () => this.useSkill()), // the skill label doubles as the touch button
       1, 0, -16, 14,
     );
     // adventure objective line — landmark name + what the level wants
@@ -1116,35 +1127,38 @@ export class GameScene extends Phaser.Scene {
       0.5, 0.5, 0, -30,
     );
 
-    const isTouch = TouchControls.isTouchDevice();
     const exitLabel = this.level ? 'T — the road' : 'T — title';
-    this.hintText = this.pin(
-      this.add.text(0, 0, isTouch
-          ? 'left thumb — move   ·   RUN — sprint   ·   H₂O — use item   ·   ↻ — restart'
-          : `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`,
-        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
-      ).setOrigin(0.5, 1).setDepth(10),
-      0.5, 1, 0, -12,
-    );
-    // dark keycap chip behind the hint — the "Select Ⓛ" affordance
-    this.hintChip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
-    this.hintChip
-      .fillStyle(0x0a1420, 0.6)
-      .fillRoundedRect(
-        -this.hintText.width / 2 - 14,
-        -this.hintText.height - 9,
-        this.hintText.width + 28,
-        this.hintText.height + 11,
-        9,
+    // key strip — never on touch (the pads are already labelled), and gone
+    // on desktop when Settings › Key hints is off. It also retires after
+    // your first rounds and borrows the pause menu when you need it.
+    const hintStr = keyHintsOn()
+      ? `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`
+      : '';
+    this.hintGone = Number(localStorage.getItem('iw-hint-seen') ?? '0') >= 3;
+    if (hintStr) {
+      this.hintText = this.pin(
+        this.add.text(0, 0, hintStr,
+          { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
+        ).setOrigin(0.5, 1).setDepth(10),
+        0.5, 1, 0, -12,
       );
-    // the strip retires after your first rounds — reappears while paused
-    const hintSeen = Number(localStorage.getItem('iw-hint-seen') ?? '0');
-    this.hintGone = hintSeen >= 3;
-    if (this.hintGone) {
-      this.hintText.setVisible(false);
-      this.hintChip.setVisible(false);
-    } else {
-      localStorage.setItem('iw-hint-seen', String(hintSeen + 1));
+      // dark keycap chip behind the hint — the "Select Ⓛ" affordance
+      this.hintChip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+      this.hintChip
+        .fillStyle(0x0a1420, 0.6)
+        .fillRoundedRect(
+          -this.hintText.width / 2 - 14,
+          -this.hintText.height - 9,
+          this.hintText.width + 28,
+          this.hintText.height + 11,
+          9,
+        );
+      if (this.hintGone) {
+        this.hintText.setVisible(false);
+        this.hintChip.setVisible(false);
+      } else {
+        localStorage.setItem('iw-hint-seen', String(Number(localStorage.getItem('iw-hint-seen') ?? '0') + 1));
+      }
     }
 
     this.staminaGfx = this.add.graphics().setDepth(9);
@@ -1731,6 +1745,7 @@ export class GameScene extends Phaser.Scene {
       this.transitionTo(this.level ? 'adventure' : 'title');
     }
     if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.useItem(this.player);
+    if (Phaser.Input.Keyboard.JustDown(this.keys.F)) this.useSkill();
   }
 
   private transitionTo(key: string, restart = false) {
@@ -1815,9 +1830,13 @@ export class GameScene extends Phaser.Scene {
 
     let speed = st.sprinting ? CONFIG.runner.sprintSpeed : CONFIG.runner.speed;
     if (this.time.now < st.slipperUntil) speed *= CONFIG.items.slippers.speedMult;
+    if (this.time.now < (st.skillUntil ?? 0)) speed *= 1.5; // inherited RAGE burst
     if (this.isLastFree(st)) speed *= CONFIG.runner.adrenalineMult;
 
-    if (moving) dir.normalize();
+    if (moving) {
+      dir.normalize();
+      this.lastDir.copy(dir); // blink dashes along the held heading
+    }
     const body = this.player.body as Body;
     // rain = wet ground, everything slides
     const accel =
@@ -1832,6 +1851,10 @@ export class GameScene extends Phaser.Scene {
 
   private updateAiRunner(r: Sprite, delta: number) {
     const st = this.rState.get(r)!;
+    if (st.backupUntil && this.time.now > st.backupUntil) {
+      this.removeBackup();
+      return;
+    }
     if (st.frozen) return;
 
     st.decideIn -= delta;
@@ -2286,6 +2309,78 @@ export class GameScene extends Phaser.Scene {
     this.announce('RAIN — watch your footing!');
   }
 
+  /** the player's inherited champion skill — F key, 14s cooldown.
+   *  summon → a backup mate drops beside you and pulls the militia's eyes
+   *  rage   → your own burst: 1.5x speed for 3.2s
+   *  blink  → dash-teleport ~230px along the held direction */
+  private useSkill() {
+    const move = this.playerMove;
+    if (!move || this.phase !== 'play' || this.time.now < this.moveReadyAt) return;
+    const st = this.rState.get(this.player);
+    if (!st || st.frozen) return;
+    this.moveReadyAt = this.time.now + 14000;
+    sfx.pickup();
+
+    if (move === 'summon') {
+      this.floatText(this.player.x, this.player.y - 40, 'BACKUP!', '#7df2a8');
+      this.spawnBackup();
+    } else if (move === 'rage') {
+      st.skillUntil = this.time.now + 3200;
+      this.player.setTint(0xffd54f);
+      this.time.delayedCall(3200, () => this.player.active && this.player.clearTint());
+      this.floatText(this.player.x, this.player.y - 40, 'RAGE!', '#ffd54f');
+    } else {
+      // blink — same violet materialize as the bosses', along your heading
+      const d = this.lastDir.lengthSq() > 0 ? this.lastDir : new Phaser.Math.Vector2(1, 0);
+      const nx = Phaser.Math.Clamp(this.player.x + d.x * 230, 60, this.arenaW - 60);
+      const ny = Phaser.Math.Clamp(this.player.y + d.y * 230, 60, this.arenaH - 60);
+      this.burst(this.player.x, this.player.y, 0xc4b5fd, 14, 200);
+      this.player.setPosition(nx, ny);
+      (this.player.body as Body).velocity.set(0, 0);
+      this.burst(nx, ny, 0xc4b5fd, 14, 200);
+      this.floatText(nx, ny - 30, 'BLINK!', '#c4b5fd');
+    }
+  }
+
+  private spawnBackup() {
+    this.removeBackup(); // one helper at a time
+    const r = this.physics.add.sprite(
+      Phaser.Math.Clamp(this.player.x + 44, 60, this.arenaW - 60),
+      Phaser.Math.Clamp(this.player.y + 8, 60, this.arenaH - 60),
+      this.sheetCrew ?? 'runner',
+    );
+    this.dressBean(r, this.sheetCrew);
+    this.runners.push(r);
+    const st = this.freshRunner(r, 'BACKUP', null);
+    st.sheet = this.sheetCrew ?? undefined;
+    st.backupUntil = this.time.now + 12000; // peels off after 12s
+    this.rState.set(r, st);
+    if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
+    this.collideWithWorld(r);
+    this.burst(r.x, r.y, 0x7df2a8, 14, 200);
+    this.backup = r;
+  }
+
+  private removeBackup() {
+    const r = this.backup;
+    if (!r) return;
+    this.backup = undefined;
+    this.tweens.add({
+      targets: r,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => {
+        this.runners = this.runners.filter((o) => o !== r);
+        const st = this.rState.get(r);
+        st?.shadow.destroy();
+        st?.label.destroy();
+        st?.iceBlock?.destroy();
+        this.rState.delete(r);
+        r.destroy();
+      },
+    });
+  }
+
   /** milestone champions get a signature move — on a 16s cadence */
   private updateBoss() {
     const move = this.level?.bossMove;
@@ -2355,8 +2450,8 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = { won: !militiaWon, survived };
     const caught = 'Frozen';
     const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
-    // touch devices get tappable buttons instead of key hints in the sub-line
-    const isTouch = TouchControls.isTouchDevice();
+    // touch + hints-off get tappable dashboard pills, no key legend in the sub
+    const hints = keyHintsOn();
 
     // dim the field so the result reads clean — screen space
     const { width, height } = this.scale;
@@ -2383,8 +2478,8 @@ export class GameScene extends Phaser.Scene {
           ? `LEVEL ${this.level.n} — ${timedOut ? 'OUT OF TIME' : 'CAUGHT'}`
           : 'MILITIA WINS',
         this.level
-          ? `${stats}${isTouch ? '' : '\nR — retry   T — the road'}`
-          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — run it back   T — title   S — share'}`,
+          ? `${stats}${hints ? '\nR — retry   T — the road' : ''}`
+          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${hints ? '\nR / SPACE — run it back   T — title   S — share' : ''}`,
         false,
       );
       this.shake(250, 0.01);
@@ -2401,9 +2496,9 @@ export class GameScene extends Phaser.Scene {
       const finalLevel = this.level?.n === TOTAL_LEVELS;
       const sub = this.level
         ? `${stats}${finalLevel ? '\nyou ran the whole of Nigeria — legend' : ''}${
-            isTouch ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
+            !hints ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
           }`
-        : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — play again   T — title   S — share'}`;
+        : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${hints ? '\nR / SPACE — play again   T — title   S — share' : ''}`;
       this.playResultRibbon(true, false);
       landResult(
         finalLevel
@@ -2591,13 +2686,14 @@ export class GameScene extends Phaser.Scene {
     track(st, 0.5, 0.5, 0, soy - 2);
     this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy: soy, bw: sw, bh: sh, go: () => { sfx.toggleMute(); drawSound(); } });
 
-    track(
-      this.add
-        .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
-        .setOrigin(1, 1)
-        .setDepth(42),
-      0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
-    );
+    if (keyHintsOn())
+      track(
+        this.add
+          .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
+          .setOrigin(1, 1)
+          .setDepth(42),
+        0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
+      );
     this.relayout(); // pinned post-create — place everything now
   }
 
@@ -2763,6 +2859,10 @@ export class GameScene extends Phaser.Scene {
     if (st.charm) held.push('JUJU CHARM');
     if (st.water > 0) {
       held.push(`WATER x${st.water} (E)`);
+    }
+    if (this.playerMove) {
+      const cd = Math.ceil((this.moveReadyAt - this.time.now) / 1000);
+      held.push(cd > 0 ? `${this.playerMove.toUpperCase()} ${cd}s` : `${this.playerMove.toUpperCase()} (F)`);
     }
     this.itemText.setText(held.join('  |  '));
 

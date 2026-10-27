@@ -3,10 +3,10 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
-import { TouchControls } from '../mobile';
+import { TouchControls, keyHintsOn } from '../mobile';
 import {
   FG,
   FG_FONT,
@@ -22,7 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { CHARACTERS, currentChar, setChar } from '../characters';
+import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -35,18 +35,26 @@ const TILTS = [-0.07, 0.04, -0.03, 0.06, -0.05, 0.03, -0.06, 0.05, -0.02, 0.04, 
 export class TitleScene extends Phaser.Scene {
   private diff: Difficulty = 'normal';
   private joy: JoyMode = 'floating';
+  private perf: PerfMode = 'balanced';
+  private hints = true; // key-hint chrome — Settings › GAME › Key hints
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
+  private perfVal?: Phaser.GameObjects.Text;
+  private hintsVal?: Phaser.GameObjects.Text;
+  private settingsFoot?: Phaser.GameObjects.Text;
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
+  private charLock?: Phaser.GameObjects.Container; // padlock over the podium bean while previewing a locked runner
   private heroGaze?: { x: number; y: number };
   private heroGazeP = { x: 0, y: 0 };
   private heroDragX?: number;
   private heroTex?: Phaser.Textures.CanvasTexture;
   private heroSrc?: HTMLCanvasElement; // three's webgl canvas — blitted into heroTex
   private heroCtx?: CanvasRenderingContext2D;
+  private heroLastT = 0; // throttle on the fur composite
+  private heroMs = 33; // ms between composites — user-tuned in settings
   private started = false;
   private splash?: Phaser.GameObjects.Container;
   private settingsCard?: Phaser.GameObjects.Container;
@@ -58,6 +66,9 @@ export class TitleScene extends Phaser.Scene {
   private lobbyDrop?: (delayBase: number) => void;
   private charIdx = 0;
   private charName?: Phaser.GameObjects.Text;
+  private charTitle?: Phaser.GameObjects.Text; // TITLE line under the runner's name on the podium
+  private refreshCharPlate?: () => void;
+  private askName?: () => void; // the NAME YOUR RUNNER modal — reused for the first-run gate
 
   constructor() {
     super('title');
@@ -172,9 +183,14 @@ export class TitleScene extends Phaser.Scene {
     const picks = loadPicks();
     this.diff = picks.difficulty;
     this.joy = picks.joy;
+    this.perf = picks.perf;
+    this.hints = picks.hints;
+    this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
+    this.hintsVal = undefined;
     this.soundVal = undefined;
+    this.perfVal = undefined;
     this.iceDecos = [];
     this.lobbyArm = undefined;
     this.lobbyDrop = undefined;
@@ -228,7 +244,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy);
+      savePicks(this.diff, this.joy, this.perf, this.hints);
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.start('drop', { game: { difficulty: this.diff } }),
@@ -257,11 +273,11 @@ export class TitleScene extends Phaser.Scene {
       this.promptOpen = true;
       void promptModal(this, {
         title: 'NAME YOUR RUNNER',
-        sub: 'shows on the board + in online lobbies',
+        sub: 'max 10 letters — shows on the board + in online lobbies',
         label: 'RUNNER NAME',
         placeholder: 'your name',
         value: playerName(),
-        maxLen: 14,
+        maxLen: 10,
         okLabel: 'SAVE',
       }).then((n) => {
         this.promptOpen = false;
@@ -270,6 +286,7 @@ export class TitleScene extends Phaser.Scene {
         this.events.emit('runner-renamed');
       });
     };
+    this.askName = renameRunner;
 
     this.topBar = fgTopBar(
       this,
@@ -277,6 +294,16 @@ export class TitleScene extends Phaser.Scene {
       [
         { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
         { icon: 'edit', onDown: () => this.gate(renameRunner) },
+        {
+          icon: 'hanger',
+          onDown: () =>
+            this.gate(() => {
+              this.cameras.main.fadeOut(160, 0x2b, 0xb8, 0xf0);
+              this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
+                this.scene.start('outfit'),
+              );
+            }),
+        },
         {
           icon: 'sliders',
           onDown: () => {
@@ -368,6 +395,7 @@ export class TitleScene extends Phaser.Scene {
       CHARACTERS.findIndex((c) => c.id === currentChar().id),
     );
     this.hero3d = new Hero3D(640, 700, 6.5, 1.3, 1.3, CHARACTERS[this.charIdx]);
+    this.hero3d.furQ = FUR_Q[this.perf]; // the Bean FPS pick carries the coat
     if (this.hero3d.ok) this.hero3d.setVariant(currentChar().body, currentChar().skin);
     if (this.hero3d.ok && this.hero3d.canvas) {
       // Phaser's CanvasTexture needs a 2d context — a webgl canvas returns null
@@ -380,7 +408,7 @@ export class TitleScene extends Phaser.Scene {
       if (this.textures.exists('hero_live')) this.textures.remove('hero_live'); // stale = dead canvas
       this.heroTex = this.textures.addCanvas('hero_live', copy) ?? undefined;
       this.heroImg = this.add
-        .image(podX, podTopY - 205, 'hero_live') // feet planted on the podium face
+        .image(podX, podTopY - 240, 'hero_live') // feet planted on the podium face
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
@@ -408,7 +436,7 @@ export class TitleScene extends Phaser.Scene {
 
     // character picker — the podium bean IS the selector; ‹ › cycles the cast
     if (this.hero3d.ok) {
-      const pickY = podTopY + 62; // on the podium's front face
+      const pickY = podTopY + 74; // plate block centered on the podium's front face
       const arrowStyle = {
         fontFamily: FG_FONT,
         fontSize: '44px',
@@ -424,26 +452,76 @@ export class TitleScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true })
           .on('pointerdown', () => this.gate(() => this.cycleChar(dir)));
       }
+      // stacked plate — username on top, TITLE under it; the plate itself
+      // is the switch: click cycles the whole cast, locked ones preview
+      const whoOf = () => (playerName() || CHARACTERS[this.charIdx].name || 'RUNNER').toUpperCase();
+      const lockedOf = () => !charUnlocked(CHARACTERS[this.charIdx]);
+      const titleOf = () => {
+        const c = CHARACTERS[this.charIdx];
+        return lockedOf() ? `LOCKED · ${charTitleShort(c)}` : charTitleShort(c) || 'RUNNER';
+      };
       this.charName = this.add
-        .text(podX, pickY + 4, CHARACTERS[this.charIdx].name, {
+        .text(podX, pickY - 12, whoOf(), {
           fontFamily: FG_FONT,
-          fontSize: '30px',
+          fontSize: '26px',
           color: '#ffffff',
           stroke: '#8a3b5c',
           strokeThickness: 6,
         })
         .setOrigin(0.5)
-        .setDepth(6);
+        .setDepth(6)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.gate(() => this.cycleChar(1)));
+      this.charTitle = this.add
+        .text(podX, pickY + 18, titleOf(), {
+          fontFamily: FG_FONT,
+          fontSize: '16px',
+          fontStyle: 'italic',
+          color: '#ffd54f',
+          stroke: '#8a3b5c',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5)
+        .setDepth(6)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.gate(() => this.cycleChar(1)));
+      // padlock on the bean's chest while a locked runner previews — the
+      // podiums's "disabled" read, same glyph as the outfit grid's tiles
+      const lockG = this.add.graphics();
+      lockG.fillStyle(0x0a2030, 0.5).fillCircle(0, 6, 42);
+      lockG.lineStyle(7, 0xffffff, 0.95).strokeCircle(0, -4, 14); // shackle
+      lockG.fillStyle(0xffffff, 0.95).fillRoundedRect(-19, -4, 38, 34, 8); // body — centred on the disc
+      lockG.fillStyle(0x0a2030, 1).fillCircle(0, 11, 5).fillRect(-3, 14, 6, 11); // keyhole
+      this.charLock = this.add
+        .container(podX, podTopY - 262, [lockG])
+        .setDepth(7)
+        .setVisible(false);
+      this.refreshCharPlate = () => {
+        const locked = lockedOf();
+        this.charName?.setText(whoOf());
+        this.charTitle?.setText(titleOf()).setColor(locked ? '#ffb3c8' : '#ffd54f');
+        // locked preview — the bean itself reads disabled: cooled tint,
+        // faded back, padlock on
+        if (locked) this.heroImg?.setTint(0x9fb0c3).setAlpha(0.62);
+        else this.heroImg?.clearTint().setAlpha(1);
+        this.charLock?.setVisible(locked);
+      };
     }
 
     // --- name plate — bottom-left ---
     const nameT = fgNamePlate(this, visL + 40, visB - 80, 240, 48, playerName() || 'your runner', () =>
       this.gate(renameRunner),
     );
-    this.events.on('runner-renamed', () => nameT.setText(playerName() || 'your runner'));
+    this.events.on('runner-renamed', () => {
+      nameT.setText(playerName() || 'your runner');
+      this.refreshCharPlate?.();
+    });
 
     // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
-    fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
+    // keycap chrome — hidden on touch and when the user kills key hints;
+    // the top bar's online icon remains the entry either way
+    if (keyHintsOn())
+      fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
 
     // --- PLAY! — bottom-right; left edge is the reference's "/" slant,
     // right end runs off the frame edge cropped ---
@@ -480,10 +558,12 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private cycleChar(dir: -1 | 1) {
+    // the whole cast previews on the podium — a locked runner shows itself
+    // but doesn't equip; setChar only fires when a free one lands
     this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
     const ch = CHARACTERS[this.charIdx];
-    this.charName?.setText(ch.name);
-    setChar(ch.id);
+    this.refreshCharPlate?.();
+    if (charUnlocked(ch)) setChar(ch.id);
     // shape/gear change the mesh itself — retint can't do it, so the rig
     // is rebuilt and the frame-blit picks up the new canvas automatically
     if (this.hero3d) {
@@ -600,6 +680,9 @@ export class TitleScene extends Phaser.Scene {
 
   private revealLobby() {
     const now = this.time.now;
+    // first run — nobody enters the lobby unnamed. The modal owns input
+    // (promptOpen blocks the gates) until a name lands or they cancel.
+    if (!playerName()) this.askName?.();
     this.lobbyArm?.(now);
     // lockup icicle decos ride the reveal timeline, not create-time
     for (const d of this.iceDecos) {
@@ -618,7 +701,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 430 : 510;
+    const H = isTouch ? 476 : 600; // desktop fits the Key hints row
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -701,17 +784,19 @@ export class TitleScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    // footer hints — their Select Ⓛ / Back Ⓑ row
-    card.add(
-      this.add
-        .text(vis.r - 18, vis.b - 16, '❮ ❯ — change   ·   esc — close', {
-          fontFamily: FG_BODY,
-          fontSize: '12px',
-          fontStyle: '700',
-          color: '#eef2ff',
-        })
-        .setOrigin(1, 1),
-    );
+    // footer hints — their Select Ⓛ / Back Ⓑ row (touch devices get no
+    // key legend; desktop users can hide it via the Key hints pick —
+    // visibility refreshed live from refreshPicks so the toggle lands now)
+    this.settingsFoot = this.add
+      .text(vis.r - 18, vis.b - 16, '❮ ❯ — change   ·   esc — close', {
+        fontFamily: FG_BODY,
+        fontSize: '12px',
+        fontStyle: '700',
+        color: '#eef2ff',
+      })
+      .setOrigin(1, 1)
+      .setVisible(keyHintsOn());
+    card.add(this.settingsFoot);
     // swallows taps on the card body so they don't hit the dim zone
     const swallow = gateZone(
       this.add.zone(cx - W / 2, cy - H / 2, W, H).setOrigin(0, 0).setInteractive(),
@@ -856,6 +941,22 @@ export class TitleScene extends Phaser.Scene {
       const off = sfx.toggleMute();
       this.soundVal?.setText(off ? 'OFF' : 'ON');
     });
+    y += 46;
+    this.perfVal = selector(y, 'Bean FPS', () => PERF_LABEL[this.perf], (dir) => {
+      const i = PERF_ORDER.indexOf(this.perf);
+      this.perf = PERF_ORDER[(i + dir + PERF_ORDER.length) % PERF_ORDER.length];
+      this.heroMs = PERF_MS[this.perf];
+      if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
+      this.refreshPicks();
+    });
+    if (!isTouch) {
+      // desktop-only row — there are no keys to hint on touch
+      y += 46;
+      this.hintsVal = selector(y, 'Key hints', () => (this.hints ? 'ON' : 'OFF'), () => {
+        this.hints = !this.hints;
+        this.refreshPicks();
+      });
+    }
     if (isTouch) {
       y += 46;
       this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
@@ -930,7 +1031,7 @@ export class TitleScene extends Phaser.Scene {
   private toggleSettings() {
     if (!this.settingsCard) return;
     this.settingsOpen = !this.settingsOpen;
-    this.topBar?.setActive(2, this.settingsOpen); // the sliders tab goes pink while its card is open
+    this.topBar?.setActive(3, this.settingsOpen); // the sliders tab goes pink while its card is open
     const card = this.settingsCard;
     // kill any in-flight close tween — its onComplete would setVisible(false)
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
@@ -963,8 +1064,13 @@ export class TitleScene extends Phaser.Scene {
       };
     }
     if (this.heroGaze) this.hero3d?.setGaze(this.heroGaze.x, this.heroGaze.y);
+    // fur + idle anims need no more than the user's Bean FPS pick — the
+    // throttle halves the getImageData readback, strokes, and texture upload
+    if (this.time.now - this.heroLastT < this.heroMs) return;
+    this.heroLastT = this.time.now;
     this.hero3d?.update(this.time.now);
     if (this.heroSrc && this.heroCtx && this.heroTex) {
+      /* rest of the hero composite — nothing else lives below */
       // same-task read after render — the webgl buffer is still valid
       this.heroCtx.clearRect(0, 0, 640, 700);
       this.heroCtx.drawImage(this.heroSrc, 0, 0);
@@ -987,6 +1093,9 @@ export class TitleScene extends Phaser.Scene {
   private refreshPicks() {
     this.diffVal?.setText(DIFFS[this.diff].label);
     this.joyVal?.setText(JOY_LABEL[this.joy]);
-    savePicks(this.diff, this.joy);
+    this.perfVal?.setText(PERF_LABEL[this.perf]);
+    this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
+    savePicks(this.diff, this.joy, this.perf, this.hints);
+    this.settingsFoot?.setVisible(keyHintsOn());
   }
 }

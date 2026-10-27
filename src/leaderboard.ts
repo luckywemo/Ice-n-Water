@@ -39,7 +39,7 @@ export function playerName(): string {
 }
 
 export function setPlayerName(n: string) {
-  localStorage.setItem(NAME_KEY, n.trim().slice(0, 16));
+  localStorage.setItem(NAME_KEY, n.trim().slice(0, 10)); // runner names cap at 10
 }
 
 // pack progress into one sortable number: level decides, stars break ties

@@ -5,7 +5,7 @@ import { CONFIG } from '../config';
 import { makeTextures, decorateYard } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade, viewZoom, hudFactor } from '../ui';
-import { TouchControls } from '../mobile';
+import { TouchControls, keyHintsOn } from '../mobile';
 import { loadPicks } from '../meta';
 import { generateLayout, seededRng } from '../mapgen';
 
@@ -193,17 +193,18 @@ export class NetScene extends Phaser.Scene {
         .setDepth(10),
       0, 0, 396, 44,
     );
-    this.pin(
-      this.add
-        .text(0, 0, 'ice freezes water · mates thaw the frozen · esc — leave', {
-          fontFamily: UI_FONT,
-          fontSize: '13px',
-          color: '#4a3f2e',
-        })
-        .setOrigin(0.5, 1)
-        .setDepth(10),
-      0.5, 1, 0, -12,
-    );
+    if (keyHintsOn())
+      this.pin(
+        this.add
+          .text(0, 0, 'ice freezes water · mates thaw the frozen   ·   esc — leave', {
+            fontFamily: UI_FONT,
+            fontSize: '13px',
+            color: '#4a3f2e',
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(10),
+        0.5, 1, 0, -12,
+      );
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
     this.relayout();
     this.scale.on('resize', this.relayout, this);

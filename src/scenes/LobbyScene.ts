@@ -6,6 +6,7 @@ import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHand
 import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
+import { keyHintsOn } from '../mobile';
 
 type LobbyPlayer = {
   name: string;
@@ -231,14 +232,15 @@ export class LobbyScene extends Phaser.Scene {
     });
     this.roomGroup.add([this.readyBtn.container, this.startBtn.container]);
 
-    this.add
-      .text(width / 2, height - 18, 'esc — back', {
-        fontFamily: UI_FONT,
-        fontSize: '13px',
-        fontStyle: '800',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5, 1)
+    if (keyHintsOn())
+      this.add
+        .text(width / 2, height - 18, 'esc — back', {
+          fontFamily: UI_FONT,
+          fontSize: '13px',
+          fontStyle: '800',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5, 1)
       .setShadow(0, 2, '#a06e00', 0, true, false);
     this.input.keyboard!.on('keydown-ESC', () => this.leave());
 
