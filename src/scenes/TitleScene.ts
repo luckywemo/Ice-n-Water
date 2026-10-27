@@ -430,7 +430,7 @@ export class TitleScene extends Phaser.Scene {
 
     // character picker — the podium bean IS the selector; ‹ › cycles the cast
     if (this.hero3d.ok) {
-      const pickY = podTopY + 62; // on the podium's front face
+      const pickY = podTopY + 74; // plate block centered on the podium's front face
       const arrowStyle = {
         fontFamily: FG_FONT,
         fontSize: '44px',
