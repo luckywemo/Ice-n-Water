@@ -2,7 +2,7 @@
 // body = vinyl/fur colour, skin = face oval, shape = body silhouette,
 // gear = head-mounted extra. Shape/gear change the actual MODEL, not
 // just the paint — they build different meshes on the shared skeleton.
-import type { BeanDress, BeanGear, BeanShape } from './hero3d';
+import type { BeanGear, BeanMarks, BeanShape } from './hero3d';
 import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES, levelDef } from './adventure';
 import type { BossMove } from './adventure';
 import { playerName } from './leaderboard';
@@ -13,8 +13,8 @@ export interface CharDef {
   body: number;
   skin: number;
   shape?: BeanShape; // default 'bean'
-  gear?: BeanGear; // default 'none'
-  dress?: BeanDress; // champion's regalia — robe, strip, beads, whisk
+  gear?: BeanGear; // default 'none' — the cast wears NOTHING; marks only
+  marks?: BeanMarks; // painted regalia — strip, bead dots, footwear
   rage?: boolean; // angry brows
   furLen?: number; // coat strand multiplier — 1 = standard
   unlockAt?: number; // milestone boss (1..50) that frees this runner — unset = free
@@ -26,26 +26,24 @@ export const CHARACTERS: CharDef[] = [
   { id: 'koko', name: 'NGOZI', body: 0x8a4f24, skin: 0xecc98e }, // the hero — classic chocolate, yours from GO
   {
     id: 'agbalumo',
-    body: 0xf2eee2, // the white agbada — the robe IS the body vinyl
+    body: 0xf2eee2, // the white agbada read — the coat IS the robe
     skin: 0xf2d9a6,
     shape: 'round', // the Baale's settled frame
-    gear: 'fila', // abeti-aja — cap, never a crown; he is no Oba
     unlockAt: 3, // BAALE OF SURULERE
-    dress: {
-      strip: 0x2f2b6e, // indigo aso-oke embroidery
-      shoe: 0x2f2b6e, // indigo sandals to match the fila
-      bead: 0xe8622a, // coral — one strand, a chief's station
-      whisk: true, // irukere — he summons his compound heads
-      line: 0xbfe8f4, // icy sleeve lining — he holds the stop for ICE
+    marks: {
+      strip: 0x2f2b6e, // indigo aso-oke embroidery down the chest
+      bead: 0xe8622a, // coral dots at the collar — a chief's station
+      shoe: 0x2f2b6e, // indigo sandals
+      line: 0xbfe8f4, // icy sleeve tips — he holds the stop for ICE
     },
   },
   { id: 'kola', body: 0x553219, skin: 0xd9ad78, unlockAt: 6 }, // AYANGBUREN OF IKORODU — dark roast
   { id: 'zobo', body: 0x8a2f3d, skin: 0xecc4a0, shape: 'tall', unlockAt: 9 }, // BAALE OF AGEGE — lanky red
-  { id: 'palmie', body: 0x4f6b35, skin: 0xe2cf9e, gear: 'band', unlockAt: 12 }, // OLUBADAN OF IBADAN — sweatband
-  { id: 'asphalt', body: 0x3a3a44, skin: 0xcfc8b8, gear: 'hardhat', unlockAt: 15 }, // DEJI OF AKURE — site helmet
-  { id: 'danfo', body: 0xcf9a1f, skin: 0xf2dfae, gear: 'cap', unlockAt: 20 }, // ASAGBA OF ASABA — conductor cap
-  { id: 'agbero', body: 0x6e4a2f, skin: 0xe0bd92, gear: 'spikes', unlockAt: 25 }, // IGWE OF UMUAHIA — mohawk
-  { id: 'oba', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', gear: 'crown', unlockAt: 30 }, // OBONG OF CALABAR — royal purple
+  { id: 'palmie', body: 0x4f6b35, skin: 0xe2cf9e, unlockAt: 12 }, // OLUBADAN OF IBADAN — deep green
+  { id: 'asphalt', body: 0x3a3a44, skin: 0xcfc8b8, unlockAt: 15 }, // DEJI OF AKURE — slate grey
+  { id: 'danfo', body: 0xcf9a1f, skin: 0xf2dfae, unlockAt: 20 }, // ASAGBA OF ASABA — ochre gold
+  { id: 'agbero', body: 0x6e4a2f, skin: 0xe0bd92, unlockAt: 25 }, // IGWE OF UMUAHIA — red earth
+  { id: 'oba', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', unlockAt: 30 }, // OBONG OF CALABAR — royal purple
   { id: 'indigo', body: 0x3d3a8c, skin: 0xdfb184, shape: 'tall', unlockAt: 40 }, // EMIR OF KANO — Kofar Mata dye-pit indigo; the blink phantom
 ];
 
