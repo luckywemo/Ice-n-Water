@@ -459,7 +459,7 @@ export class OutfitScene extends Phaser.Scene {
         this.tile(
           gx,
           gy,
-          def.unlockAt ? charTitle(def) : def.name, // champs wear the full title — 'BAALE OF SURULERE'
+          def.unlockAt ? charTitle(def) : runnerName(def), // champs: full title — the hero: your name
           def.id === ch.id,
           (g) => this.drawMiniBean(g, gx + TILE / 2, gy + TILE / 2 - 8, def),
           () => this.pickChar(def),
