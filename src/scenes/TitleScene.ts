@@ -22,7 +22,7 @@ import {
   promptModal,
 } from '../fgui';
 import { Hero3D } from '../hero3d';
-import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
+import { CHARACTERS, charTitleShort, charUnlocked, currentChar, currentPick, setChar } from '../characters';
 
 const sfx = Sfx.inst;
 
@@ -569,8 +569,14 @@ export class TitleScene extends Phaser.Scene {
     if (this.hero3d) {
       this.hero3d.dispose();
       this.hero3d = new Hero3D(640, 700, 6.5, 1.3, 1.3, ch);
+      this.hero3d.furQ = FUR_Q[this.perf]; // the Bean FPS pick survives a swap
       if (this.hero3d.ok) {
-        this.hero3d.setVariant(ch.body, ch.skin);
+        // cycling back to your equipped runner shows its repainted coat
+        const paint = currentPick();
+        this.hero3d.setVariant(
+          paint.id === ch.id && paint.body !== undefined ? paint.body : ch.body,
+          ch.skin,
+        );
         this.heroSrc = this.hero3d.canvas;
       } else {
         this.heroSrc = undefined;
