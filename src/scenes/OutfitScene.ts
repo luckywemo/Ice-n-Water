@@ -59,6 +59,7 @@ export class OutfitScene extends Phaser.Scene {
   private headName?: Phaser.GameObjects.Text;
   private headTag?: Phaser.GameObjects.Text;
   private modelSig = '';
+  private topY = 0; // visible top edge — letterboxed windows sit it above y=0
 
   constructor() {
     super('outfit');
@@ -68,6 +69,12 @@ export class OutfitScene extends Phaser.Scene {
     const { width: W, height: H } = this.scale;
     const zoom = Math.min(W / VW, H / VH);
     this.cameras.main.setZoom(zoom).centerOn(VW / 2, VH / 2);
+    // the camera centres the stage — on windows wider/taller than the
+    // stage's aspect the frame edge sits outside x=0/y=0. visL/visT are
+    // the REAL visible edges so chrome can hug them, not the stage's.
+    const visL = VW / 2 - W / (2 * zoom);
+    const visT = VH / 2 - H / (2 * zoom);
+    this.topY = visT;
     this.heroMs = perfInterval();
     this.tab = 'chars';
     this.modelSig = '';
@@ -79,15 +86,15 @@ export class OutfitScene extends Phaser.Scene {
     // header plaque — CUSTOMISE › OUTFITS, their dark chamfered tab
     const hp = this.add.graphics().setDepth(5);
     const pts = [
-      { x: 0, y: 0 },
-      { x: 282, y: 0 },
-      { x: 266, y: 44 },
-      { x: 0, y: 44 },
+      { x: visL, y: visT },
+      { x: visL + 282, y: visT },
+      { x: visL + 266, y: visT + 44 },
+      { x: visL, y: visT + 44 },
     ];
     hp.fillStyle(FG.bar, 1).fillPoints(pts, true);
     hp.lineStyle(2.5, 0xffffff, 0.9).strokePoints(pts, true);
     this.add
-      .text(20, 23, 'CUSTOMISE › OUTFITS', {
+      .text(visL + 20, visT + 23, 'CUSTOMISE › OUTFITS', {
         fontFamily: FG_FONT,
         fontSize: '21px',
         color: '#ffffff',
@@ -214,7 +221,7 @@ export class OutfitScene extends Phaser.Scene {
     const cx = VW / 2;
     const bump = (x: number, t: string) =>
       this.add
-        .text(x, 18, t, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#8a8a99' })
+        .text(x, this.topY + 18, t, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#8a8a99' })
         .setOrigin(0.5)
         .setDepth(6);
     bump(cx - 218, 'LB');
@@ -228,7 +235,7 @@ export class OutfitScene extends Phaser.Scene {
     for (const tb of tabs) {
       const bx = x;
       this.add
-        .text(bx + tb.w / 2, 18, tb.label, {
+        .text(bx + tb.w / 2, this.topY + 18, tb.label, {
           fontFamily: FG_FONT,
           fontSize: '15px',
           fontStyle: 'italic',
@@ -238,7 +245,7 @@ export class OutfitScene extends Phaser.Scene {
         .setDepth(6)
         .setData('tab', tb.t);
       this.add
-        .zone(bx, 0, tb.w, 36)
+        .zone(bx, this.topY, tb.w, 36)
         .setOrigin(0, 0)
         .setDepth(7)
         .setInteractive({ useHandCursor: true })
@@ -262,10 +269,10 @@ export class OutfitScene extends Phaser.Scene {
       const on = this.tab === d.t;
       const cham = 7;
       const pts = [
-        { x: i === 0 ? x + cham : x, y: 0 },
-        { x: x + d.w, y: 0 },
-        { x: i === defs.length - 1 ? x + d.w - cham : x + d.w, y: 36 },
-        { x, y: 36 },
+        { x: i === 0 ? x + cham : x, y: this.topY },
+        { x: x + d.w, y: this.topY },
+        { x: i === defs.length - 1 ? x + d.w - cham : x + d.w, y: this.topY + 36 },
+        { x, y: this.topY + 36 },
       ];
       g.fillStyle(on ? 0x9c2160 : 0x1d8fc4, 1).fillPoints(
         pts.map((p) => ({ x: p.x, y: p.y + 2 })),
