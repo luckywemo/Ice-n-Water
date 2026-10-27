@@ -32,7 +32,13 @@ export class TouchControls {
   private relayout: () => void = () => {};
 
   static isTouchDevice(): boolean {
-    return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // primary-input check, not capability — a touchscreen laptop still has a
+    // fine primary pointer (mouse/trackpad) and wants the desktop treatment;
+    // only a coarse primary (phone/tablet thumb) counts as touch
+    const mq = (q: string) => window.matchMedia?.(q).matches ?? false;
+    if (mq('(pointer: coarse)')) return true;
+    if (mq('(pointer: fine)')) return false;
+    return 'ontouchstart' in window || navigator.maxTouchPoints > 0; // fallback
   }
 
   constructor(
