@@ -43,6 +43,7 @@ export class TitleScene extends Phaser.Scene {
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
+  private charLock?: Phaser.GameObjects.Container; // padlock over the podium bean while previewing a locked runner
   private heroGaze?: { x: number; y: number };
   private heroGazeP = { x: 0, y: 0 };
   private heroDragX?: number;
@@ -479,9 +480,26 @@ export class TitleScene extends Phaser.Scene {
         .setDepth(6)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this.gate(() => this.cycleChar(1)));
+      // padlock on the bean's chest while a locked runner previews — the
+      // podiums's "disabled" read, same glyph as the outfit grid's tiles
+      const lockG = this.add.graphics();
+      lockG.fillStyle(0x0a2030, 0.5).fillCircle(0, 6, 42);
+      lockG.lineStyle(7, 0xffffff, 0.95).strokeCircle(0, -16, 14);
+      lockG.fillStyle(0xffffff, 0.95).fillRoundedRect(-20, -18, 40, 36, 8);
+      lockG.fillStyle(0x0a2030, 1).fillCircle(0, -3, 5).fillRect(-3, 0, 6, 12);
+      this.charLock = this.add
+        .container(podX, podTopY - 262, [lockG])
+        .setDepth(7)
+        .setVisible(false);
       this.refreshCharPlate = () => {
+        const locked = lockedOf();
         this.charName?.setText(whoOf());
-        this.charTitle?.setText(titleOf()).setColor(lockedOf() ? '#ffb3c8' : '#ffd54f');
+        this.charTitle?.setText(titleOf()).setColor(locked ? '#ffb3c8' : '#ffd54f');
+        // locked preview — the bean itself reads disabled: cooled tint,
+        // faded back, padlock on
+        if (locked) this.heroImg?.setTint(0x9fb0c3).setAlpha(0.62);
+        else this.heroImg?.clearTint().setAlpha(1);
+        this.charLock?.setVisible(locked);
       };
     }
 
