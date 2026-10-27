@@ -21,14 +21,14 @@ export interface CharDef {
 // flavour. Geared models get themed names from the same world.
 export const CHARACTERS: CharDef[] = [
   { id: 'koko', name: 'NGOZI', body: 0x8a4f24, skin: 0xecc98e }, // the hero — classic chocolate, yours from GO
-  { id: 'agbalumo', name: 'EMEKA', body: 0xb56a26, skin: 0xf2d9a6, shape: 'round', unlockAt: 5 }, // the coward — chubby
-  { id: 'kola', name: 'CHIDI', body: 0x553219, skin: 0xd9ad78, unlockAt: 10 }, // steady — dark roast
-  { id: 'zobo', name: 'FATIMA', body: 0x8a2f3d, skin: 0xecc4a0, shape: 'tall', unlockAt: 15 }, // the smart one — lanky red
-  { id: 'palmie', name: 'TUNDE', body: 0x4f6b35, skin: 0xe2cf9e, gear: 'band', unlockAt: 20 }, // reckless sprinter + sweatband
-  { id: 'asphalt', name: 'BLESSING', body: 0x3a3a44, skin: 0xcfc8b8, gear: 'hardhat', unlockAt: 25 }, // the hustler + site helmet
-  { id: 'danfo', name: 'MUSA', body: 0xcf9a1f, skin: 0xf2dfae, gear: 'cap', unlockAt: 30 }, // the conductor — bus yellow + cap
-  { id: 'agbero', name: 'SULE', body: 0x6e4a2f, skin: 0xe0bd92, gear: 'spikes', unlockAt: 35 }, // the tout — mohawk
-  { id: 'oba', name: 'ADE', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', gear: 'crown', unlockAt: 40 }, // royal purple — Ade means crown
+  { id: 'agbalumo', name: 'EMEKA', body: 0xb56a26, skin: 0xf2d9a6, shape: 'round', unlockAt: 3 }, // the coward — chubby
+  { id: 'kola', name: 'CHIDI', body: 0x553219, skin: 0xd9ad78, unlockAt: 6 }, // steady — dark roast
+  { id: 'zobo', name: 'FATIMA', body: 0x8a2f3d, skin: 0xecc4a0, shape: 'tall', unlockAt: 9 }, // the smart one — lanky red
+  { id: 'palmie', name: 'TUNDE', body: 0x4f6b35, skin: 0xe2cf9e, gear: 'band', unlockAt: 12 }, // reckless sprinter + sweatband
+  { id: 'asphalt', name: 'BLESSING', body: 0x3a3a44, skin: 0xcfc8b8, gear: 'hardhat', unlockAt: 15 }, // the hustler + site helmet
+  { id: 'danfo', name: 'MUSA', body: 0xcf9a1f, skin: 0xf2dfae, gear: 'cap', unlockAt: 20 }, // the conductor — bus yellow + cap
+  { id: 'agbero', name: 'SULE', body: 0x6e4a2f, skin: 0xe0bd92, gear: 'spikes', unlockAt: 25 }, // the tout — mohawk
+  { id: 'oba', name: 'ADE', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', gear: 'crown', unlockAt: 30 }, // royal purple — Ade means crown
 ];
 
 // fixed team coats — the player's pick never collides with these
