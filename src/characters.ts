@@ -31,6 +31,7 @@ export const CHARACTERS: CharDef[] = [
   { id: 'danfo', body: 0xcf9a1f, skin: 0xf2dfae, gear: 'cap', unlockAt: 20 }, // ASAGBA OF ASABA — conductor cap
   { id: 'agbero', body: 0x6e4a2f, skin: 0xe0bd92, gear: 'spikes', unlockAt: 25 }, // IGWE OF UMUAHIA — mohawk
   { id: 'oba', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', gear: 'crown', unlockAt: 30 }, // OBONG OF CALABAR — royal purple
+  { id: 'indigo', body: 0x3d3a8c, skin: 0xdfb184, shape: 'tall', unlockAt: 40 }, // EMIR OF KANO — Kofar Mata dye-pit indigo; the blink phantom
 ];
 
 // fixed team coats — the player's pick never collides with these
