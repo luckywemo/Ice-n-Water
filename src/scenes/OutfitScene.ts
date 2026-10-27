@@ -5,6 +5,7 @@ import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
 import { CHARACTERS, CharDef, charTitle, charTitleShort, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
 import { playerName } from '../leaderboard';
 import { perfInterval, furQuality } from '../meta';
+import { keyHintsOn } from '../mobile';
 import { Sfx } from '../audio';
 
 // OutfitScene — the wardrobe. Fall Guys' CUSTOMISE › OUTFITS layout:
@@ -166,16 +167,18 @@ export class OutfitScene extends Phaser.Scene {
     this.buildGrid();
     this.refreshHead();
 
-    // footer — their Select/Confirm/Back row, our flavour
-    this.add
-      .text(34, VH - 30, '‹ › — browse   ·   Q/E — tabs   ·   esc — back', {
-        fontFamily: FG_BODY,
-        fontSize: '13px',
-        fontStyle: '700',
-        color: '#eef6ff',
-      })
-      .setDepth(5)
-      .setAlpha(0.9);
+    // footer — their Select/Confirm/Back row, our flavour; key chrome
+    // only — gone on touch and when the user switches Key hints off
+    if (keyHintsOn())
+      this.add
+        .text(34, VH - 30, '‹ › — browse   ·   Q/E — tabs   ·   esc — back', {
+          fontFamily: FG_BODY,
+          fontSize: '13px',
+          fontStyle: '700',
+          color: '#eef6ff',
+        })
+        .setDepth(5)
+        .setAlpha(0.9);
     const dw = 130,
       dh = 42,
       dcx = VW - 100,

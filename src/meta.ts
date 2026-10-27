@@ -76,7 +76,7 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
   return s;
 }
 
-export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfMode } {
+export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfMode; hints: boolean } {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
     if (raw) {
@@ -85,17 +85,23 @@ export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfM
         difficulty: ['easy', 'normal', 'hard'].includes(p.difficulty) ? p.difficulty : 'normal',
         joy: p.joy === 'sticky' ? 'sticky' : 'floating',
         perf: PERF_ORDER.includes(p.perf) ? p.perf : 'balanced',
+        hints: p.hints !== false, // on by default — the settings toggle writes false
       };
     }
   } catch {
     /* fall through */
   }
-  return { difficulty: 'normal', joy: 'floating', perf: 'balanced' };
+  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true };
 }
 
-export function savePicks(difficulty: Difficulty, joy: JoyMode = 'floating', perf: PerfMode = 'balanced') {
+export function savePicks(
+  difficulty: Difficulty,
+  joy: JoyMode = 'floating',
+  perf: PerfMode = 'balanced',
+  hints = true,
+) {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints }));
   } catch {
     /* fine */
   }

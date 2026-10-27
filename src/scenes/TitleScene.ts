@@ -6,7 +6,7 @@ import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
-import { TouchControls } from '../mobile';
+import { TouchControls, keyHintsOn } from '../mobile';
 import {
   FG,
   FG_FONT,
@@ -36,10 +36,13 @@ export class TitleScene extends Phaser.Scene {
   private diff: Difficulty = 'normal';
   private joy: JoyMode = 'floating';
   private perf: PerfMode = 'balanced';
+  private hints = true; // key-hint chrome — Settings › GAME › Key hints
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
   private perfVal?: Phaser.GameObjects.Text;
+  private hintsVal?: Phaser.GameObjects.Text;
+  private settingsFoot?: Phaser.GameObjects.Text;
   private iceDecos: { img: Phaser.GameObjects.Image; born: number }[] = [];
   private hero3d?: Hero3D;
   private heroImg?: Phaser.GameObjects.Image;
@@ -181,9 +184,11 @@ export class TitleScene extends Phaser.Scene {
     this.diff = picks.difficulty;
     this.joy = picks.joy;
     this.perf = picks.perf;
+    this.hints = picks.hints;
     this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
+    this.hintsVal = undefined;
     this.soundVal = undefined;
     this.perfVal = undefined;
     this.iceDecos = [];
@@ -239,7 +244,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy, this.perf);
+      savePicks(this.diff, this.joy, this.perf, this.hints);
       this.cameras.main.fadeOut(220, 0, 0, 0);
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.start('drop', { game: { difficulty: this.diff } }),
@@ -513,7 +518,10 @@ export class TitleScene extends Phaser.Scene {
     });
 
     // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
-    fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
+    // keycap chrome — hidden on touch and when the user kills key hints;
+    // the top bar's online icon remains the entry either way
+    if (keyHintsOn())
+      fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
 
     // --- PLAY! — bottom-right; left edge is the reference's "/" slant,
     // right end runs off the frame edge cropped ---
@@ -693,7 +701,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 476 : 556;
+    const H = isTouch ? 476 : 600; // desktop fits the Key hints row
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -776,17 +784,19 @@ export class TitleScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    // footer hints — their Select Ⓛ / Back Ⓑ row
-    card.add(
-      this.add
-        .text(vis.r - 18, vis.b - 16, '❮ ❯ — change   ·   esc — close', {
-          fontFamily: FG_BODY,
-          fontSize: '12px',
-          fontStyle: '700',
-          color: '#eef2ff',
-        })
-        .setOrigin(1, 1),
-    );
+    // footer hints — their Select Ⓛ / Back Ⓑ row (touch devices get no
+    // key legend; desktop users can hide it via the Key hints pick —
+    // visibility refreshed live from refreshPicks so the toggle lands now)
+    this.settingsFoot = this.add
+      .text(vis.r - 18, vis.b - 16, '❮ ❯ — change   ·   esc — close', {
+        fontFamily: FG_BODY,
+        fontSize: '12px',
+        fontStyle: '700',
+        color: '#eef2ff',
+      })
+      .setOrigin(1, 1)
+      .setVisible(keyHintsOn());
+    card.add(this.settingsFoot);
     // swallows taps on the card body so they don't hit the dim zone
     const swallow = gateZone(
       this.add.zone(cx - W / 2, cy - H / 2, W, H).setOrigin(0, 0).setInteractive(),
@@ -939,6 +949,14 @@ export class TitleScene extends Phaser.Scene {
       if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
       this.refreshPicks();
     });
+    if (!isTouch) {
+      // desktop-only row — there are no keys to hint on touch
+      y += 46;
+      this.hintsVal = selector(y, 'Key hints', () => (this.hints ? 'ON' : 'OFF'), () => {
+        this.hints = !this.hints;
+        this.refreshPicks();
+      });
+    }
     if (isTouch) {
       y += 46;
       this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
@@ -1076,6 +1094,8 @@ export class TitleScene extends Phaser.Scene {
     this.diffVal?.setText(DIFFS[this.diff].label);
     this.joyVal?.setText(JOY_LABEL[this.joy]);
     this.perfVal?.setText(PERF_LABEL[this.perf]);
-    savePicks(this.diff, this.joy, this.perf);
+    this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
+    savePicks(this.diff, this.joy, this.perf, this.hints);
+    this.settingsFoot?.setVisible(keyHintsOn());
   }
 }

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
 import { UI_FONT, DISPLAY_FONT, UI, HudItem, pinHud, layoutHud, screenToHudWorld, HUD_SCALE } from './ui';
-import { JoyMode } from './meta';
+import { JoyMode, loadPicks } from './meta';
 
 // Virtual joystick (left thumb) + sprint/water buttons (right thumb).
 // Only exists on touch devices — dead simple to ignore on desktop.
@@ -227,4 +227,10 @@ export class TouchControls {
   private tapFlash(scene: Phaser.Scene, btn: Phaser.GameObjects.Container) {
     scene.tweens.add({ targets: btn, scale: 0.85 * HUD_SCALE, duration: 80, yoyo: true });
   }
+}
+
+/** keyboard-hint chrome — never renders on touch (there are no keys);
+ *  desktop users can kill it in Settings › GAME › Key hints */
+export function keyHintsOn(): boolean {
+  return !TouchControls.isTouchDevice() && loadPicks().hints;
 }

@@ -13,7 +13,7 @@ import {
 } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
-import { TouchControls } from '../mobile';
+import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { bakeBeanSheet } from '../beanbake';
 import { charMove, currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
@@ -1080,27 +1080,31 @@ export class GameScene extends Phaser.Scene {
       0.5, 0.5, 0, -30,
     );
 
-    const isTouch = TouchControls.isTouchDevice();
     const exitLabel = this.level ? 'T — the road' : 'T — title';
-    const hintText = this.pin(
-      this.add.text(0, 0, isTouch
-          ? 'left thumb — move   ·   RUN — sprint   ·   H₂O — use item   ·   ↻ — restart'
-          : `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`,
-        { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
-      ).setOrigin(0.5, 1).setDepth(10),
-      0.5, 1, 0, -12,
-    );
-    // dark keycap chip behind the hint — the "Select Ⓛ" affordance
-    const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
-    chip
-      .fillStyle(0x0a1420, 0.6)
-      .fillRoundedRect(
-        -hintText.width / 2 - 14,
-        -hintText.height - 9,
-        hintText.width + 28,
-        hintText.height + 11,
-        9,
+    // key strip — never on touch (the pads are already labelled), and gone
+    // on desktop when Settings › Key hints is off
+    const hintStr = keyHintsOn()
+      ? `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`
+      : '';
+    if (hintStr) {
+      const hintText = this.pin(
+        this.add.text(0, 0, hintStr,
+          { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
+        ).setOrigin(0.5, 1).setDepth(10),
+        0.5, 1, 0, -12,
       );
+      // dark keycap chip behind the hint — the "Select Ⓛ" affordance
+      const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+      chip
+        .fillStyle(0x0a1420, 0.6)
+        .fillRoundedRect(
+          -hintText.width / 2 - 14,
+          -hintText.height - 9,
+          hintText.width + 28,
+          hintText.height + 11,
+          9,
+        );
+    }
 
     this.staminaGfx = this.add.graphics().setDepth(9);
     this.minimap = this.pin(this.add.graphics().setDepth(26), 0, 0) as Phaser.GameObjects.Graphics;
@@ -2381,8 +2385,8 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = { won: !militiaWon, survived };
     const caught = 'Frozen';
     const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
-    // touch devices get tappable buttons instead of key hints in the sub-line
-    const isTouch = TouchControls.isTouchDevice();
+    // touch + hints-off get tappable dashboard pills, no key legend in the sub
+    const hints = keyHintsOn();
 
     // dim the field so the result reads clean — screen space
     const { width, height } = this.scale;
@@ -2408,8 +2412,8 @@ export class GameScene extends Phaser.Scene {
           ? `LEVEL ${this.level.n} — ${timedOut ? 'OUT OF TIME' : 'CAUGHT'}`
           : 'MILITIA WINS',
         this.level
-          ? `${stats}${isTouch ? '' : '\nR — retry   T — the road'}`
-          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — run it back   T — title   S — share'}`,
+          ? `${stats}${hints ? '\nR — retry   T — the road' : ''}`
+          : `${stats}\nstreak ${rec.streak} · best ${rec.bestSurvived}s${hints ? '\nR / SPACE — run it back   T — title   S — share' : ''}`,
         false,
       );
       this.shake(250, 0.01);
@@ -2425,9 +2429,9 @@ export class GameScene extends Phaser.Scene {
       const finalLevel = this.level?.n === TOTAL_LEVELS;
       const sub = this.level
         ? `${stats}${finalLevel ? '\nyou ran the whole of Nigeria — legend' : ''}${
-            isTouch ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
+            !hints ? '' : finalLevel ? '\nT — the road' : '\nSPACE — on to the next stop   T — the road'
           }`
-        : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${isTouch ? '' : '\nR / SPACE — play again   T — title   S — share'}`;
+        : `${stats}\nwin streak ${rec.streak} 🔥 · best ${rec.bestSurvived}s${hints ? '\nR / SPACE — play again   T — title   S — share' : ''}`;
       this.playResultRibbon(true, false);
       landResult(
         finalLevel
@@ -2609,13 +2613,14 @@ export class GameScene extends Phaser.Scene {
     track(st, 0.5, 0.5, 0, soy - 2);
     this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy: soy, bw: sw, bh: sh, go: () => { sfx.toggleMute(); drawSound(); } });
 
-    track(
-      this.add
-        .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
-        .setOrigin(1, 1)
-        .setDepth(42),
-      0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
-    );
+    if (keyHintsOn())
+      track(
+        this.add
+          .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
+          .setOrigin(1, 1)
+          .setDepth(42),
+        0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
+      );
     this.relayout(); // pinned post-create — place everything now
   }
 
