@@ -484,9 +484,9 @@ export class TitleScene extends Phaser.Scene {
       // podiums's "disabled" read, same glyph as the outfit grid's tiles
       const lockG = this.add.graphics();
       lockG.fillStyle(0x0a2030, 0.5).fillCircle(0, 6, 42);
-      lockG.lineStyle(7, 0xffffff, 0.95).strokeCircle(0, -16, 14);
-      lockG.fillStyle(0xffffff, 0.95).fillRoundedRect(-20, -18, 40, 36, 8);
-      lockG.fillStyle(0x0a2030, 1).fillCircle(0, -3, 5).fillRect(-3, 0, 6, 12);
+      lockG.lineStyle(7, 0xffffff, 0.95).strokeCircle(0, -4, 14); // shackle
+      lockG.fillStyle(0xffffff, 0.95).fillRoundedRect(-19, -4, 38, 34, 8); // body — centred on the disc
+      lockG.fillStyle(0x0a2030, 1).fillCircle(0, 11, 5).fillRect(-3, 14, 6, 11); // keyhole
       this.charLock = this.add
         .container(podX, podTopY - 262, [lockG])
         .setDepth(7)
