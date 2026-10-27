@@ -79,15 +79,15 @@ export class OutfitScene extends Phaser.Scene {
     // header plaque — CUSTOMISE › OUTFITS, their dark chamfered tab
     const hp = this.add.graphics().setDepth(5);
     const pts = [
-      { x: 18, y: 14 },
-      { x: 300, y: 14 },
-      { x: 284, y: 58 },
-      { x: 18, y: 58 },
+      { x: 18, y: 0 },
+      { x: 300, y: 0 },
+      { x: 284, y: 44 },
+      { x: 18, y: 44 },
     ];
     hp.fillStyle(FG.bar, 1).fillPoints(pts, true);
     hp.lineStyle(2.5, 0xffffff, 0.9).strokePoints(pts, true);
     this.add
-      .text(38, 37, 'CUSTOMISE › OUTFITS', {
+      .text(38, 23, 'CUSTOMISE › OUTFITS', {
         fontFamily: FG_FONT,
         fontSize: '21px',
         color: '#ffffff',
@@ -214,7 +214,7 @@ export class OutfitScene extends Phaser.Scene {
     const cx = VW / 2;
     const bump = (x: number, t: string) =>
       this.add
-        .text(x, 44, t, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#8a8a99' })
+        .text(x, 18, t, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#8a8a99' })
         .setOrigin(0.5)
         .setDepth(6);
     bump(cx - 218, 'LB');
@@ -228,7 +228,7 @@ export class OutfitScene extends Phaser.Scene {
     for (const tb of tabs) {
       const bx = x;
       this.add
-        .text(bx + tb.w / 2, 44, tb.label, {
+        .text(bx + tb.w / 2, 18, tb.label, {
           fontFamily: FG_FONT,
           fontSize: '15px',
           fontStyle: 'italic',
@@ -238,7 +238,7 @@ export class OutfitScene extends Phaser.Scene {
         .setDepth(6)
         .setData('tab', tb.t);
       this.add
-        .zone(bx, 26, tb.w, 36)
+        .zone(bx, 0, tb.w, 36)
         .setOrigin(0, 0)
         .setDepth(7)
         .setInteractive({ useHandCursor: true })
@@ -262,10 +262,10 @@ export class OutfitScene extends Phaser.Scene {
       const on = this.tab === d.t;
       const cham = 7;
       const pts = [
-        { x: i === 0 ? x + cham : x, y: 26 },
-        { x: x + d.w, y: 26 },
-        { x: i === defs.length - 1 ? x + d.w - cham : x + d.w, y: 62 },
-        { x, y: 62 },
+        { x: i === 0 ? x + cham : x, y: 0 },
+        { x: x + d.w, y: 0 },
+        { x: i === defs.length - 1 ? x + d.w - cham : x + d.w, y: 36 },
+        { x, y: 36 },
       ];
       g.fillStyle(on ? 0x9c2160 : 0x1d8fc4, 1).fillPoints(
         pts.map((p) => ({ x: p.x, y: p.y + 2 })),
