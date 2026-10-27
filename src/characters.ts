@@ -3,7 +3,8 @@
 // gear = head-mounted extra. Shape/gear change the actual MODEL, not
 // just the paint — they build different meshes on the shared skeleton.
 import type { BeanGear, BeanShape } from './hero3d';
-import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES } from './adventure';
+import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES, levelDef } from './adventure';
+import type { BossMove } from './adventure';
 import { playerName } from './leaderboard';
 
 export interface CharDef {
@@ -95,6 +96,12 @@ export function charTitleShort(def: CharDef): string {
 export function runnerName(def: CharDef): string {
   const who = (playerName() || def.name).toUpperCase().slice(0, 10);
   return def.unlockAt ? `${who} | ${charTitleShort(def)}` : who;
+}
+
+/** the beaten champion's signature passes to the runner — you inherit
+ *  the move of the boss you beat to unlock them ('summon'/'rage'/'blink') */
+export function charMove(def: CharDef): BossMove | undefined {
+  return def.unlockAt ? levelDef(def.unlockAt * LEVELS_PER_MILESTONE).bossMove : undefined;
 }
 
 export function currentChar(): CharDef {
