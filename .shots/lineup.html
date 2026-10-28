@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>runner lineup</title>
+<body style="margin: 0; background: #1d2b3d">
+  <div id="row" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 10px"></div>
+  <script type="module">
+    import { CHARACTERS, CREW_DEF, MILITIA_DEF } from '/src/characters.ts';
+    import { Hero3D } from '/src/hero3d.ts';
+
+    // ?s=96 previews the beans at baked-sprite resolution — what gameplay
+    // actually shows. ?bake=1 additionally swings the camera to the ¾-down
+    // bakeCam angle used by beanbake.ts.
+    const q = new URLSearchParams(location.search);
+    const S = +(q.get('s') ?? 190);
+    const row = document.getElementById('row');
+    for (const d of [...CHARACTERS, MILITIA_DEF, CREW_DEF]) {
+      const cell = document.createElement('div');
+      cell.style.cssText = `width:${S}px;text-align:center;color:#dce8f4;font:12px monospace`;
+      const hero = new Hero3D(S, S * 1.3, 5, 1.3, 1.3, d);
+      if (hero.ok && hero.canvas) {
+        if (q.get('bake')) hero.bakeCam();
+        hero.setVariant(d.body, d.skin);
+        hero.poseFor('idle', 0);
+        hero.canvas.style.cssText = `width:${S}px;height:${S * 1.3}px`;
+        cell.appendChild(hero.canvas);
+      } else {
+        cell.textContent = 'NOGL';
+      }
+      const lab = document.createElement('div');
+      lab.textContent = `${d.id}${d.name ? ' — ' + d.name : ''}`;
+      cell.appendChild(lab);
+      row.appendChild(cell);
+    }
+    window.__done = true;
+  </script>
+</body>

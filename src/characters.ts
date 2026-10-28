@@ -37,14 +37,108 @@ export const CHARACTERS: CharDef[] = [
       line: 0xbfe8f4, // icy sleeve tips — he holds the stop for ICE
     },
   },
-  { id: 'kola', body: 0x553219, skin: 0xd9ad78, unlockAt: 6 }, // AYANGBUREN OF IKORODU — dark roast
-  { id: 'zobo', body: 0x8a2f3d, skin: 0xecc4a0, shape: 'tall', unlockAt: 9 }, // BAALE OF AGEGE — lanky red
-  { id: 'palmie', body: 0x4f6b35, skin: 0xe2cf9e, unlockAt: 12 }, // OLUBADAN OF IBADAN — deep green
-  { id: 'asphalt', body: 0x3a3a44, skin: 0xcfc8b8, unlockAt: 15 }, // DEJI OF AKURE — slate grey
-  { id: 'danfo', body: 0xcf9a1f, skin: 0xf2dfae, unlockAt: 20 }, // ASAGBA OF ASABA — ochre gold
-  { id: 'agbero', body: 0x6e4a2f, skin: 0xe0bd92, unlockAt: 25 }, // IGWE OF UMUAHIA — red earth
-  { id: 'oba', body: 0x5a3a6a, skin: 0xe8c9a0, shape: 'round', unlockAt: 30 }, // OBONG OF CALABAR — royal purple
-  { id: 'indigo', body: 0x3d3a8c, skin: 0xdfb184, shape: 'tall', unlockAt: 40 }, // EMIR OF KANO — Kofar Mata dye-pit indigo; the blink phantom
+  {
+    id: 'kola',
+    body: 0x1f5a5a, // deep riverine teal — the water-king's coat
+    skin: 0xd9ad78,
+    unlockAt: 6, // AYANGBUREN OF IKORODU — the water-king of the riverine town
+    marks: {
+      strip: 0xd9a02a, // gold aso-oke — Oba-tier embroidery
+      bead: 0xe8622a, // coral
+      shoe: 0x143d3d,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'zobo',
+    body: 0x9a4526, // fired terracotta — a mainland Baale's clay
+    skin: 0xecc4a0,
+    shape: 'tall', // the lanky elder of Agege
+    unlockAt: 9, // BAALE OF AGEGE
+    marks: {
+      strip: 0x2f2b6e, // indigo aso-oke — the Baale strip, same as Surulere
+      bead: 0xe8622a,
+      shoe: 0x6e3a1e,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'palmie',
+    body: 0x4f6b35, // war-camp green — Ibadan was a soldiers' settlement
+    skin: 0xe2cf9e,
+    unlockAt: 12, // OLUBADAN OF IBADAN — paramount Oba
+    marks: {
+      strip: 0xd9a02a, // gold embroidery
+      bead: 0xe8622a,
+      shoe: 0x354d24,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'asphalt',
+    body: 0x6e2f45, // royal wine — the Deji's coral kingdom made cloth
+    skin: 0xcfc8b8,
+    unlockAt: 15, // DEJI OF AKURE — last of the summoners
+    marks: {
+      strip: 0xd9a02a,
+      bead: 0xe8622a, // Akure wears its coral heavy
+      shoe: 0x4a2030,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'danfo',
+    body: 0xcf9a1f, // ochre gold — riverine royalty on the Niger
+    skin: 0xf2dfae,
+    rage: true, // the first rager — his brows say the move before it fires
+    unlockAt: 20, // ASAGBA OF ASABA
+    marks: {
+      strip: 0x2f2b6e, // indigo on gold — the contrast reads royal
+      bead: 0xe8622a,
+      shoe: 0x7a4a10,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'agbero',
+    body: 0x7a2333, // ishi-agu crimson — the lion-head tunic's deep red
+    skin: 0xe0bd92,
+    rage: true,
+    unlockAt: 25, // IGWE OF UMUAHIA
+    marks: {
+      strip: 0xd9a02a, // gold on red — how the tunic actually reads
+      bead: 0xe8622a,
+      shoe: 0x4f1a22,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'oba',
+    body: 0x5a3a6a, // royal purple — Efik kingship
+    skin: 0xe8c9a0,
+    shape: 'round',
+    rage: true,
+    unlockAt: 30, // OBONG OF CALABAR
+    marks: {
+      strip: 0xd9a02a,
+      bead: 0xe8622a,
+      shoe: 0x3a2547,
+      line: 0xbfe8f4,
+    },
+  },
+  {
+    id: 'indigo',
+    body: 0x3d3a8c, // Kofar Mata dye-pit indigo
+    skin: 0xdfb184,
+    shape: 'tall', // the austere frame — northern robes fall long
+    unlockAt: 40, // EMIR OF KANO — the blink phantom
+    marks: {
+      strip: 0x9fc8e0, // pale sky — the babbar riga's pocket-stitch thread
+      shoe: 0x2a2660,
+      line: 0xbfe8f4,
+      // no bead — Emirs don't wear coral; the omission IS the tier
+    },
+  },
 ];
 
 // fixed team coats — the player's pick never collides with these
