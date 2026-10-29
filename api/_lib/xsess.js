@@ -73,7 +73,8 @@ export function cors(res, methods = 'GET,POST,OPTIONS') {
 }
 
 export const proto = (req) =>
-  (req.headers['x-forwarded-proto'] ?? 'https').split(',')[0].trim();
+  req.headers['x-forwarded-proto']?.split(',')[0].trim() ??
+  (req.socket?.encrypted ? 'https' : 'http');
 export const origin = (req) => `${proto(req)}://${req.headers.host}`;
 
 export function setCookie(res, name, value, maxAge, secure) {

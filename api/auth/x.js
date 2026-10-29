@@ -3,7 +3,7 @@
 // even where the game's own page can't carry cookies (itch iframe).
 // `next` is the game page the callback should postMessage the token to —
 // validated against an allowlist, never trusted blind.
-import { cors, origin, pkce, rand, safeNext, setCookie } from '../_lib/xsess.js';
+import { cors, origin, pkce, proto, rand, safeNext, setCookie } from '../_lib/xsess.js';
 
 export default async function handler(req, res) {
   cors(res, 'GET,OPTIONS');
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   const state = rand();
   const next = safeNext(req.query?.next ?? '', self);
   // state.verifier.next ride in one cookie — the callback splits it back
-  setCookie(res, 'iw_oauth', `${state}.${verifier}.${next}`, 600, protoIsHttps(req));
+  setCookie(res, 'iw_oauth', `${state}.${verifier}.${next}`, 600, proto(req) === 'https');
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -31,6 +31,3 @@ export default async function handler(req, res) {
   });
   res.redirect(`https://x.com/i/oauth2/authorize?${params}`);
 }
-
-const protoIsHttps = (req) =>
-  (req.headers['x-forwarded-proto'] ?? 'https').includes('https');

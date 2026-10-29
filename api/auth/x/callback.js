@@ -11,6 +11,7 @@ import {
   cors,
   issueToken,
   origin,
+  proto,
   readCookie,
   setCookie,
 } from '../../_lib/xsess.js';
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
   const code = req.query?.code;
   const state = req.query?.state;
   const pending = readCookie(req, 'iw_oauth');
-  setCookie(res, 'iw_oauth', '', 0, true); // single-use, burn it now
+  setCookie(res, 'iw_oauth', '', 0, proto(req) === 'https'); // single-use, burn it now
   if (!code || !state || !pending) return fail('state', '');
 
   const [expectedState, verifier, ...rest] = pending.split('.');
