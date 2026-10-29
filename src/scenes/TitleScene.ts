@@ -6,6 +6,7 @@ import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
+import { session } from '../xauth';
 import { TouchControls, keyHintsOn } from '../mobile';
 import {
   FG,
@@ -269,16 +270,20 @@ export class TitleScene extends Phaser.Scene {
     const podTopY = vh * 0.81;
     fgRings(this, vw, vh, podX, vh * 0.45);
 
-    const renameRunner = () => {
+    const renameRunner = (required = false) => {
       this.promptOpen = true;
       void promptModal(this, {
         title: 'NAME YOUR RUNNER',
-        sub: 'max 10 letters — shows on the board + in online lobbies',
+        sub: required
+          ? 'first things first — pick the name the board knows you by'
+          : 'max 10 letters — shows on the board + in online lobbies',
         label: 'RUNNER NAME',
         placeholder: 'your name',
-        value: playerName(),
+        // a verified handle prefills the field — still fully editable
+        value: playerName() || (session()?.handle ?? '').slice(0, 10),
         maxLen: 10,
         okLabel: 'SAVE',
+        required,
       }).then((n) => {
         this.promptOpen = false;
         if (n === null) return;
@@ -286,7 +291,7 @@ export class TitleScene extends Phaser.Scene {
         this.events.emit('runner-renamed');
       });
     };
-    this.askName = renameRunner;
+    this.askName = () => renameRunner(true);
 
     this.topBar = fgTopBar(
       this,

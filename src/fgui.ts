@@ -817,12 +817,13 @@ export function promptModal(
     maxLen?: number;
     okLabel?: string;
     depth?: number;
+    required?: boolean; // first-run gate — no cancel path, empty submits shake
     field?: { base: number; ring: number; crown: number }; // underlay palette — cyan on the map
   },
 ): Promise<string | null> {
   const {
     title, sub = '', label = '', placeholder = '', value = '', maxLen = 16,
-    okLabel = 'OK', depth = 80, field,
+    okLabel = 'OK', depth = 80, required = false, field,
   } = opts;
   const { width: vw, height: vh } = scene.scale;
   const cx = vw / 2;
@@ -891,34 +892,38 @@ export function promptModal(
       depth + 2,
     );
   }
-  // close affordance — dark rimmed dot, top-right like every modal
-  const cdG = track(scene.add.graphics(), depth + 2);
-  cdG.fillStyle(UI.shade, 0.5).fillCircle(cx + pw / 2 - 27, cy - ph / 2 + 27, 15);
-  cdG.fillStyle(UI.ink, 1).fillCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 14);
-  cdG.lineStyle(2, 0xffffff, 0.85).strokeCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 13);
-  const closeT = track(
-    scene.add
-      .text(cx + pw / 2 - 28, cy - ph / 2 + 25, '✕', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '13px',
-        color: '#f5efe0',
-      })
-      .setOrigin(0.5)
-      .setPadding(10)
-      .setInteractive({ useHandCursor: true }),
-    depth + 3,
-  );
-  track(
-    scene.add
-      .text(cx + pw / 2 - 16, cy + ph / 2 - 14, 'esc — cancel', {
-        fontFamily: UI_FONT,
-        fontSize: '11px',
-        fontStyle: '600',
-        color: '#b9c4cf',
-      })
-      .setOrigin(1, 1),
-    depth + 2,
-  );
+  // close affordance — dark rimmed dot, top-right like every modal.
+  // Required prompts render no way out at all.
+  let closeT: Phaser.GameObjects.Text | null = null;
+  if (!required) {
+    const cdG = track(scene.add.graphics(), depth + 2);
+    cdG.fillStyle(UI.shade, 0.5).fillCircle(cx + pw / 2 - 27, cy - ph / 2 + 27, 15);
+    cdG.fillStyle(UI.ink, 1).fillCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 14);
+    cdG.lineStyle(2, 0xffffff, 0.85).strokeCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 13);
+    closeT = track(
+      scene.add
+        .text(cx + pw / 2 - 28, cy - ph / 2 + 25, '✕', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '13px',
+          color: '#f5efe0',
+        })
+        .setOrigin(0.5)
+        .setPadding(10)
+        .setInteractive({ useHandCursor: true }),
+      depth + 3,
+    );
+    track(
+      scene.add
+        .text(cx + pw / 2 - 16, cy + ph / 2 - 14, 'esc — cancel', {
+          fontFamily: UI_FONT,
+          fontSize: '11px',
+          fontStyle: '600',
+          color: '#b9c4cf',
+        })
+        .setOrigin(1, 1),
+      depth + 2,
+    );
+  }
 
   const { el, dom } = domInput(scene, cx - 120, cy - 8, placeholder, maxLen, 240);
   el.value = value;
@@ -936,32 +941,49 @@ export function promptModal(
       dom.destroy();
       resolve(v);
     };
+    // required mode: an empty submit shakes the input instead of closing
+    const submit = () => {
+      const v = el.value.trim();
+      if (required && !v) {
+        scene.tweens.add({ targets: dom, x: '+=7', yoyo: true, repeat: 3, duration: 45 });
+        el.focus();
+        return;
+      }
+      cleanup(v || (required ? v : null));
+    };
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation(); // keep Phaser's global key handlers out of the field
-      if (e.key === 'Enter') cleanup(el.value.trim());
-      else if (e.key === 'Escape') cleanup(null);
+      if (e.key === 'Enter') submit();
+      else if (e.key === 'Escape' && !required) cleanup(null);
     };
-    const onEsc = () => cleanup(null);
+    const onEsc = () => {
+      if (!required) cleanup(null);
+    };
     el.addEventListener('keydown', onKey);
     scene.input.keyboard?.on('keydown-ESC', onEsc);
     scene.events.once('shutdown', () => cleanup(null)); // never leak the DOM el
-    dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
-    closeT.on('pointerdown', () => cleanup(null));
+    if (!required) {
+      dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
+      closeT?.on('pointerdown', () => cleanup(null));
+    }
 
-    const ok = pillButton(scene, cx - 78, cy + ph / 2 - 50, 140, okLabel, {
+    // required = single centered SAVE; optional = OK + CANCEL pair
+    const ok = pillButton(scene, required ? cx : cx - 78, cy + ph / 2 - 50, 140, okLabel, {
       fill: UI.danfo,
       textColor: UI.ink,
       fontSize: 15,
       depth: depth + 2,
-      onDown: () => cleanup(el.value.trim()),
-    });
-    const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
-      fill: UI.ink,
-      fontSize: 15,
-      depth: depth + 2,
-      onDown: () => cleanup(null),
+      onDown: submit,
     });
     track(ok.container, depth + 2);
-    track(cancel.container, depth + 2);
+    if (!required) {
+      const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
+        fill: UI.ink,
+        fontSize: 15,
+        depth: depth + 2,
+        onDown: () => cleanup(null),
+      });
+      track(cancel.container, depth + 2);
+    }
   });
 }
