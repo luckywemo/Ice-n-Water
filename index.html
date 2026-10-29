@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Ice 'N' Water" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <title>Ice 'N' Water — the Nigerian chase game</title>
     <meta
       name="description"
@@ -31,8 +31,8 @@
       content="The Nigerian childhood chase game, digitized. Ice &amp; Water · Lagos to Maiduguri."
     />
     <meta name="twitter:image" content="logo.jpg" />
-    <link rel="icon" href="/favicon.png" type="image/png" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -119,12 +119,64 @@
         gap: 20px;
         font-family: 'Fredoka', sans-serif;
       }
-      #boot .mark {
+      #boot .mark,
+      .gate .mark {
         width: 104px;
         border-radius: 22px;
         box-shadow: 0 10px 24px rgba(60, 40, 0, 0.3);
       }
-      #boot .word {
+      /* x sign-in gate — the overlay writes into #boot's innerHTML */
+      #boot .gate-msg,
+      .gate .gate-msg {
+        color: #0d3550;
+        font-weight: 600;
+        font-size: 17px;
+      }
+      #boot .gate-btn,
+      .gate .gate-btn {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 20px;
+        letter-spacing: 1px;
+        color: #ffffff;
+        background: #0d3550;
+        border: 0;
+        border-radius: 14px;
+        padding: 14px 34px;
+        cursor: pointer;
+        box-shadow: 0 5px 0 #082338;
+      }
+      #boot .gate-btn:active,
+      .gate .gate-btn:active {
+        transform: translateY(3px);
+        box-shadow: 0 2px 0 #082338;
+      }
+      #boot .gate-alt,
+      .gate .gate-alt {
+        color: #8a6d00;
+        font-size: 12px;
+        text-decoration: underline;
+      }
+      #boot .gate-err,
+      .gate .gate-err {
+        color: #a33c00;
+        font-size: 13px;
+        font-weight: 600;
+        min-height: 18px;
+      }
+      .gate {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: #f7bd14;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        font-family: 'Fredoka', sans-serif;
+      }
+      #boot .word,
+      .gate .word {
         font-family: 'Titan One', 'Baloo 2', sans-serif;
         color: #ffffff;
         font-size: 42px;

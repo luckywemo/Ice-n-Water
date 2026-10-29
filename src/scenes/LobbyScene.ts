@@ -7,6 +7,7 @@ import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
 import { keyHintsOn } from '../mobile';
+import { authTicket } from '../xauth';
 
 type LobbyPlayer = {
   name: string;
@@ -274,9 +275,13 @@ export class LobbyScene extends Phaser.Scene {
   private async createRoom() {
     this.statusText.setText('connecting…');
     try {
+      // room ticket proves the X session to the game server — joins
+      // without one are rejected (unauthed dev passes with no ticket)
+      const ticket = await authTicket();
       this.room = await this.client.create<LobbyStateShape>('game', {
         mode: this.lobbyMode,
         name: this.myName(),
+        ticket,
       });
     } catch {
       const local = SERVER_URL.includes('localhost') || /192\.168|10\.|172\./.test(SERVER_URL);
@@ -298,7 +303,11 @@ export class LobbyScene extends Phaser.Scene {
     }
     this.statusText.setText('joining…');
     try {
-      this.room = await this.client.joinById<LobbyStateShape>(code, { name: this.myName() });
+      const ticket = await authTicket();
+      this.room = await this.client.joinById<LobbyStateShape>(code, {
+        name: this.myName(),
+        ticket,
+      });
     } catch (e: any) {
       this.statusText.setText(`join failed (${e?.code ?? 'error'}) — check the code`);
       return;

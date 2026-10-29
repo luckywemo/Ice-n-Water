@@ -1,5 +1,9 @@
 // POST /api/score — submit an adventure score. Server-side only:
-// validates, rate-limits by IP, writes GT-only to Upstash.
+// X-session required, the row id is the verified X id (client ids are
+// ignored entirely — nobody can post under a handle they don't own),
+// rate-limits by account, writes GT-only to Upstash.
+
+import { cors, sessionFrom } from './_lib/xsess.js';
 
 const MAX_LEVEL = 1000; // levels cleared across BOTH campaigns (2 × 500)
 const MAX_STARS = 3000; // 1000 levels × 3
@@ -26,28 +30,27 @@ const cleanName = (n) =>
     .trim() || 'runner';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  cors(res, 'POST,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'post only' });
 
+  const s = sessionFrom(req);
+  if (!s) return res.status(401).json({ error: 'connect x first' });
+
   try {
     const env = process.env;
-    const ip = req.headers['x-forwarded-for']?.split(',')[0] ?? req.socket?.remoteAddress ?? 'anon';
 
     const b = req.body ?? {};
-    const id = String(b.id ?? '');
+    const id = `x_${s.id}`; // identity is the verified session, not the body
     const name = cleanName(b.name);
     const level = Math.floor(Number(b.level));
     const stars = Math.floor(Number(b.stars));
-    if (id.length < 8 || id.length > 64) return res.status(400).json({ error: 'bad id' });
     if (!(level >= 1 && level <= MAX_LEVEL && stars >= 0 && stars <= MAX_STARS))
       return res.status(400).json({ error: 'bad score' });
 
     const [hits] = await up(env, [
-      ['INCR', `rl:${ip}`],
-      ['EXPIRE', `rl:${ip}`, 3600, 'NX'],
+      ['INCR', `rl:${s.id}`],
+      ['EXPIRE', `rl:${s.id}`, 3600, 'NX'],
     ]);
     if (Number(hits) > SUBMITS_PER_HOUR) return res.status(429).json({ error: 'slow down' });
 

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
 import { levelDef } from './adventure';
+import { requireAuth } from './xauth';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -76,8 +77,18 @@ const go = () => {
   (window as unknown as { __ui: { promptModal: typeof promptModal } }).__ui = { promptModal }; // e2e modal probe
 };
 
+// the gate is the point: no verified X session, no game. A stored token
+// boots silently; a missing one swaps the boot splash for the connect
+// overlay and the promise simply never resolves until sign-in lands.
+// (dev with no api configured passes through — see xauth.ts)
+const start = () =>
+  requireAuth().then((s) => {
+    if (s === undefined) return; // unreachable, keeps the type honest
+    go();
+  });
+
 if (document.fonts?.ready) {
-  document.fonts.ready.then(go);
+  document.fonts.ready.then(start);
 } else {
-  go();
+  start();
 }

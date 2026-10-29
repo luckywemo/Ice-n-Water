@@ -1,5 +1,6 @@
-import { Room, Client, matchMaker, CloseCode } from '@colyseus/core';
+import { Room, Client, matchMaker, CloseCode, ServerError } from '@colyseus/core';
 import { LobbyState, Player } from '../schema.js';
+import { verifyTicket } from '../xticket.js';
 
 // must mirror the client's arena + reach values (src/config.ts — the
 // client measures center distance against range + runner radius)
@@ -92,6 +93,15 @@ export class GameRoom extends Room<{ state: LobbyState }> {
       }
       if (typeof m.angle === 'number') p.angle = m.angle;
     });
+  }
+
+  // every join — create or by code — must carry a room ticket minted by
+  // /api/ticket against a real X session. The returned value lands on
+  // client.auth, so the room always knows WHICH verified account it is.
+  onAuth(client: Client, options: { ticket?: string }) {
+    const t = verifyTicket(options?.ticket);
+    if (!t) throw new ServerError(401, 'x sign-in required');
+    return { xId: t.id, handle: t.h };
   }
 
   onJoin(client: Client, options: { name?: string }) {

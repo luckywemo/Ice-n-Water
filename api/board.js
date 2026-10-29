@@ -1,4 +1,8 @@
-// GET /api/board?me=<id> — top 50 runners + the caller's rank.
+// GET /api/board — top 50 runners + the caller's rank. Session-gated;
+// `me` comes from the verified token, not the query — a hand-typed id
+// can't probe another runner's rank.
+
+import { cors, sessionFrom } from './_lib/xsess.js';
 
 async function up(env, cmds) {
   const res = await fetch(`${env.UPSTASH_REST_URL}/pipeline`, {
@@ -16,15 +20,16 @@ async function up(env, cmds) {
 const unpack = (v) => ({ level: Math.floor(v / 2000), stars: Math.round(v % 2000) });
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  cors(res, 'GET,OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'get only' });
 
+  const s = sessionFrom(req);
+  if (!s) return res.status(401).json({ error: 'connect x first' });
+
   try {
     const env = process.env;
-    const me = String(req.query?.me ?? '');
+    const me = `x_${s.id}`;
     const cmds = [
       ['ZREVRANGE', 'board', 0, 49, 'WITHSCORES'],
       ['HGETALL', 'names'],
