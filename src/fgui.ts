@@ -718,26 +718,16 @@ export function fgNamePlate(
   g.fillTriangle(cxx - 3, cy - 1, cxx, cy - 8, cxx + 3, cy - 1);
   g.fillTriangle(cxx + 3, cy - 1, cxx + 8, cy - 5, cxx + 8, cy + 4);
   g.fillRect(cxx - 8, cy + 4, 16, 3);
-  const two = !!opts?.handle;
-  const t = scene.add
-    .text(x + 44, two ? cy - 9 : cy + 1, name, {
+  // session identity replaces the runner name — avatar + @handle only
+  scene.add
+    .text(x + 44, cy + 1, opts?.handle ? `@${opts.handle}` : name, {
       fontFamily: FG_BODY,
-      fontSize: two ? '15px' : '17px',
+      fontSize: '17px',
       fontStyle: 'italic 800',
       color: '#ffffff',
     })
     .setOrigin(0, 0.5)
     .setDepth(21);
-  if (two)
-    scene.add
-      .text(x + 44, cy + 10, `@${opts.handle}`, {
-        fontFamily: FG_BODY,
-        fontSize: '11px',
-        fontStyle: '800',
-        color: '#0d3550',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(21);
   scene.add
     .zone(x, y, w, h)
     .setOrigin(0, 0)
@@ -745,7 +735,6 @@ export function fgNamePlate(
     .setInteractive({ useHandCursor: true })
     .on('pointerdown', onDown);
   return {
-    setName: (s: string) => t.setText(s),
     /** circular avatar over the glyph slot — call once the texture exists */
     setAvatar(key: string) {
       const img = scene.add.image(cxx, cy, key).setDisplaySize(30, 30).setDepth(21);

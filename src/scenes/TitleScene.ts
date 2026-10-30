@@ -540,7 +540,6 @@ export class TitleScene extends Phaser.Scene {
         })
         .catch(() => {}); // no pfp — the crown stays
     this.events.on('runner-renamed', () => {
-      plate.setName(playerName() || 'your runner');
       this.refreshCharPlate?.();
     });
 
