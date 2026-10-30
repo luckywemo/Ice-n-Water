@@ -17,16 +17,24 @@ export interface XSession {
 
 const TOK_KEY = 'iw_xtok';
 
-/** api deployment origin. VITE_API_URL wins; otherwise derive from
-    VITE_BOARD_URL (absolute → that origin; '/api' → same origin).
+/** api deployment origin. VITE_API_URL wins; otherwise same-origin
+    ('/api' or unset → location.origin). An ABSOLUTE VITE_BOARD_URL is
+    deliberately not a fallback — the board can be a different backend
+    (the Cloudflare leaderboard worker) with no auth routes, and silently
+    authing against it is how sign-in once landed on {"error":"not found"}.
     Empty = no api configured — dev then skips the gate entirely. */
 export const API_URL = (() => {
   const env = import.meta.env.VITE_API_URL as string | undefined;
   if (env) return env.replace(/\/+$/, '');
   const board = (import.meta.env.VITE_BOARD_URL as string | undefined) ?? '';
-  if (/^https?:\/\//.test(board)) return new URL(board).origin;
+  if (!board) return ''; // dev — no api configured anywhere
   if (board.startsWith('/api')) return location.origin;
-  return '';
+  console.warn(
+    '[xauth] VITE_API_URL is unset — auth calls will use this origin, NOT the ' +
+      'configured VITE_BOARD_URL (a different backend with no auth routes). ' +
+      'Set VITE_API_URL on the deploy to silence this.',
+  );
+  return location.origin;
 })();
 
 function decode(tok: string): XSession | null {

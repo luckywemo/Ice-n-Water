@@ -62,8 +62,10 @@ npm run zip        # flat itch.io archive
   `VITE_BOARD_URL=https://<your-api>.vercel.app/api`. Whitelist the api
   origin's callback in the X app settings.
   - Cloudflare alternative: the Worker in `worker/` still serves the
-    board, but the X gate needs the `api/` functions — without
-    `VITE_API_URL` the game boots open (treat as dev mode).
+    board, but the X gate needs the `api/` functions. With `VITE_API_URL`
+    unset the client auths against its own origin (the monolith case —
+    it will warn, and 404s if no api is hosted there); with neither
+    `VITE_API_URL` nor `VITE_BOARD_URL` set the game boots open (dev mode).
 - **Multiplayer:** deploy `server/` to any Node host (Render-ready:
   `render.yaml`), set `VITE_SERVER_URL`, and give the server the **same
   `SESSION_SECRET`** — that's how it verifies room tickets.
