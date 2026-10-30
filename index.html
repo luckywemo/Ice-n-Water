@@ -209,6 +209,31 @@
           display: flex;
         }
       }
+      /* install CTA on the rotate screen — game chrome on the navy field;
+         the sheet that follows is the browser's own (device theme) */
+      #install-btn {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 17px;
+        letter-spacing: 1px;
+        color: #0d3550;
+        background: #f7bd14;
+        border: 0;
+        border-radius: 14px;
+        padding: 13px 30px;
+        cursor: pointer;
+        box-shadow: 0 5px 0 #7a5800;
+        margin-top: 10px;
+      }
+      #install-btn:active {
+        transform: translateY(3px);
+        box-shadow: 0 2px 0 #7a5800;
+      }
+      #install-note {
+        font-size: 12px;
+        color: #7d93a5;
+        min-height: 16px;
+        max-width: 260px;
+      }
     </style>
   </head>
   <body>
@@ -221,7 +246,50 @@
       <span class="phone">📱</span>
       <div style="font-size: 20px; font-weight: 600">rotate your device</div>
       <div style="font-size: 14px; color: #7d93a5">ice 'n' water plays in landscape</div>
+      <button id="install-btn" type="button">INSTALL TO PLAY</button>
+      <div id="install-note"></div>
     </div>
+    <script>
+      // PWA install — capture the browser's event early so the rotate
+      // screen's button can fire the native sheet (device-themed) on tap.
+      window.__bip = null;
+      addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault(); // hold it — our button decides when to ask
+        window.__bip = e;
+      });
+      addEventListener('appinstalled', () => {
+        window.__bip = null;
+        const b = document.getElementById('install-btn');
+        if (b) b.hidden = true;
+      });
+      (() => {
+        const btn = document.getElementById('install-btn');
+        const note = document.getElementById('install-note');
+        // already running installed — nothing to offer
+        if (
+          matchMedia('(display-mode: fullscreen)').matches ||
+          matchMedia('(display-mode: standalone)').matches ||
+          navigator.standalone
+        )
+          btn.hidden = true;
+        btn.addEventListener('click', async () => {
+          const e = window.__bip;
+          if (e) {
+            e.prompt(); // the browser's own install sheet — follows device theme
+            await e.userChoice;
+            window.__bip = null; // single-shot per the spec — refresh re-offers
+            if (!window.__bip) btn.hidden = true;
+          } else {
+            // no deferred event (iOS, Firefox, in-app webview) — the manual path
+            note.textContent = /iphone|ipad|ipod/i.test(navigator.userAgent)
+              ? 'share → add to home screen'
+              : 'browser menu → install / add to home screen';
+          }
+        });
+        if ('serviceWorker' in navigator)
+          navigator.serviceWorker.register('sw.js');
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
