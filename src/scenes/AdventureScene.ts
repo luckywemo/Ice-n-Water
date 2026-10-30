@@ -3,6 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
+import { fitZoom } from '../mobile';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality } from '../meta';
@@ -135,7 +136,7 @@ export class AdventureScene extends Phaser.Scene {
     // the lobby's virtual stage — uniform zoom, centred, letterboxed. The
     // rail lives in world space past the stage edge; fixed chrome uses
     // stage coords + scrollFactor(0), same as TitleScene.
-    const zoomK = (this.zoomK = Math.min(width / VW, height / VH));
+    const zoomK = (this.zoomK = fitZoom(width, height, VW, VH));
     this.visW = width / zoomK;
     const visH = (this.visH = height / zoomK);
     this.offX = (width - this.visW) / 2; // viewLeft = scrollX + offX

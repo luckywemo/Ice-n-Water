@@ -248,3 +248,15 @@ export class TouchControls {
 export function keyHintsOn(): boolean {
   return !TouchControls.isTouchDevice() && loadPicks().hints;
 }
+
+/** virtual-stage zoom with a bounded cover boost: on landscape touch screens
+ *  the exact fit shrinks chrome below comfortable tap size, so zoom up to
+ *  ~1.22x and let the stage crop a little instead. Safe because all chrome
+ *  anchors to the visible edges (visT/visB/visL/visR) — the crop can only
+ *  eat stage margin, never the UI. Portrait's width constraint makes the
+ *  same boost crop the sides, so it stays exact-fit; desktop (fine pointer)
+ *  keeps letterbox too — small windows there are transient, not the device. */
+export function fitZoom(w: number, h: number, vw: number, vh: number): number {
+  const fit = Math.min(w / vw, h / vh);
+  return w > h && TouchControls.isTouchDevice() ? fit * 1.22 : fit;
+}

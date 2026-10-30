@@ -5,7 +5,7 @@ import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
 import { CHARACTERS, CharDef, charTitle, charTitleShort, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
 import { playerName } from '../leaderboard';
 import { perfInterval, furQuality } from '../meta';
-import { keyHintsOn } from '../mobile';
+import { keyHintsOn, fitZoom } from '../mobile';
 import { Sfx } from '../audio';
 
 // OutfitScene — the wardrobe. Fall Guys' CUSTOMISE › OUTFITS layout:
@@ -68,7 +68,7 @@ export class OutfitScene extends Phaser.Scene {
 
   create() {
     const { width: W, height: H } = this.scale;
-    const zoom = Math.min(W / VW, H / VH);
+    const zoom = fitZoom(W, H, VW, VH);
     this.cameras.main.setZoom(zoom).centerOn(VW / 2, VH / 2);
     // the camera centres the stage — on windows wider/taller than the
     // stage's aspect the frame edge sits outside x=0/y=0. visL/visT are
