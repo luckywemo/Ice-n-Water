@@ -23,6 +23,9 @@ type LobbyStateShape = {
 };
 
 /** Online lobby — create or join a room, ready up, host starts the match. */
+/** the whole lobby is a teaser until the colyseus server ships (needs a
+    persistent-node host — render.yaml is ready). Flip false to restore. */
+const ONLINE_COMING_SOON = true;
 export class LobbyScene extends Phaser.Scene {
   private client = new Client(SERVER_URL);
   private room: Room<LobbyStateShape> | null = null;
@@ -63,6 +66,45 @@ export class LobbyScene extends Phaser.Scene {
     panel(this, cx - cw / 2, cy0, cw, ch, { depth: 3 });
     this.menuGroup = this.add.container(0, 0).setDepth(5);
     this.roomGroup = this.add.container(0, 0).setDepth(5).setVisible(false);
+
+    // ONLINE is a teaser until the colyseus server ships — flip this off and
+    // the real lobby below comes back untouched
+    if (ONLINE_COMING_SOON) {
+      this.menuGroup.add(
+        this.add
+          .text(cx, cy0 + 140, 'ONLINE', {
+            fontFamily: DISPLAY_FONT,
+            fontSize: '44px',
+            color: '#e84393',
+          })
+          .setOrigin(0.5)
+          .setShadow(0, 4, '#9c2160', 0, true, false),
+      );
+      this.menuGroup.add(
+        this.add
+          .text(
+            cx,
+            cy0 + 210,
+            'COMING SOON\nchasing friends across the yard needs\na server we have not stood up yet',
+            {
+              fontFamily: UI_FONT,
+              fontSize: '16px',
+              fontStyle: '600',
+              color: '#7a8a99',
+              align: 'center',
+              lineSpacing: 6,
+            },
+          )
+          .setOrigin(0.5),
+      );
+      pillButton(this, cx, cy0 + ch + 42, 140, 'BACK', {
+        fill: UI.ink,
+        textColor: UI.paper,
+        fontSize: 14,
+        onDown: () => this.scene.start('title'),
+      });
+      return;
+    }
 
     this.menuGroup.add(
       this.add
