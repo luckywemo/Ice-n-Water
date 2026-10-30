@@ -739,17 +739,21 @@ export function fgKeycapHint(
   scene: Phaser.Scene,
   x: number,
   y: number,
-  key: string,
+  key: string | undefined,
   label: string,
   onDown: () => void,
+  opts?: { icon?: FgIcon },
 ) {
   const g = scene.add.graphics().setDepth(20);
   g.fillStyle(FG.ink, 0.9).fillCircle(x, y, 12);
   g.lineStyle(2, 0xffffff, 0.85).strokeCircle(x, y, 12);
   const kt = scene.add
-    .text(x, y + 1, key, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#f2c531' })
+    .text(x, y + 1, key ?? '', { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#f2c531' })
     .setOrigin(0.5)
     .setDepth(21);
+  // the circle's glyph slot — keycap letter where keys exist, icon where
+  // they don't (same gold, same disc: touch gets the look, not the key)
+  if (!key && opts?.icon) drawFgIcon(g, opts.icon, x, y, 13, 0xf2c531);
   const lt = scene.add
     .text(x + 22, y + 1, label, {
       fontFamily: FG_BODY,
@@ -762,7 +766,7 @@ export function fgKeycapHint(
     .setShadow(0, 3, '#7a5800', 4, true, false);
   const w = 22 + lt.width + 14;
   scene.add
-    .zone(x - 14, y - 16, w, 32)
+    .zone(x - 14, y - 20, w, 40)
     .setOrigin(0, 0)
     .setDepth(21)
     .setInteractive({ useHandCursor: true })
