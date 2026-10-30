@@ -54,6 +54,26 @@ const boot = () =>
 
 const go = () => {
   const game = boot();
+  // mobile toolbars move the VISUAL viewport without emitting window.resize
+  // (Chrome's dynamic-toolbar model; the page can't scroll past overflow:hidden
+  // to trigger one). Phaser only listens to window resize, so the canvas stays
+  // sized to the stale, taller viewport and flex-centering clips the top bar.
+  // visualViewport.resize does fire there — we resize the game to the visual
+  // height directly, which emits Phaser's own resize event, so scene restart
+  // logic runs as usual (and the textInputFocused keyboard guard still holds).
+  const vv = window.visualViewport;
+  if (vv) {
+    const sync = () => {
+      // vv dims are already CSS px of the visible area; scale ≈ pinch zoom.
+      // resize() only emits when the size actually changes — no-op on desktop.
+      const w = Math.round(vv.width * vv.scale);
+      const h = Math.round(vv.height * vv.scale);
+      const cur = game.scale.gameSize;
+      if (cur.width !== w || cur.height !== h) game.scale.resize(w, h);
+    };
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+  }
   // drop the boot splash once Phaser is live — covers every scene entry,
   // including the dev hash jumps below that skip the title screen
   game.events.once(Phaser.Core.Events.READY, () => {
