@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused } from '../ui';
+import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
@@ -526,6 +526,31 @@ export class TitleScene extends Phaser.Scene {
       nameT.setText(playerName() || 'your runner');
       this.refreshCharPlate?.();
     });
+
+    // --- install CTA — sits over the name plate while the browser still
+    //  defers an install prompt (not installed yet). Same pink as the
+    //  rotate screen's button; the sheet itself is the browser's own.
+    //  bip can arrive after create(), so visibility follows bip-change.
+    type Bip = { prompt(): Promise<void>; userChoice: Promise<unknown> };
+    const bip = () => (window as { __bip?: Bip }).__bip;
+    const installBtn = pillButton(this, visL + 160, visB - 118, 220, 'INSTALL TO PLAY', {
+      fill: FG.pink,
+      fontSize: 15,
+      onDown: async () => {
+        const e = bip();
+        if (!e) return;
+        await e.prompt();
+        await e.userChoice;
+        (window as { __bip?: Bip }).__bip = undefined;
+        dispatchEvent(new Event('bip-change'));
+      },
+    });
+    const syncInstall = () => installBtn.container.setVisible(!!bip());
+    syncInstall();
+    addEventListener('bip-change', syncInstall);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      removeEventListener('bip-change', syncInstall),
+    );
 
     // --- invite above PLAY (their "Ⓨ Invite Players" analog) ---
     // same chrome everywhere — the circle carries a Y keycap where keys
