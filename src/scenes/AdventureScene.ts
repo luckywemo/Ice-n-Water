@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
@@ -154,6 +154,9 @@ export class AdventureScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     const onResize = (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — restarting here
+      // destroys the open prompt (and the DOM input with it)
+      if (textInputFocused()) return;
       if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
         lastW = sz.width;
         lastH = sz.height;

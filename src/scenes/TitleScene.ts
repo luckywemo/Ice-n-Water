@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI } from '../ui';
+import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
@@ -217,6 +217,9 @@ export class TitleScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     this.scale.on('resize', (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — restarting here
+      // destroys the open prompt (and the DOM input with it)
+      if (textInputFocused()) return;
       if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
         lastW = sz.width;
         lastH = sz.height;

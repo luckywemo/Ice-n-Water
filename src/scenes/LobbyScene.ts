@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Client, Room } from '@colyseus/sdk';
 import { CONFIG } from '../config';
 import { SERVER_URL } from '../net';
-import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHandle } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHandle, textInputFocused } from '../ui';
 import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
@@ -252,6 +252,9 @@ export class LobbyScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     const onResize = (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — a restart would
+      // destroy the name/code inputs mid-keystroke
+      if (textInputFocused()) return;
       const moved = Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24;
       lastW = sz.width;
       lastH = sz.height;
