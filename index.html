@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Ice 'N' Water" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <title>Ice 'N' Water — the Nigerian chase game</title>
     <meta
       name="description"
@@ -31,8 +31,8 @@
       content="The Nigerian childhood chase game, digitized. Ice &amp; Water · Lagos to Maiduguri."
     />
     <meta name="twitter:image" content="logo.jpg" />
-    <link rel="icon" href="/logo.jpg" type="image/jpeg" />
-    <link rel="apple-touch-icon" href="/logo.jpg" />
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -67,25 +67,38 @@
       canvas {
         display: block;
       }
-      /* rotate hint — portrait phones only */
+      /* rotate hint — portrait phones only; same yellow crown field as boot */
       #rotate-hint {
         display: none;
         position: fixed;
         inset: 0;
         z-index: 100;
-        background: #0d1b2a;
-        color: #f5efe0;
+        background: #f7bd14
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cg fill='none' stroke='%23c98f00' stroke-opacity='.25' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M44 70 44 56 52 62 56 50 60 60 64 50 68 62 76 56 76 70Z'/%3E%3Cpath d='M164 60 164 46 172 52 176 40 180 50 184 40 188 52 196 46 196 60Z'/%3E%3Cpath d='M104 150 104 136 112 142 116 130 120 140 124 130 128 142 136 136 150Z'/%3E%3Cpath d='M24 210 24 196 32 202 36 190 40 200 44 190 48 202 56 196 56 210Z'/%3E%3Cpath d='M184 200 184 186 192 192 196 180 200 190 204 180 208 192 216 186 216 200Z'/%3E%3C/g%3E%3C/svg%3E");
         font-family: 'Fredoka', sans-serif;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        gap: 14px;
         text-align: center;
       }
       #rotate-hint .phone {
-        font-size: 52px;
         animation: tilt 1.4s ease-in-out infinite;
         display: inline-block;
+      }
+      #rotate-hint .title {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 30px;
+        letter-spacing: 2px;
+        color: #ffffff;
+        text-shadow:
+          0 3px 0 #0d3550,
+          0 8px 14px rgba(60, 40, 0, 0.25);
+      }
+      #rotate-hint .sub {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0d3550;
       }
       @keyframes tilt {
         0%,
@@ -119,7 +132,64 @@
         gap: 20px;
         font-family: 'Fredoka', sans-serif;
       }
-      #boot .word {
+      #boot .mark,
+      .gate .mark {
+        width: 104px;
+        border-radius: 22px;
+        box-shadow: 0 10px 24px rgba(60, 40, 0, 0.3);
+      }
+      /* x sign-in gate — the overlay writes into #boot's innerHTML */
+      #boot .gate-msg,
+      .gate .gate-msg {
+        color: #0d3550;
+        font-weight: 600;
+        font-size: 17px;
+      }
+      #boot .gate-btn,
+      .gate .gate-btn {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 20px;
+        letter-spacing: 1px;
+        color: #ffffff;
+        background: #0d3550;
+        border: 0;
+        border-radius: 14px;
+        padding: 14px 34px;
+        cursor: pointer;
+        box-shadow: 0 5px 0 #082338;
+      }
+      #boot .gate-btn:active,
+      .gate .gate-btn:active {
+        transform: translateY(3px);
+        box-shadow: 0 2px 0 #082338;
+      }
+      #boot .gate-alt,
+      .gate .gate-alt {
+        color: #8a6d00;
+        font-size: 12px;
+        text-decoration: underline;
+      }
+      #boot .gate-err,
+      .gate .gate-err {
+        color: #a33c00;
+        font-size: 13px;
+        font-weight: 600;
+        min-height: 18px;
+      }
+      .gate {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: #f7bd14;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        font-family: 'Fredoka', sans-serif;
+      }
+      #boot .word,
+      .gate .word {
         font-family: 'Titan One', 'Baloo 2', sans-serif;
         color: #ffffff;
         font-size: 42px;
@@ -152,18 +222,92 @@
           display: flex;
         }
       }
+      /* install CTA on the rotate screen — game chrome on the navy field;
+         the sheet that follows is the browser's own (device theme) */
+      #install-btn {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 17px;
+        letter-spacing: 1px;
+        color: #ffffff;
+        background: #e84393;
+        border: 0;
+        border-radius: 14px;
+        padding: 13px 30px;
+        cursor: pointer;
+        box-shadow: 0 5px 0 #9c2160;
+        margin-top: 10px;
+      }
+      #install-btn:active {
+        transform: translateY(3px);
+        box-shadow: 0 2px 0 #9c2160;
+      }
+      #install-note {
+        font-size: 12px;
+        font-weight: 600;
+        color: #8a6d00;
+        min-height: 16px;
+        max-width: 260px;
+      }
     </style>
   </head>
   <body>
     <div id="boot" aria-hidden="true">
+      <img class="mark" src="/icon-192.png" alt="" />
       <div class="word">ICE 'N' WATER</div>
       <div class="bar"></div>
     </div>
     <div id="rotate-hint">
-      <span class="phone">📱</span>
-      <div style="font-size: 20px; font-weight: 600">rotate your device</div>
-      <div style="font-size: 14px; color: #7d93a5">ice 'n' water plays in landscape</div>
+      <svg class="phone" width="54" height="76" viewBox="0 0 54 76" aria-hidden="true">
+        <rect x="3" y="2" width="48" height="72" rx="11" fill="#0d3550" />
+        <rect x="9" y="11" width="36" height="50" rx="4" fill="#f5efe0" />
+        <circle cx="27" cy="67" r="3.5" fill="#f5efe0" />
+      </svg>
+      <div class="title">ROTATE YOUR DEVICE</div>
+      <div class="sub">ice 'n' water plays in landscape</div>
+      <button id="install-btn" type="button">INSTALL TO PLAY</button>
+      <div id="install-note"></div>
     </div>
+    <script>
+      // PWA install — capture the browser's event early so the rotate
+      // screen's button can fire the native sheet (device-themed) on tap.
+      window.__bip = null;
+      addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault(); // hold it — our button decides when to ask
+        window.__bip = e;
+      });
+      addEventListener('appinstalled', () => {
+        window.__bip = null;
+        const b = document.getElementById('install-btn');
+        if (b) b.hidden = true;
+      });
+      (() => {
+        const btn = document.getElementById('install-btn');
+        const note = document.getElementById('install-note');
+        // already running installed — nothing to offer
+        if (
+          matchMedia('(display-mode: fullscreen)').matches ||
+          matchMedia('(display-mode: standalone)').matches ||
+          navigator.standalone
+        )
+          btn.hidden = true;
+        btn.addEventListener('click', async () => {
+          const e = window.__bip;
+          if (e) {
+            e.prompt(); // the browser's own install sheet — follows device theme
+            await e.userChoice;
+            window.__bip = null; // single-shot per the spec — refresh re-offers
+            if (!window.__bip) btn.hidden = true;
+          } else {
+            // no deferred event (iOS, Firefox, in-app webview) — the manual path
+            note.textContent = /iphone|ipad|ipod/i.test(navigator.userAgent)
+              ? 'share → add to home screen'
+              : 'browser menu → install / add to home screen';
+          }
+        });
+        if ('serviceWorker' in navigator)
+          navigator.serviceWorker.register('sw.js');
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

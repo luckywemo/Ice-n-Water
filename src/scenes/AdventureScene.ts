@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade } from '../ui';
-import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG } from '../fgui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
+import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
+import { fitZoom } from '../mobile';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality } from '../meta';
@@ -80,6 +81,15 @@ export class AdventureScene extends Phaser.Scene {
   }
 
   private boardLayer: Phaser.GameObjects.Container | null = null;
+  private boardTiles: {
+    c: Phaser.GameObjects.Container;
+    face: Phaser.GameObjects.Graphics;
+    rank: Phaser.GameObjects.Text;
+    name: Phaser.GameObjects.Text;
+    stat: Phaser.GameObjects.Text;
+  }[] = [];
+  private boardBanner?: Phaser.GameObjects.Text;
+  private boardMeTxt?: Phaser.GameObjects.Text;
   private modalOpen = false; // DOM prompt owns input — mute global handlers
   // screen-space tap rects for overlay buttons — container-children input is
   // unreliable under the camera scroll, so taps are checked manually
@@ -126,7 +136,7 @@ export class AdventureScene extends Phaser.Scene {
     // the lobby's virtual stage — uniform zoom, centred, letterboxed. The
     // rail lives in world space past the stage edge; fixed chrome uses
     // stage coords + scrollFactor(0), same as TitleScene.
-    const zoomK = (this.zoomK = Math.min(width / VW, height / VH));
+    const zoomK = (this.zoomK = fitZoom(width, height, VW, VH));
     this.visW = width / zoomK;
     const visH = (this.visH = height / zoomK);
     this.offX = (width - this.visW) / 2; // viewLeft = scrollX + offX
@@ -145,6 +155,9 @@ export class AdventureScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     const onResize = (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — restarting here
+      // destroys the open prompt (and the DOM input with it)
+      if (textInputFocused()) return;
       if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
         lastW = sz.width;
         lastH = sz.height;
@@ -721,52 +734,115 @@ export class AdventureScene extends Phaser.Scene {
     const dim = this.add
       .rectangle(width / 2, height / 2, width + 60, height + 60, 0x081420, 0.22)
       .setInteractive(); // swallow taps — sized to the letterboxed view
-    const pw = Math.min(460, width - 40);
-    const ph = Math.min(620, height - 40);
-    const px = (width - pw) / 2;
-    const py = (height - ph) / 2;
 
-    const pnl = panel(this, px, py, pw, ph, { alpha: 0.97 });
-    const title = this.add
-      .text(width / 2, py + 34, 'TOP RUNNERS', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '32px',
-        color: '#e84393',
+    // ---- the standings board, styled on their 43-QUALIFIED screen: a cyan
+    // scoreboard prop on yellow posts, a lime count-banner over its top edge,
+    // and a 4×8 tile grid — green for ranked runners, pink for open slots ----
+    const pw = Math.min(880, width - 48);
+    const ph = Math.min(548, height - 84);
+    const px = (width - pw) / 2;
+    const py = (height - ph) / 2 + 20;
+
+    // suspending posts + rope lattice under the board (carnival-sign garnish)
+    const posts = this.add.graphics();
+    const postY = py + ph;
+    for (const fx of [px + pw * 0.12, px + pw * 0.88]) {
+      posts.fillStyle(0x8a5a1e, 1).fillRect(fx - 9, postY + 8, 18, height - postY);
+      posts.fillStyle(0xe8b23a, 1).fillRect(fx - 9, postY, 18, height - postY);
+    }
+    posts.lineStyle(3, 0xf7d774, 0.55);
+    for (let i = 0; i <= 10; i++) {
+      const nx = px + pw * 0.08 + (pw * 0.84 * i) / 10;
+      posts.lineBetween(nx, postY + 4, nx + 26, postY + 56);
+      posts.lineBetween(nx + 26, postY + 4, nx, postY + 56);
+    }
+    posts.lineStyle(4, 0xe8b23a, 0.9).lineBetween(px + pw * 0.06, postY + 6, px + pw * 0.94, postY + 6);
+
+    // the board face — cyan slab, deeper rim, white hairline, dark under-shadow
+    const board = this.add.graphics();
+    board.fillStyle(0x0a0710, 0.4).fillRoundedRect(px + 6, py + 8, pw, ph, 22);
+    board.fillStyle(FG.cyanDeep, 1).fillRoundedRect(px - 3, py - 3, pw + 6, ph + 6, 24);
+    board.fillStyle(FG.cyan, 1).fillRoundedRect(px, py, pw, ph, 20);
+    board.lineStyle(3, 0xffffff, 0.55).strokeRoundedRect(px + 8, py + 8, pw - 16, ph - 16, 14);
+
+    // lime count-banner overlapping the board's top edge — "NN ON THE BOARD!"
+    const bw = 400,
+      bh = 58,
+      bx = width / 2 - bw / 2,
+      by = py - 24;
+    const banG = this.add.graphics();
+    banG.fillStyle(0x2e7d1f, 1).fillRoundedRect(bx + 3, by + 5, bw, bh, 14);
+    banG.fillStyle(0x5fd62a, 1).fillRoundedRect(bx, by, bw, bh, 14);
+    banG.lineStyle(3, 0xffffff, 0.85).strokeRoundedRect(bx + 2, by + 2, bw - 4, bh - 4, 12);
+    this.boardBanner = this.add
+      .text(width / 2, by + bh / 2 - 2, 'TOP RUNNERS', {
+        fontFamily: FG_FONT,
+        fontSize: '30px',
+        color: '#ffffff',
       })
       .setOrigin(0.5)
-      .setShadow(0, 4, '#9c2160', 0, true, false);
-    const sub = this.add
-      .text(width / 2, py + 68, 'who is furthest up the road north', {
+      .setShadow(0, 3, '#2e7d1f', 0, true, false);
+
+    // ---- 4×8 tile grid — green = a ranked runner, pink = open slot ----
+    const COLS_N = 8,
+      ROWS_N = 4; // top 32 only
+    const gx = px + 26,
+      gy = py + 54;
+    const gw = pw - 52,
+      gh = ph - 54 - 86; // footer keeps ~86px
+    const cw = gw / COLS_N,
+      ch = gh / ROWS_N;
+    const tw = Math.min(cw - 8, 96),
+      th = Math.min(ch - 8, 78);
+    this.boardTiles = [];
+    for (let i = 0; i < COLS_N * ROWS_N; i++) {
+      const tx = gx + (i % COLS_N) * cw + (cw - tw) / 2;
+      const ty = gy + Math.floor(i / COLS_N) * ch + (ch - th) / 2;
+      const face = this.add.graphics(); // repainted per state
+      const paint = (fill: number, deep: number) => {
+        face.clear();
+        face.fillStyle(deep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
+        face.fillStyle(fill, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
+      };
+      paint(FG.pink, FG.pinkDeep); // open slot until a runner lands
+      const rank = this.add
+        .text(tx + 7, ty + 6, '', { fontFamily: UI_FONT, fontSize: '10px', fontStyle: '800', color: '#0b4f10' })
+        .setOrigin(0, 0);
+      const name = this.add
+        .text(tx + tw / 2, ty + th / 2 - 6, '', {
+          fontFamily: FG_FONT,
+          fontSize: '13px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5)
+        .setShadow(0, 2, '#0b4f10', 0, true, false);
+      const stat = this.add
+        .text(tx + tw / 2, ty + th - 16, '', {
+          fontFamily: UI_FONT,
+          fontSize: '10px',
+          fontStyle: '700',
+          color: '#d8ffd0',
+        })
+        .setOrigin(0.5);
+      const c = this.add.container(0, 0, [face, rank, name, stat]);
+      this.boardTiles.push({ c, face, rank, name, stat });
+      // stash per-tile paint coords for renderBoard
+      c.setData('px', tx).setData('py', ty).setData('pw', tw).setData('ph', th);
+    }
+    const me = this.boardMeTxt = this.add
+      .text(width / 2, py + ph - 62, '', {
         fontFamily: UI_FONT,
         fontSize: '14px',
-        fontStyle: '600',
-        color: '#7a8a99',
+        fontStyle: '700',
+        color: '#083048',
       })
       .setOrigin(0.5);
-    const rows = this.add
-      .text(px + 30, py + 96, 'reaching the board…', {
-        fontFamily: UI_FONT,
-        fontSize: '15px',
-        fontStyle: '600',
-        color: '#33475a',
-        lineSpacing: 7,
-      })
-      .setName('boardRows');
-    const me = this.add
-      .text(width / 2, py + ph - 66, '', {
-        fontFamily: UI_FONT,
-        fontSize: '15px',
-        fontStyle: '600',
-        color: '#0f7fb8',
-      })
-      .setOrigin(0.5)
-      .setName('boardMe');
     const hint = this.add
-      .text(width / 2, py + ph - 44, 'win levels to climb · deeper north = higher rank', {
+      .text(width / 2, py + ph - 38, 'win levels to climb · deeper north = higher rank', {
         fontFamily: UI_FONT,
         fontSize: '11px',
         fontStyle: '600',
-        color: '#7a8a99',
+        color: '#085070',
       })
       .setOrigin(0.5);
     // close affordance — dark rimmed dot, same as every modal's
@@ -787,14 +863,13 @@ export class AdventureScene extends Phaser.Scene {
 
     // name row — tap SET to name your runner (shares the online lobby name)
     const nameLbl = this.add
-      .text(px + 30, py + ph - 96, `NAME: ${playerName() || '—'}`, {
+      .text(px + 34, py + ph - 62, `NAME: ${playerName() || '—'}`, {
         fontFamily: UI_FONT,
-        fontSize: '13px',
-        fontStyle: '600',
-        color: '#7a8a99',
+        fontSize: '12px',
+        fontStyle: '700',
+        color: '#085070',
       })
-      .setOrigin(0, 0.5)
-      .setName('boardName');
+      .setOrigin(0, 0.5);
     const doSet = () => {
       this.modalOpen = true;
       void promptModal(this, {
@@ -817,11 +892,11 @@ export class AdventureScene extends Phaser.Scene {
       });
     };
     // SET — small cyan candy pill like the lobby's join action
-    const sbw = 64, sbh = 34, scx = px + pw - 40, scy = py + ph - 96;
+    const sbw = 64, sbh = 34, scx = px + pw - 46, scy = py + ph - 62;
     const sg = this.add.graphics();
-    sg.fillStyle(shade(UI.water, -38), 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 + 2, sbw, sbh, sbh / 2);
-    sg.fillStyle(UI.water, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 - 3, sbw, sbh - 2, sbh / 2);
-    sg.fillStyle(0xffffff, 0.22).fillRoundedRect(scx - sbw / 2 + 6, scy - sbh / 2 + 1, sbw - 12, 10, 5);
+    sg.fillStyle(0x0b6a99, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 + 2, sbw, sbh, sbh / 2);
+    sg.fillStyle(0xffffff, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 - 3, sbw, sbh - 2, sbh / 2);
+    sg.fillStyle(FG.cyan, 1).fillRoundedRect(scx - sbw / 2 + 3, scy - sbh / 2, sbw - 6, sbh - 6, sbh / 2 - 2);
     const setBtn = this.add
       .text(scx, scy - 2, 'SET', {
         fontFamily: DISPLAY_FONT,
@@ -835,44 +910,101 @@ export class AdventureScene extends Phaser.Scene {
     // screen-space tap rects — board sits in an sf0 container, children miss input
     this.boardHit = [
       { x: px + pw - 58, y: py + 4, w: 56, h: 44, fn: () => this.closeBoard() },
-      { x: px + pw - 76, y: py + ph - 118, w: 72, h: 44, fn: doSet },
+      { x: scx - 36, y: scy - 22, w: 72, h: 44, fn: doSet },
     ];
 
-    layer.add([bg, dim, pnl, title, sub, rows, me, hint, cdG, close, nameLbl, sg, setBtn]);
+    layer.add([bg, dim, posts, board, banG, this.boardBanner, ...this.boardTiles.map((t) => t.c), me, hint, cdG, close, nameLbl, sg, setBtn]);
 
     this.renderBoard();
   }
 
   private async renderBoard() {
-    const rowsObj = this.children.getByName('boardRows') as Phaser.GameObjects.Text | null;
-    const meObj = this.children.getByName('boardMe') as Phaser.GameObjects.Text | null;
     try {
       const b = await fetchBoard();
-      if (!this.boardLayer || !rowsObj) return; // closed mid-flight
-      rowsObj.setText(
-        b.top.length
-          ? b.top
-              .slice(0, 20)
-              .map((e) => `${String(e.rank).padStart(2)}  ${e.name.slice(0, 14).padEnd(14)}  L${e.level}  ·  ★${e.stars}`)
-              .join('\n')
-          : 'no runners yet — be the first to post a level!',
-      );
-      meObj?.setText(
-        b.me
-          ? `you: #${b.me.rank}  ·  L${b.me.level}  ·  ★${b.me.stars}`
-          : 'you: unranked — clear a level to join the board',
-      );
+      if (!this.boardLayer || !this.boardTiles.length) return; // closed mid-flight
+      const top = b.top.slice(0, 32);
+      const myRank = b.me?.rank ?? 0;
+      this.boardBanner?.setText(top.length ? `${top.length} ON THE BOARD!` : 'BE THE FIRST!');
+      for (let i = 0; i < this.boardTiles.length; i++) {
+        const t = this.boardTiles[i];
+        const e = top[i];
+        const tx = t.c.getData('px') as number,
+          ty = t.c.getData('py') as number,
+          tw = t.c.getData('pw') as number,
+          th = t.c.getData('ph') as number;
+        t.face.clear();
+        if (!e) {
+          // open slot stays flat pink — the reference's empty squares
+          t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
+          t.face.fillStyle(FG.pink, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
+          t.rank.setText('');
+          t.name.setText('');
+          t.stat.setText('');
+          continue;
+        }
+        const mine = e.rank === myRank;
+        // green = ranked; your own tile goes blue + white rim, like their
+        // local-player highlight
+        const fill = mine ? 0x2f7fd0 : 0x43d43c;
+        const deep = mine ? 0x18508e : 0x2fa01f;
+        t.face.fillStyle(deep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
+        t.face.fillStyle(fill, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
+        if (mine) t.face.lineStyle(3, 0xffffff, 0.95).strokeRoundedRect(tx + 1.5, ty + 1.5, tw - 3, th - 5, 7);
+        t.rank.setText(`#${e.rank}`).setColor(mine ? '#ffffff' : '#0b4f10');
+        t.name.setText(e.name.slice(0, 10));
+        t.stat.setText(`L${e.level} · ★${e.stars}`).setColor(mine ? '#ffffff' : '#d8ffd0');
+        // cascade pop — qualified tiles land one after another
+        if (!REDUCED_MOTION) {
+          t.c.setScale(0.6).setAlpha(0);
+          this.tweens.add({
+            targets: t.c,
+            scale: 1,
+            alpha: 1,
+            duration: 160,
+            delay: 24 * i,
+            ease: 'Back.easeOut',
+          });
+        }
+      }
+      this.boardMeLine(top, b.me);
     } catch {
-      rowsObj?.setText(
-        'the board is offline right now\n(it lives on our game server — same one as online play)',
-      );
-      meObj?.setText('');
+      if (!this.boardLayer) return;
+      this.boardBanner?.setText('BOARD OFFLINE');
+      for (const t of this.boardTiles) {
+        const tx = t.c.getData('px') as number,
+          ty = t.c.getData('py') as number,
+          tw = t.c.getData('pw') as number,
+          th = t.c.getData('ph') as number;
+        t.face.clear();
+        t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
+        t.face.fillStyle(FG.pink, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
+      }
+      this.boardMeLine([], null, 'the board is offline right now — it lives on our game server');
     }
+  }
+
+  /** the "you" line — below the grid, always visible even unranked */
+  private boardMeLine(top: { rank: number }[], me: { rank: number; level: number; stars: number } | null, err?: string) {
+    const el = this.boardMeTxt;
+    if (!el) return;
+    el.setText(
+      err ??
+        (me
+          ? me.rank <= 32
+            ? `you're on the board — #${me.rank} · L${me.level} · ★${me.stars}`
+            : `you: #${me.rank} — just outside the top 32 · L${me.level} · ★${me.stars}`
+          : top.length
+            ? 'you: unranked — clear a level to join the board'
+            : 'no runners yet — be the first to post a level!'),
+    );
   }
 
   private closeBoard() {
     this.boardLayer?.destroy();
     this.boardLayer = null;
+    this.boardTiles = [];
+    this.boardBanner = undefined;
+    this.boardMeTxt = undefined;
     this.boardHit = [];
   }
 

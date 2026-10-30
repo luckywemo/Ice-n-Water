@@ -5,6 +5,7 @@ import { FG, FG_FONT } from '../fgui';
 import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
 import { currentChar } from '../characters';
+import { fitZoom } from '../mobile';
 
 // DropScene — the FALL GUYS "populating" beat, retold our way: the furry
 // bean skydives through a cyan sky while the level name lands under it.
@@ -38,7 +39,7 @@ export class DropScene extends Phaser.Scene {
     this.heroMs = perfInterval(); // re-read per create — the pick can change
     const W = this.scale.width,
       H = this.scale.height;
-    const zoom = Math.min(W / VW, H / VH);
+    const zoom = fitZoom(W, H, VW, VH);
     this.cameras.main.setZoom(zoom).centerOn(VW / 2, VH / 2);
 
     // sky — oversized so letterbox margins stay blue at any aspect

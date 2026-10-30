@@ -2,11 +2,12 @@ import Phaser from 'phaser';
 import { Client, Room } from '@colyseus/sdk';
 import { CONFIG } from '../config';
 import { SERVER_URL } from '../net';
-import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHandle } from '../ui';
+import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHandle, textInputFocused } from '../ui';
 import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
 import { keyHintsOn } from '../mobile';
+import { authTicket } from '../xauth';
 
 type LobbyPlayer = {
   name: string;
@@ -54,8 +55,10 @@ export class LobbyScene extends Phaser.Scene {
     const cw = 640;
     const ch = 500;
     const cx = width / 2;
-    // leave room for the BACK pill under the card on short screens
-    const cy0 = Math.min(height / 2 - ch / 2 + 10, height - ch - 74);
+    // leave room for the BACK pill under the card on short screens; never let
+    // the card top go above the frame (the old min() pushed it off-screen on
+    // very short windows)
+    const cy0 = Math.max(6, Math.min(height / 2 - ch / 2 + 10, height - ch - 74));
     fgBackdrop(this, width, height, cx, cy0 + ch * 0.42);
     panel(this, cx - cw / 2, cy0, cw, ch, { depth: 3 });
     this.menuGroup = this.add.container(0, 0).setDepth(5);
@@ -249,6 +252,9 @@ export class LobbyScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     const onResize = (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — a restart would
+      // destroy the name/code inputs mid-keystroke
+      if (textInputFocused()) return;
       const moved = Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24;
       lastW = sz.width;
       lastH = sz.height;
@@ -272,9 +278,13 @@ export class LobbyScene extends Phaser.Scene {
   private async createRoom() {
     this.statusText.setText('connecting…');
     try {
+      // room ticket proves the X session to the game server — joins
+      // without one are rejected (unauthed dev passes with no ticket)
+      const ticket = await authTicket();
       this.room = await this.client.create<LobbyStateShape>('game', {
         mode: this.lobbyMode,
         name: this.myName(),
+        ticket,
       });
     } catch {
       const local = SERVER_URL.includes('localhost') || /192\.168|10\.|172\./.test(SERVER_URL);
@@ -296,7 +306,11 @@ export class LobbyScene extends Phaser.Scene {
     }
     this.statusText.setText('joining…');
     try {
-      this.room = await this.client.joinById<LobbyStateShape>(code, { name: this.myName() });
+      const ticket = await authTicket();
+      this.room = await this.client.joinById<LobbyStateShape>(code, {
+        name: this.myName(),
+        ticket,
+      });
     } catch (e: any) {
       this.statusText.setText(`join failed (${e?.code ?? 'error'}) — check the code`);
       return;

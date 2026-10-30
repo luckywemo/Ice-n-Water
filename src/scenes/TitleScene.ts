@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI } from '../ui';
+import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
-import { TouchControls, keyHintsOn } from '../mobile';
+import { session } from '../xauth';
+import { TouchControls, keyHintsOn, fitZoom } from '../mobile';
 import {
   FG,
   FG_FONT,
@@ -204,7 +205,7 @@ export class TitleScene extends Phaser.Scene {
     // composition is identical on any window (no max width, no reflow)
     const vw = 1280;
     const vh = 800;
-    const stageZoom = Math.min(width / vw, height / vh);
+    const stageZoom = fitZoom(width, height, vw, vh);
     this.cameras.main.setZoom(stageZoom);
     this.cameras.main.centerOn(vw / 2, vh / 2);
     // visible world edges — the stage letterboxes on one axis, so edge-anchored
@@ -216,6 +217,9 @@ export class TitleScene extends Phaser.Scene {
     let lastW = width;
     let lastH = height;
     this.scale.on('resize', (sz: Phaser.Structs.Size) => {
+      // soft keyboard = a fake resize while typing — restarting here
+      // destroys the open prompt (and the DOM input with it)
+      if (textInputFocused()) return;
       if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
         lastW = sz.width;
         lastH = sz.height;
@@ -269,16 +273,20 @@ export class TitleScene extends Phaser.Scene {
     const podTopY = vh * 0.81;
     fgRings(this, vw, vh, podX, vh * 0.45);
 
-    const renameRunner = () => {
+    const renameRunner = (required = false) => {
       this.promptOpen = true;
       void promptModal(this, {
         title: 'NAME YOUR RUNNER',
-        sub: 'max 10 letters — shows on the board + in online lobbies',
+        sub: required
+          ? 'first things first — pick the name the board knows you by'
+          : 'max 10 letters — shows on the board + in online lobbies',
         label: 'RUNNER NAME',
         placeholder: 'your name',
-        value: playerName(),
+        // a verified handle prefills the field — still fully editable
+        value: playerName() || (session()?.handle ?? '').slice(0, 10),
         maxLen: 10,
         okLabel: 'SAVE',
+        required,
       }).then((n) => {
         this.promptOpen = false;
         if (n === null) return;
@@ -286,7 +294,7 @@ export class TitleScene extends Phaser.Scene {
         this.events.emit('runner-renamed');
       });
     };
-    this.askName = renameRunner;
+    this.askName = () => renameRunner(true);
 
     this.topBar = fgTopBar(
       this,
@@ -436,7 +444,9 @@ export class TitleScene extends Phaser.Scene {
 
     // character picker — the podium bean IS the selector; ‹ › cycles the cast
     if (this.hero3d.ok) {
-      const pickY = podTopY + 74; // plate block centered on the podium's front face
+      // plate block centered on the podium's front face — but clamped to the
+      // visible bottom: the cover-boosted zoom crops stage space below visB
+      const pickY = Math.min(podTopY + 74, visB - 52);
       const arrowStyle = {
         fontFamily: FG_FONT,
         fontSize: '44px',
@@ -517,11 +527,18 @@ export class TitleScene extends Phaser.Scene {
       this.refreshCharPlate?.();
     });
 
-    // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
-    // keycap chrome — hidden on touch and when the user kills key hints;
-    // the top bar's online icon remains the entry either way
-    if (keyHintsOn())
-      fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
+    // --- invite above PLAY (their "Ⓨ Invite Players" analog) ---
+    // same chrome everywhere — the circle carries a Y keycap where keys
+    // exist, the online glyph where they don't
+    fgKeycapHint(
+      this,
+      visR - 218,
+      visB - 152,
+      keyHintsOn() ? 'Y' : undefined,
+      'PLAY WITH FRIENDS',
+      () => this.gate(toOnline),
+      { icon: 'online' },
+    );
 
     // --- PLAY! — bottom-right; left edge is the reference's "/" slant,
     // right end runs off the frame edge cropped ---

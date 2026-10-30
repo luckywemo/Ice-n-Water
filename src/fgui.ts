@@ -739,17 +739,21 @@ export function fgKeycapHint(
   scene: Phaser.Scene,
   x: number,
   y: number,
-  key: string,
+  key: string | undefined,
   label: string,
   onDown: () => void,
+  opts?: { icon?: FgIcon },
 ) {
   const g = scene.add.graphics().setDepth(20);
   g.fillStyle(FG.ink, 0.9).fillCircle(x, y, 12);
   g.lineStyle(2, 0xffffff, 0.85).strokeCircle(x, y, 12);
   const kt = scene.add
-    .text(x, y + 1, key, { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#f2c531' })
+    .text(x, y + 1, key ?? '', { fontFamily: FG_BODY, fontSize: '13px', fontStyle: '800', color: '#f2c531' })
     .setOrigin(0.5)
     .setDepth(21);
+  // the circle's glyph slot — keycap letter where keys exist, icon where
+  // they don't (same gold, same disc: touch gets the look, not the key)
+  if (!key && opts?.icon) drawFgIcon(g, opts.icon, x, y, 13, 0xf2c531);
   const lt = scene.add
     .text(x + 22, y + 1, label, {
       fontFamily: FG_BODY,
@@ -762,7 +766,7 @@ export function fgKeycapHint(
     .setShadow(0, 3, '#7a5800', 4, true, false);
   const w = 22 + lt.width + 14;
   scene.add
-    .zone(x - 14, y - 16, w, 32)
+    .zone(x - 14, y - 20, w, 40)
     .setOrigin(0, 0)
     .setDepth(21)
     .setInteractive({ useHandCursor: true })
@@ -817,12 +821,13 @@ export function promptModal(
     maxLen?: number;
     okLabel?: string;
     depth?: number;
+    required?: boolean; // first-run gate — no cancel path, empty submits shake
     field?: { base: number; ring: number; crown: number }; // underlay palette — cyan on the map
   },
 ): Promise<string | null> {
   const {
     title, sub = '', label = '', placeholder = '', value = '', maxLen = 16,
-    okLabel = 'OK', depth = 80, field,
+    okLabel = 'OK', depth = 80, required = false, field,
   } = opts;
   const { width: vw, height: vh } = scene.scale;
   const cx = vw / 2;
@@ -839,15 +844,20 @@ export function promptModal(
   };
 
   // the ONLINE underlay: yellow field + concentric rings + crown stamps,
-  // then a light veil so the modal reads over the field. Overscan is large
-  // because scrollFactor(0) still scales about the view centre under zoom.
-  track(fgCrownField(scene, vw, vh, cx, cy, field?.base, field?.ring, field?.crown));
+  // then a light veil so the modal reads over the field. The backdrop must
+  // always cover 100% of the screen — sf0 surfaces still scale about the
+  // view centre under camera zoom, so divide the span by the zoom (min 1 —
+  // zoomed-in cameras over-cover fine as-is).
+  const cz = Math.min(scene.cameras.main.zoom || 1, 1);
+  track(fgCrownField(scene, vw / cz, vh / cz, cx, cy, field?.base, field?.ring, field?.crown));
   const dim = track(
-    scene.add.rectangle(-vw, -vh, vw * 3, vh * 3, 0x081420, 0.22).setOrigin(0).setInteractive(),
+    scene.add.rectangle(-vw / cz, -vh / cz, (vw * 3) / cz, (vh * 3) / cz, 0x081420, 0.22).setOrigin(0).setInteractive(),
   );
   const pw = Math.min(440, vw - 40);
   const ph = 250;
   track(panel(scene, cx - pw / 2, cy - ph / 2, pw, ph), depth + 1);
+  // swallows taps on the card body so they don't reach the dim's tap-to-cancel
+  track(scene.add.zone(cx - pw / 2, cy - ph / 2, pw, ph).setOrigin(0, 0).setInteractive(), depth + 1);
   // header — pink Titan One, deep-pink shadow: the ONLINE card's signature
   track(
     scene.add
@@ -886,34 +896,38 @@ export function promptModal(
       depth + 2,
     );
   }
-  // close affordance — dark rimmed dot, top-right like every modal
-  const cdG = track(scene.add.graphics(), depth + 2);
-  cdG.fillStyle(UI.shade, 0.5).fillCircle(cx + pw / 2 - 27, cy - ph / 2 + 27, 15);
-  cdG.fillStyle(UI.ink, 1).fillCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 14);
-  cdG.lineStyle(2, 0xffffff, 0.85).strokeCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 13);
-  const closeT = track(
-    scene.add
-      .text(cx + pw / 2 - 28, cy - ph / 2 + 25, '✕', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '13px',
-        color: '#f5efe0',
-      })
-      .setOrigin(0.5)
-      .setPadding(10)
-      .setInteractive({ useHandCursor: true }),
-    depth + 3,
-  );
-  track(
-    scene.add
-      .text(cx + pw / 2 - 16, cy + ph / 2 - 14, 'esc — cancel', {
-        fontFamily: UI_FONT,
-        fontSize: '11px',
-        fontStyle: '600',
-        color: '#b9c4cf',
-      })
-      .setOrigin(1, 1),
-    depth + 2,
-  );
+  // close affordance — dark rimmed dot, top-right like every modal.
+  // Required prompts render no way out at all.
+  let closeT: Phaser.GameObjects.Text | null = null;
+  if (!required) {
+    const cdG = track(scene.add.graphics(), depth + 2);
+    cdG.fillStyle(UI.shade, 0.5).fillCircle(cx + pw / 2 - 27, cy - ph / 2 + 27, 15);
+    cdG.fillStyle(UI.ink, 1).fillCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 14);
+    cdG.lineStyle(2, 0xffffff, 0.85).strokeCircle(cx + pw / 2 - 28, cy - ph / 2 + 26, 13);
+    closeT = track(
+      scene.add
+        .text(cx + pw / 2 - 28, cy - ph / 2 + 25, '✕', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '13px',
+          color: '#f5efe0',
+        })
+        .setOrigin(0.5)
+        .setPadding(10)
+        .setInteractive({ useHandCursor: true }),
+      depth + 3,
+    );
+    track(
+      scene.add
+        .text(cx + pw / 2 - 16, cy + ph / 2 - 14, 'esc — cancel', {
+          fontFamily: UI_FONT,
+          fontSize: '11px',
+          fontStyle: '600',
+          color: '#b9c4cf',
+        })
+        .setOrigin(1, 1),
+      depth + 2,
+    );
+  }
 
   const { el, dom } = domInput(scene, cx - 120, cy - 8, placeholder, maxLen, 240);
   el.value = value;
@@ -931,32 +945,49 @@ export function promptModal(
       dom.destroy();
       resolve(v);
     };
+    // required mode: an empty submit shakes the input instead of closing
+    const submit = () => {
+      const v = el.value.trim();
+      if (required && !v) {
+        scene.tweens.add({ targets: dom, x: '+=7', yoyo: true, repeat: 3, duration: 45 });
+        el.focus();
+        return;
+      }
+      cleanup(v || (required ? v : null));
+    };
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation(); // keep Phaser's global key handlers out of the field
-      if (e.key === 'Enter') cleanup(el.value.trim());
-      else if (e.key === 'Escape') cleanup(null);
+      if (e.key === 'Enter') submit();
+      else if (e.key === 'Escape' && !required) cleanup(null);
     };
-    const onEsc = () => cleanup(null);
+    const onEsc = () => {
+      if (!required) cleanup(null);
+    };
     el.addEventListener('keydown', onKey);
     scene.input.keyboard?.on('keydown-ESC', onEsc);
     scene.events.once('shutdown', () => cleanup(null)); // never leak the DOM el
-    dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
-    closeT.on('pointerdown', () => cleanup(null));
+    if (!required) {
+      dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
+      closeT?.on('pointerdown', () => cleanup(null));
+    }
 
-    const ok = pillButton(scene, cx - 78, cy + ph / 2 - 50, 140, okLabel, {
+    // required = single centered SAVE; optional = OK + CANCEL pair
+    const ok = pillButton(scene, required ? cx : cx - 78, cy + ph / 2 - 50, 140, okLabel, {
       fill: UI.danfo,
       textColor: UI.ink,
       fontSize: 15,
       depth: depth + 2,
-      onDown: () => cleanup(el.value.trim()),
-    });
-    const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
-      fill: UI.ink,
-      fontSize: 15,
-      depth: depth + 2,
-      onDown: () => cleanup(null),
+      onDown: submit,
     });
     track(ok.container, depth + 2);
-    track(cancel.container, depth + 2);
+    if (!required) {
+      const cancel = pillButton(scene, cx + 78, cy + ph / 2 - 50, 140, 'CANCEL', {
+        fill: UI.ink,
+        fontSize: 15,
+        depth: depth + 2,
+        onDown: () => cleanup(null),
+      });
+      track(cancel.container, depth + 2);
+    }
   });
 }

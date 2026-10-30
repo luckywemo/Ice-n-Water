@@ -17,6 +17,17 @@ const DARK = 0x0c0c0c; // eyes — negro neutro (sin tinte cálido)
 // in characters.ts.
 export type BeanShape = 'bean' | 'round' | 'tall';
 export type BeanGear = 'none' | 'cap' | 'hardhat' | 'band' | 'spikes' | 'crown' | 'frost';
+/** champion regalia as PAINT — no accessories, no held items, no hats on
+ *  the cast; identity lives in coat colour, silhouette, and marks baked
+ *  into the torso texture so they show through the coat like dyed fur:
+ *  strip = the agbada chest embroidery strip, bead = coral dot arc at the
+ *  collar, shoe = foot colour, line = flipper-tip accent. */
+export interface BeanMarks {
+  strip?: number;
+  bead?: number;
+  shoe?: number;
+  line?: number;
+}
 export interface BeanModel {
   shape?: BeanShape;
   gear?: BeanGear;
@@ -24,6 +35,8 @@ export interface BeanModel {
   rage?: boolean;
   /** coat strand length multiplier — the ice runs shaggy */
   furLen?: number;
+  /** painted regalia — strip, bead dots, footwear */
+  marks?: BeanMarks;
 }
 
 export class Hero3D {
@@ -49,6 +62,7 @@ export class Hero3D {
   private shadowMesh?: THREE.Mesh;
   private shellMeshes: THREE.Mesh[] = [];
   private gearParts: THREE.Object3D[] = [];
+
   private gearCv?: HTMLCanvasElement;
   private gearCtx?: CanvasRenderingContext2D;
   private furLen = 1; // drawFur strand-length multiplier
@@ -402,6 +416,92 @@ export class Hero3D {
           icicle.rotation.z = x * 0.35; // splay with the crown curve
           this.gearParts.push(icicle);
         }
+      }
+    }
+
+    // --- marks — champion regalia as PAINT, never geometry. The torso gets
+    // a canvas texture: white base so material.color still drives the coat
+    // via setVariant, with the marks laid at canvas-centre → texture offset
+    // .5 lands them on the capsule's +z front seam. Fur covers it like dye.
+    if (model.marks) {
+      const d = model.marks;
+      if (d.strip !== undefined || d.bead !== undefined) {
+        const cv = document.createElement('canvas');
+        cv.width = 256;
+        cv.height = 256;
+        const c = cv.getContext('2d')!;
+        c.fillStyle = '#ffffff'; // white base → body colour shows through
+        c.fillRect(0, 0, 256, 256);
+        if (d.strip !== undefined) {
+          const ind = '#' + d.strip.toString(16).padStart(6, '0');
+          c.fillStyle = ind;
+          c.fillRect(99, 78, 58, 174); // chest strip, centred on the front seam
+          c.strokeStyle = 'rgba(255,255,255,0.85)';
+          c.lineWidth = 3;
+          c.strokeRect(103, 82, 50, 166); // border threads
+          c.lineWidth = 2;
+          c.strokeRect(109, 88, 38, 154);
+          c.fillStyle = 'rgba(255,255,255,0.8)';
+          for (let y = 104; y < 200; y += 26) {
+            // running diamond + bar motif
+            c.save();
+            c.translate(128, y);
+            c.rotate(Math.PI / 4);
+            c.fillRect(-6.5, -6.5, 13, 13);
+            c.restore();
+            c.fillRect(116, y + 9, 24, 3);
+          }
+          for (const ox of [-9, 9]) {
+            // interlocked knot at the hem
+            c.save();
+            c.translate(128 + ox, 226);
+            c.rotate(Math.PI / 4);
+            c.lineWidth = 4.5;
+            c.strokeRect(-10, -10, 20, 20);
+            c.restore();
+          }
+        }
+        if (d.bead !== undefined) {
+          // coral dots — an arc dipping low on the open chest below the
+          // face oval, where the coat is sparsest
+          const col = '#' + d.bead.toString(16).padStart(6, '0');
+          c.fillStyle = col;
+          for (let i = 0; i < 11; i++) {
+            const t = i / 10; // 0..1 across the chest
+            const x = 128 + (t - 0.5) * 132;
+            const y = 114 - Math.pow(Math.abs(t - 0.5) * 2, 1.7) * 30; // U-dip at centre
+            c.beginPath();
+            c.arc(x, y, 7, 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.offset.x = 0.25; // canvas centre → capsule +z front
+        body.map = tex;
+        body.needsUpdate = true;
+        // dye the coat itself — shells share the torso's UVs, so the marks
+        // tint the strands too: the regalia reads at every fur depth
+        for (const sm of this.shellMats) {
+          sm.map = tex;
+          sm.needsUpdate = true;
+        }
+      }
+      // foot + flipper-tip paint — existing rig parts, colour only
+      if (d.shoe !== undefined) {
+        const shoeMat = mat(d.shoe, 0.45);
+        for (const foot of [this.footL, this.footR])
+          foot?.traverse((o) => {
+            if (o instanceof THREE.Mesh) o.material = shoeMat;
+          });
+      }
+      if (d.line !== undefined) {
+        const lineMat = mat(d.line, 0.35);
+        for (const fl of [this.flipL, this.flipR])
+          fl?.elbow.traverse((o) => {
+            if (o instanceof THREE.Mesh) o.material = lineMat;
+          });
       }
     }
 

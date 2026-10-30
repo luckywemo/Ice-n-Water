@@ -37,6 +37,17 @@ export function shade(color: number, pct: number): number {
 }
 export const hex = (n: number) => '#' + n.toString(16).padStart(6, '0');
 
+/** true while a text field owns focus — the mobile soft keyboard then
+    shrinks the visual viewport by hundreds of px, and a resize-triggered
+    scene.restart() would murder whatever modal the user is typing into.
+    Scenes that restart-on-resize should bail early on this and skip the
+    size bookkeeping too, so the post-keyboard resize still compares
+    against pre-keyboard dimensions. */
+export function textInputFocused(): boolean {
+  const t = document.activeElement?.tagName;
+  return t === 'INPUT' || t === 'TEXTAREA';
+}
+
 /** Elastic pop-in for text/sprites — a gentle fade under reduced motion. */
 export function popIn(
   scene: Phaser.Scene,

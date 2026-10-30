@@ -6,6 +6,7 @@
 
 import { adventureProgress, totalStars } from './adventure';
 import { SERVER_URL } from './net';
+import { authHeaders, session } from './xauth';
 
 const BOARD_URL = (import.meta.env.VITE_BOARD_URL as string | undefined) ?? '';
 const UP_URL = (import.meta.env.VITE_UPSTASH_REST_URL as string | undefined) ?? '';
@@ -26,6 +27,10 @@ const PID_KEY = 'icenwater_pid';
 const NAME_KEY = 'icenwater_name';
 
 export function playerId(): string {
+  // signed-in runners are their verified X id — the api enforces the
+  // same binding server-side, so a forged body can never post as you
+  const x = session();
+  if (x) return `x_${x.id}`;
   let id = localStorage.getItem(PID_KEY);
   if (!id) {
     id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -101,7 +106,7 @@ export function submitAdventureScore(force = false) {
   } else {
     fetch(`${REST_API}${USE_WORKER ? '/score' : '/api/score'}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ id, name, level, stars }),
       signal: AbortSignal.timeout(6000),
     }).catch(() => {
@@ -149,9 +154,13 @@ export async function fetchBoard(): Promise<Board> {
     return { top, me };
   }
 
+  // two contracts: the deployed api (vercel/worker) takes the session
+  // and derives `me` itself; the local colyseus dev api takes ?me=<id>
   const res = await fetch(
-    `${REST_API}${USE_WORKER ? '/board' : '/api/leaderboard'}?me=${playerId()}`,
-    { signal: AbortSignal.timeout(6000) },
+    USE_WORKER
+      ? `${REST_API}/board`
+      : `${REST_API}/api/leaderboard?me=${playerId()}`,
+    { headers: authHeaders(), signal: AbortSignal.timeout(6000) },
   );
   if (!res.ok) throw new Error(`board ${res.status}`);
   return (await res.json()) as Board;
