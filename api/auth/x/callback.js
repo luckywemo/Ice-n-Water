@@ -10,6 +10,7 @@
 import {
   cors,
   issueToken,
+  kv,
   origin,
   proto,
   readCookie,
@@ -32,7 +33,10 @@ export default async function handler(req, res) {
   setCookie(res, 'iw_oauth', '', 0, proto(req) === 'https'); // single-use, burn it now
   if (!code || !state || !pending) return fail('state', '');
 
+  // cookie is state.verifier[.sid].next — a uuid-shaped third field is
+  // the poll id, everything after it is the return url (urls have dots)
   const [expectedState, verifier, ...rest] = pending.split('.');
+  const sid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(rest[0] ?? '') ? rest.shift() : '';
   const next = rest.join('.');
   if (state !== expectedState || !verifier) return fail('state', next);
 
@@ -79,6 +83,15 @@ export default async function handler(req, res) {
     createdAt: user.data.created_at,
     tweets: user.data.public_metrics?.tweet_count ?? 0,
   });
+  // park it for the polling game window too — postMessage only reaches a
+  // same-process opener, an installed PWA's browser tab is not that
+  if (sid) {
+    try {
+      await kv([['SET', `xhs:${sid}`, session, 'EX', 300]]);
+    } catch (e) {
+      console.error('[x-auth] handoff park failed:', e);
+    }
+  }
   return out(handoff(session, null, next));
 }
 
