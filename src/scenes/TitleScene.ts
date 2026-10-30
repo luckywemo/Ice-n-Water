@@ -519,11 +519,28 @@ export class TitleScene extends Phaser.Scene {
     }
 
     // --- name plate — bottom-left ---
-    const nameT = fgNamePlate(this, visL + 40, visB - 80, 240, 48, playerName() || 'your runner', () =>
-      this.gate(renameRunner),
-    );
+    const sess = session();
+    const plate = fgNamePlate(this, visL + 40, visB - 80, 240, 48, playerName() || 'your runner', () =>
+      this.gate(renameRunner), { handle: sess?.handle });
+    // verified X avatar in the glyph slot — fetched as a blob so the object
+    // URL is same-origin and can't taint the WebGL texture
+    if (sess?.pfp)
+      fetch(sess.pfp)
+        .then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            if (!this.scene.isActive()) return;
+            this.textures.addImage('x-pfp', img);
+            plate.setAvatar('x-pfp');
+          };
+          img.src = url;
+        })
+        .catch(() => {}); // no pfp — the crown stays
     this.events.on('runner-renamed', () => {
-      nameT.setText(playerName() || 'your runner');
+      plate.setName(playerName() || 'your runner');
       this.refreshCharPlate?.();
     });
 

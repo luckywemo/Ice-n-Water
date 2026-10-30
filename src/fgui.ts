@@ -700,6 +700,7 @@ export function fgNamePlate(
   h: number,
   name: string,
   onDown: () => void,
+  opts?: { handle?: string },
 ) {
   const g = scene.add.graphics().setDepth(20);
   g.fillStyle(shade(FG.cyanDeep, -30), 1);
@@ -708,7 +709,8 @@ export function fgNamePlate(
   rrect(g, x, y, w, h - 3, 10);
   g.lineStyle(2, 0xffffff, 0.5);
   g.strokeRoundedRect(x + 1.5, y + 1.5, w - 3, h - 6, 9);
-  // crown glyph
+  // glyph slot — crown by default; a session avatar can replace it via
+  // setAvatar (drawn over it at the same depth)
   const cxx = x + 24;
   const cy = y + h / 2;
   g.fillStyle(FG.gold, 1);
@@ -716,22 +718,46 @@ export function fgNamePlate(
   g.fillTriangle(cxx - 3, cy - 1, cxx, cy - 8, cxx + 3, cy - 1);
   g.fillTriangle(cxx + 3, cy - 1, cxx + 8, cy - 5, cxx + 8, cy + 4);
   g.fillRect(cxx - 8, cy + 4, 16, 3);
+  const two = !!opts?.handle;
   const t = scene.add
-    .text(x + 44, cy + 1, name, {
+    .text(x + 44, two ? cy - 9 : cy + 1, name, {
       fontFamily: FG_BODY,
-      fontSize: '17px',
+      fontSize: two ? '15px' : '17px',
       fontStyle: 'italic 800',
       color: '#ffffff',
     })
     .setOrigin(0, 0.5)
     .setDepth(21);
+  if (two)
+    scene.add
+      .text(x + 44, cy + 10, `@${opts.handle}`, {
+        fontFamily: FG_BODY,
+        fontSize: '11px',
+        fontStyle: '800',
+        color: '#0d3550',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(21);
   scene.add
     .zone(x, y, w, h)
     .setOrigin(0, 0)
     .setDepth(21)
     .setInteractive({ useHandCursor: true })
     .on('pointerdown', onDown);
-  return t;
+  return {
+    setName: (s: string) => t.setText(s),
+    /** circular avatar over the glyph slot — call once the texture exists */
+    setAvatar(key: string) {
+      const img = scene.add.image(cxx, cy, key).setDisplaySize(30, 30).setDepth(21);
+      const maskG = scene.make.graphics({ x: 0, y: 0 }).fillCircle(cxx, cy, 15);
+      img.setMask(maskG.createGeometryMask());
+      scene.add
+        .graphics()
+        .setDepth(22)
+        .lineStyle(2.5, 0xffffff, 0.9)
+        .strokeCircle(cxx, cy, 15);
+    },
+  };
 }
 
 // ------- keycap hint — "Ⓟ PLAY ONLINE" (their "Ⓨ Invite Players" analog) -------
