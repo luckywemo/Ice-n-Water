@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
-import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused } from '../ui';
+import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
@@ -527,11 +527,17 @@ export class TitleScene extends Phaser.Scene {
       this.refreshCharPlate?.();
     });
 
-    // --- invite hint above PLAY (their "Ⓨ Invite Players" analog) ---
-    // keycap chrome — hidden on touch and when the user kills key hints;
-    // the top bar's online icon remains the entry either way
+    // --- invite above PLAY (their "Ⓨ Invite Players" analog) ---
+    // the keycap is chrome, but the action is content — where key hints
+    // don't render (touch, hints off) it must stay reachable as a real
+    // tap target instead of vanishing
     if (keyHintsOn())
       fgKeycapHint(this, visR - 218, visB - 152, 'Y', 'PLAY WITH FRIENDS', () => this.gate(toOnline));
+    else
+      pillButton(this, visR - 128, visB - 152, 230, 'PLAY WITH FRIENDS', {
+        fill: FG.cyan,
+        onDown: () => this.gate(toOnline),
+      });
 
     // --- PLAY! — bottom-right; left edge is the reference's "/" slant,
     // right end runs off the frame edge cropped ---
