@@ -99,6 +99,25 @@ export const pkce = () => {
 };
 export const rand = (n = 16) => randomBytes(n).toString('base64url');
 
+/** Upstash REST pipeline — one POST, commands as [["SET",k,v],...].
+    Returns the array of {result}|{error} replies, or null when redis
+    isn't configured (callers degrade to their non-store path). */
+export async function kv(commands) {
+  const url = process.env.UPSTASH_REST_URL;
+  const tok = process.env.UPSTASH_REST_TOKEN;
+  if (!url || !tok) return null;
+  const res = await fetch(`${url}/pipeline`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tok}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(commands),
+  });
+  if (!res.ok) throw new Error(`upstash ${res.status}`);
+  return res.json();
+}
+
 /** postMessage targets must be the game's own origin — a hand-typed
     opener would otherwise receive the token. X_ALLOWED_ORIGINS adds
     deploys (comma-separated); localhost is always allowed in dev. */

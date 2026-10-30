@@ -122,9 +122,13 @@ function gateOverlay(hashErr: string | null): Promise<XSession | null> {
       el.className = 'gate';
       document.body.appendChild(el);
     }
+    // a per-gate poll id — the callback parks the session under it and
+    // this window redeems it, which works even when postMessage can't
+    // reach us (installed PWA: OAuth ran in a separate browser context)
+    const sid = crypto.randomUUID();
     const authUrl = `${API_URL}/api/auth/x?next=${encodeURIComponent(
       location.href.split('#')[0],
-    )}`;
+    )}&sid=${sid}`;
     el.innerHTML = `
       <img class="mark" src="./icon-192.png" alt="Ice 'N' Water" />
       <div class="word">ICE 'N' WATER</div>
@@ -136,14 +140,39 @@ function gateOverlay(hashErr: string | null): Promise<XSession | null> {
     const err = el.querySelector<HTMLElement>('.gate-err')!;
     if (hashErr) err.textContent = X_ERRORS[hashErr] ?? 'sign-in failed';
 
+    const stop = () => {
+      clearInterval(poll);
+      clearTimeout(to);
+    };
+    const finish = (tok: string) => {
+      stop();
+      localStorage.setItem(TOK_KEY, tok);
+      cur = decode(tok);
+      resolve(cur);
+    };
+
+    // the polling channel — delivers the token wherever this window lives,
+    // regardless of what the auth browser does afterwards
+    const poll = setInterval(() => {
+      fetch(`${API_URL}/api/auth/poll?sid=${sid}`)
+        .then((r) => (r.status === 200 ? r.json() : null))
+        .then((d: { token?: string } | null) => d?.token && finish(d.token))
+        .catch(() => {});
+    }, 1500);
+    const to = setTimeout(() => {
+      stop();
+      err.textContent = 'sign-in timed out — tap connect x to retry';
+    }, 5 * 60 * 1000);
+
     window.addEventListener('message', (e: MessageEvent) => {
       if (e.origin !== new URL(API_URL).origin) return;
       const d = e.data as { type?: string; token?: string; error?: string };
       if (d?.type !== 'iw-x') return;
+      // ack so the handoff page closes itself — without one it assumes the
+      // message was lost (PWA tab has no real opener) and redirects instead
+      (e.source as Window | null)?.postMessage({ type: 'iw-x-ack' }, e.origin);
       if (d.token) {
-        localStorage.setItem(TOK_KEY, d.token);
-        cur = decode(d.token);
-        resolve(cur);
+        finish(d.token);
       } else {
         err.textContent = X_ERRORS[d.error ?? ''] ?? 'sign-in failed';
       }
