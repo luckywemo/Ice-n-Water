@@ -100,16 +100,24 @@ function handoff(token, error, next) {
   const msg = token
     ? 'signed in — you can close this tab'
     : `sign-in failed (${error ?? 'unknown'}) — you can close this tab`;
+  // handoff mechanics: postMessage to the opener, then wait for the game
+  // to ack receipt. An installed-PWA sign-in opens this page in a browser
+  // context with no usable opener — postMessage lands nowhere and (the
+  // old bug) the tab closed before the url redirect could carry the
+  // token home. So: ack → close; no ack → redirect with the token in the
+  // hash, which the game harvests on boot wherever it lands.
+  const script = `<script>
+var P=${JSON.stringify(payload)},T=${JSON.stringify(target)},B=${JSON.stringify(back || '')};
+try{window.opener&&window.opener.postMessage(P,T)}catch(e){}
+var ok=0;addEventListener('message',function(e){if(e.data&&e.data.type==='iw-x-ack'){ok=1;window.close()}});
+setTimeout(function(){if(!ok)B?location.href=B:(window.opener&&window.close())},900);
+<\/script>`;
   return `<!doctype html><meta charset="utf-8"><title>ice 'n' water</title>
 <body style="margin:0;background:#f7bd14;display:flex;min-height:100vh;align-items:center;justify-content:center;font-family:sans-serif">
 <div style="text-align:center;max-width:320px">
 <p style="font-weight:700;color:#0d3550">${msg}</p>
 ${back ? `<p><a href="${back}" style="color:#0d3550;font-weight:700">tap here to return to the game</a></p>` : ''}
-${back ? `<script>setTimeout(()=>{location.href=${JSON.stringify(back)}},1800)</script>` : ''}
 </div>
-<script>
-try{window.opener&&window.opener.postMessage(${JSON.stringify(payload)},${JSON.stringify(target)})}catch(e){}
-${token ? 'setTimeout(()=>window.close(),600)' : ''}
-</script>
+${script}
 </body>`;
 }

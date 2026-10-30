@@ -140,6 +140,9 @@ function gateOverlay(hashErr: string | null): Promise<XSession | null> {
       if (e.origin !== new URL(API_URL).origin) return;
       const d = e.data as { type?: string; token?: string; error?: string };
       if (d?.type !== 'iw-x') return;
+      // ack so the handoff page closes itself — without one it assumes the
+      // message was lost (PWA tab has no real opener) and redirects instead
+      (e.source as Window | null)?.postMessage({ type: 'iw-x-ack' }, e.origin);
       if (d.token) {
         localStorage.setItem(TOK_KEY, d.token);
         cur = decode(d.token);
