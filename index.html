@@ -67,25 +67,38 @@
       canvas {
         display: block;
       }
-      /* rotate hint — portrait phones only */
+      /* rotate hint — portrait phones only; same yellow crown field as boot */
       #rotate-hint {
         display: none;
         position: fixed;
         inset: 0;
         z-index: 100;
-        background: #0d1b2a;
-        color: #f5efe0;
+        background: #f7bd14
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cg fill='none' stroke='%23c98f00' stroke-opacity='.25' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M44 70 44 56 52 62 56 50 60 60 64 50 68 62 76 56 76 70Z'/%3E%3Cpath d='M164 60 164 46 172 52 176 40 180 50 184 40 188 52 196 46 196 60Z'/%3E%3Cpath d='M104 150 104 136 112 142 116 130 120 140 124 130 128 142 136 136 150Z'/%3E%3Cpath d='M24 210 24 196 32 202 36 190 40 200 44 190 48 202 56 196 56 210Z'/%3E%3Cpath d='M184 200 184 186 192 192 196 180 200 190 204 180 208 192 216 186 216 200Z'/%3E%3C/g%3E%3C/svg%3E");
         font-family: 'Fredoka', sans-serif;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        gap: 14px;
         text-align: center;
       }
       #rotate-hint .phone {
-        font-size: 52px;
         animation: tilt 1.4s ease-in-out infinite;
         display: inline-block;
+      }
+      #rotate-hint .title {
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: 30px;
+        letter-spacing: 2px;
+        color: #ffffff;
+        text-shadow:
+          0 3px 0 #0d3550,
+          0 8px 14px rgba(60, 40, 0, 0.25);
+      }
+      #rotate-hint .sub {
+        font-size: 14px;
+        font-weight: 600;
+        color: #0d3550;
       }
       @keyframes tilt {
         0%,
@@ -215,22 +228,23 @@
         font-family: 'Titan One', 'Baloo 2', sans-serif;
         font-size: 17px;
         letter-spacing: 1px;
-        color: #0d3550;
-        background: #f7bd14;
+        color: #ffffff;
+        background: #0d3550;
         border: 0;
         border-radius: 14px;
         padding: 13px 30px;
         cursor: pointer;
-        box-shadow: 0 5px 0 #7a5800;
+        box-shadow: 0 5px 0 #082338;
         margin-top: 10px;
       }
       #install-btn:active {
         transform: translateY(3px);
-        box-shadow: 0 2px 0 #7a5800;
+        box-shadow: 0 2px 0 #082338;
       }
       #install-note {
         font-size: 12px;
-        color: #7d93a5;
+        font-weight: 600;
+        color: #8a6d00;
         min-height: 16px;
         max-width: 260px;
       }
@@ -243,9 +257,13 @@
       <div class="bar"></div>
     </div>
     <div id="rotate-hint">
-      <span class="phone">📱</span>
-      <div style="font-size: 20px; font-weight: 600">rotate your device</div>
-      <div style="font-size: 14px; color: #7d93a5">ice 'n' water plays in landscape</div>
+      <svg class="phone" width="54" height="76" viewBox="0 0 54 76" aria-hidden="true">
+        <rect x="3" y="2" width="48" height="72" rx="11" fill="#0d3550" />
+        <rect x="9" y="11" width="36" height="50" rx="4" fill="#f5efe0" />
+        <circle cx="27" cy="67" r="3.5" fill="#f5efe0" />
+      </svg>
+      <div class="title">ROTATE YOUR DEVICE</div>
+      <div class="sub">ice 'n' water plays in landscape</div>
       <button id="install-btn" type="button">INSTALL TO PLAY</button>
       <div id="install-note"></div>
     </div>
