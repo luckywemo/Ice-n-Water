@@ -765,12 +765,19 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 560 : 680; // ACCOUNT section adds ~80 on both layouts
+    const FOOT = 76; // pinned DONE row — card content scrolls above it
+    // touch runs the same world units on a smaller canvas — scale the
+    // type and the row pitch or every label reads tiny on a phone
+    const fs = isTouch ? 1.32 : 1;
+    const rs = isTouch ? 1.34 : 1;
+    const fz = (n: number) => `${Math.round(n * fs)}px`;
+    const S = (n: number) => Math.round(n * rs);
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
     const cy = vis.t + visH * 0.5;
-    const top = cy - H / 2;
+    const cardMax = visH - 36; // the face never exceeds the visible field
+    const top = cy - cardMax / 2 + 14; // content flows from the view top
     const card = this.add.container(0, 0).setDepth(45).setVisible(false).setAlpha(0);
 
     // zones gated by cardZones — enabled only while the card is open
@@ -861,21 +868,18 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(1, 1)
       .setVisible(keyHintsOn());
     card.add(this.settingsFoot);
-    // swallows taps on the card body so they don't hit the dim zone
+    // swallows taps on the card body so they don't hit the dim zone —
+    // resized to the final card height once content is measured
     const swallow = gateZone(
-      this.add.zone(cx - W / 2, cy - H / 2, W, H).setOrigin(0, 0).setInteractive(),
+      this.add.zone(cx - W / 2, 0, W, 10).setOrigin(0, 0).setInteractive(),
     );
     card.add(swallow);
-
-    // ---- the cyan card — their settings face, not our paper ----
+    // ---- the cyan card — drawn at the final height after measurement ----
     const cg = this.add.graphics();
-    cg.fillStyle(0x0a0710, 0.5).fillRoundedRect(cx - W / 2 + 6, cy - H / 2 + 8, W, H, 18);
-    cg.fillStyle(0xffffff, 1).fillRoundedRect(cx - W / 2 - 2, cy - H / 2 - 2, W + 4, H + 4, 18);
-    cg.fillStyle(FG.cyan, 1).fillRoundedRect(cx - W / 2, cy - H / 2, W, H, 16);
-    cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, cy - H / 2 + 6, W - 16, 30, 10);
     card.add(cg);
-
-
+    // scroll port — every row lives in `inner`, clipped by a geometry mask
+    const inner = this.add.container(0, 0);
+    card.add(inner);
 
     // ---- section bar — dark beveled tag like MOUSE SETTINGS/CONTROL BINDING ----
     const section = (y: number, title: string) => {
@@ -886,17 +890,17 @@ export class TitleScene extends Phaser.Scene {
         [
           { x: bx, y },
           { x: bx + bw, y },
-          { x: bx + bw - 12, y: y + 26 },
-          { x: bx, y: y + 26 },
+          { x: bx + bw - 12, y: y + S(26) },
+          { x: bx, y: y + S(26) },
         ],
         true,
       );
-      card.add(sg);
-      card.add(
+      inner.add(sg);
+      inner.add(
         this.add
-          .text(cx - W / 2 + 38, y + 13, title, {
+          .text(cx - W / 2 + 38, y + S(13), title, {
             fontFamily: FG_FONT,
-            fontSize: '14px',
+            fontSize: fz(14),
             color: '#ffffff',
           })
           .setOrigin(0, 0.5),
@@ -914,26 +918,26 @@ export class TitleScene extends Phaser.Scene {
       const hl = this.add.graphics().setAlpha(0);
       hl.fillStyle(0xffffff, 0.18).fillRoundedRect(
         cx - W / 2 + 10,
-        y - 21,
+        y - S(21),
         W - 20,
-        42,
+        S(42),
         8,
       );
-      card.add(hl);
+      inner.add(hl);
       const rowZ = gateZone(
         this.add
-          .zone(cx - W / 2 + 10, y - 21, W - 20, 42)
+          .zone(cx - W / 2 + 10, y - S(21), W - 20, S(42))
           .setOrigin(0, 0)
           .setInteractive(),
       );
       rowZ.on('pointerover', () => hl.setAlpha(1));
       rowZ.on('pointerout', () => hl.setAlpha(0));
-      card.add(rowZ);
-      card.add(
+      inner.add(rowZ);
+      inner.add(
         this.add
           .text(cx - W / 2 + 38, y, label, {
             fontFamily: FG_FONT,
-            fontSize: '16px',
+            fontSize: fz(16),
             color: '#ffffff',
           })
           .setOrigin(0, 0.5),
@@ -941,25 +945,25 @@ export class TitleScene extends Phaser.Scene {
       const val = this.add
         .text(cx + W / 2 - 130, y, get(), {
           fontFamily: FG_FONT,
-          fontSize: '14px',
+          fontSize: fz(14),
           color: '#ffffff',
         })
         .setOrigin(0.5);
-      card.add(val);
+      inner.add(val);
       const chev = (sx: number, dir: 1 | -1) => {
         const t = this.add
           .text(cx + W / 2 + sx, y - 2, dir < 0 ? '❮' : '❯', {
             fontFamily: FG_BODY,
-            fontSize: '18px',
+            fontSize: fz(18),
             fontStyle: '800',
             color: '#ffffff',
           })
           .setOrigin(0.5)
           .setAlpha(0.9);
-        card.add(t);
+        inner.add(t);
         const z = gateZone(
           this.add
-            .zone(cx + W / 2 + sx - 16, y - 16, 32, 32)
+            .zone(cx + W / 2 + sx - S(16), y - S(16), S(32), S(32))
             .setOrigin(0, 0)
             .setInteractive({ useHandCursor: true }),
         );
@@ -968,7 +972,7 @@ export class TitleScene extends Phaser.Scene {
           sfx.pickup();
           this.tweens.add({ targets: val, scale: 1.15, duration: 90, yoyo: true });
         });
-        card.add(z);
+        inner.add(z);
       };
       chev(-210, -1);
       chev(-50, 1);
@@ -977,16 +981,17 @@ export class TitleScene extends Phaser.Scene {
 
     // ---- keycap chip — the D/A/W/S/SPC style ----
     const keycap = (x: number, y: number, cap: string) => {
+      const cw = cap.length * 10 * fs;
       const kg = this.add.graphics();
-      kg.fillStyle(0x0a0710, 0.45).fillRoundedRect(x - 2, y - 2, cap.length * 9.5 + 22, 26, 6);
-      kg.fillStyle(0x2a2733, 1).fillRoundedRect(x, y - 4, cap.length * 9.5 + 18, 26, 6);
-      kg.lineStyle(1.5, 0xffffff, 0.25).strokeRoundedRect(x, y - 4, cap.length * 9.5 + 18, 26, 6);
-      card.add(kg);
-      card.add(
+      kg.fillStyle(0x0a0710, 0.45).fillRoundedRect(x - 2, y - 2, cw + 22, S(26), 6);
+      kg.fillStyle(0x2a2733, 1).fillRoundedRect(x, y - 4, cw + 18, S(26), 6);
+      kg.lineStyle(1.5, 0xffffff, 0.25).strokeRoundedRect(x, y - 4, cw + 18, S(26), 6);
+      inner.add(kg);
+      inner.add(
         this.add
-          .text(x + (cap.length * 9.5 + 18) / 2, y + 9, cap, {
+          .text(x + (cw + 18) / 2, y + S(9), cap, {
             fontFamily: FG_BODY,
-            fontSize: '12px',
+            fontSize: fz(12),
             fontStyle: '800',
             color: '#ffffff',
           })
@@ -994,18 +999,18 @@ export class TitleScene extends Phaser.Scene {
       );
     };
 
-    let y = top + 34;
+    let y = top + S(34);
     section(y, 'GAME');
-    y += 48;
+    y += S(48);
     this.diffVal = selector(y, 'Difficulty', () => DIFFS[this.diff].label, (dir) => {
       this.cycleDiff(dir);
     });
-    y += 46;
+    y += S(46);
     this.soundVal = selector(y, 'Sound', () => (sfx.isMuted ? 'OFF' : 'ON'), () => {
       const off = sfx.toggleMute();
       this.soundVal?.setText(off ? 'OFF' : 'ON');
     });
-    y += 46;
+    y += S(46);
     this.perfVal = selector(y, 'Bean FPS', () => PERF_LABEL[this.perf], (dir) => {
       const i = PERF_ORDER.indexOf(this.perf);
       this.perf = PERF_ORDER[(i + dir + PERF_ORDER.length) % PERF_ORDER.length];
@@ -1015,29 +1020,29 @@ export class TitleScene extends Phaser.Scene {
     });
     if (!isTouch) {
       // desktop-only row — there are no keys to hint on touch
-      y += 46;
+      y += S(46);
       this.hintsVal = selector(y, 'Key hints', () => (this.hints ? 'ON' : 'OFF'), () => {
         this.hints = !this.hints;
         this.refreshPicks();
       });
     }
     if (isTouch) {
-      y += 46;
+      y += S(46);
       this.joyVal = selector(y, 'Thumbstick', () => JOY_LABEL[this.joy], (dir) => {
         const i = JOY_ORDER.indexOf(this.joy);
         this.joy = JOY_ORDER[(i + dir + JOY_ORDER.length) % JOY_ORDER.length];
         this.refreshPicks();
       });
     }
-    y += 54;
+    y += S(54);
     section(y, 'CONTROLS');
-    y += 44;
+    y += S(44);
     if (isTouch) {
-      card.add(
+      inner.add(
         this.add
-          .text(cx, y + 22, 'left thumb — move   ·   RUN — sprint\nH₂O — item   ·   ↻ — restart   ·   II — pause', {
+          .text(cx, y + S(22), 'left thumb — move   ·   RUN — sprint\nH₂O — item   ·   ↻ — restart   ·   II — pause', {
             fontFamily: FG_BODY,
-            fontSize: '14px',
+            fontSize: fz(14),
             fontStyle: '700',
             color: '#eaf6fb',
             align: 'center',
@@ -1054,34 +1059,34 @@ export class TitleScene extends Phaser.Scene {
         ['Pause', 'ESC'],
       ];
       binds.forEach(([label, cap], i) => {
-        const ry = y + i * 36;
-        card.add(
+        const ry = y + i * S(38);
+        inner.add(
           this.add
             .text(cx - W / 2 + 38, ry, label, {
               fontFamily: FG_BODY,
-              fontSize: '14px',
+              fontSize: fz(14),
               fontStyle: '700',
               color: '#ffffff',
             })
             .setOrigin(0, 0.5),
         );
-        keycap(cx + W / 2 - 38 - (cap.length * 9.5 + 18), ry - 9, cap);
+        keycap(cx + W / 2 - 38 - (cap.length * 10 * fs + 18), ry - S(9), cap);
       });
     }
 
     // ---- ACCOUNT — verified identity, road/stats readout, sign-out ----
-    y += isTouch ? 64 : 196; // clear the controls block
+    y += isTouch ? S(60) : 4 * S(38) + S(44); // clear the controls block
     section(y, 'ACCOUNT');
-    y += 44;
+    y += S(44);
     const sess = session();
     const who = sess?.handle
       ? `@${sess.handle}${playerName() ? `  ·  ${playerName()}` : ''}`
       : 'not connected — sign-in is required to play';
-    card.add(
+    inner.add(
       this.add
         .text(cx - W / 2 + 38, y, who, {
           fontFamily: FG_BODY,
-          fontSize: '14px',
+          fontSize: fz(14),
           fontStyle: '800',
           color: '#ffffff',
         })
@@ -1096,11 +1101,11 @@ export class TitleScene extends Phaser.Scene {
       lg.fillStyle(0x0a0710, 1).fillRoundedRect(lox - loW / 2, y - loH / 2 + 3, loW, loH, loH / 2);
       lg.fillStyle(0xd94f3d, 1).fillRoundedRect(lox - loW / 2, y - loH / 2 - 4, loW, loH - 2, loH / 2);
       lg.fillStyle(0xffffff, 0.14).fillRoundedRect(lox - loW / 2 + 7, y - loH / 2 - 4, loW - 14, 11, 6);
-      card.add(lg);
+      inner.add(lg);
       const loT = this.add
-        .text(lox, y - 3, 'LOG OUT', { fontFamily: FG_FONT, fontSize: '12px', color: '#f5efe0' })
+        .text(lox, y - 3, 'LOG OUT', { fontFamily: FG_FONT, fontSize: fz(12), color: '#f5efe0' })
         .setOrigin(0.5);
-      card.add(loT);
+      inner.add(loT);
       let armed = false;
       const loZ = gateZone(
         this.add
@@ -1121,11 +1126,12 @@ export class TitleScene extends Phaser.Scene {
           loT.setText('LOG OUT');
         });
       });
+      inner.add(loZ);
     }
-    y += 30;
+    y += S(30);
     const prog = adventureProgress();
     const st = loadStats();
-    card.add(
+    inner.add(
       this.add
         .text(
           cx - W / 2 + 38,
@@ -1133,7 +1139,7 @@ export class TitleScene extends Phaser.Scene {
           `road ${Math.max(0, prog.unlocked - 1)}/${TOTAL_LEVELS}  ·  ★${totalStars(prog)}  ·  ${st.wins}w/${st.games}g  ·  streak ${st.streak}  ·  best ${st.bestSurvived}s`,
           {
             fontFamily: FG_BODY,
-            fontSize: '12px',
+            fontSize: fz(12),
             fontStyle: '700',
             color: '#eaf6fb',
           },
@@ -1141,9 +1147,81 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0, 0.5),
     );
 
-    // DONE — dark candy pill, same family as the lobby's BACK
+    // ---- measure → size the card → wire the scroll ----
+    const contentBot = y + S(18);
+    const viewH = Math.min(contentBot - top + FOOT, cardMax);
+    const vt = cy - viewH / 2; // card top in world coords
+    cg.fillStyle(0x0a0710, 0.5).fillRoundedRect(cx - W / 2 + 6, vt + 8, W, viewH, 18);
+    cg.fillStyle(0xffffff, 1).fillRoundedRect(cx - W / 2 - 2, vt - 2, W + 4, viewH + 4, 18);
+    cg.fillStyle(FG.cyan, 1).fillRoundedRect(cx - W / 2, vt, W, viewH, 16);
+    cg.fillStyle(0xffffff, 0.12).fillRoundedRect(cx - W / 2 + 8, vt + 6, W - 16, 30, 10);
+    swallow.setPosition(cx - W / 2, vt).setSize(W, viewH);
+
+    const scrollH = viewH - FOOT - 12; // the port above the DONE row
+    const over = Math.max(0, contentBot - (vt + 12) - scrollH);
+    const mg = this.make.graphics();
+    mg.fillRect(cx - W / 2 + 4, vt + 4, W - 8, scrollH + 8);
+    inner.setMask(mg.createGeometryMask());
+    const baseY = vt + 14 - top; // content top lands under the card lip
+    let scroll = 0;
+    let thumb: Phaser.GameObjects.Rectangle | null = null;
+    const applyScroll = () => {
+      inner.y = baseY - scroll;
+      if (thumb) {
+        const th = thumb.height;
+        thumb.y = vt + 14 + th / 2 + (over ? (scroll / over) * (scrollH - th) : 0);
+      }
+    };
+    applyScroll();
+    if (over > 0) {
+      const inCard = (p: Phaser.Input.Pointer) =>
+        p.x >= cx - W / 2 && p.x <= cx + W / 2 && p.y >= vt && p.y <= vt + scrollH + 10;
+      let dragY = 0;
+      let dragScroll = 0;
+      let dragging = false;
+      const onDown = (p: Phaser.Input.Pointer) => {
+        if (!this.settingsOpen || !inCard(p)) return;
+        dragging = true;
+        dragY = p.y;
+        dragScroll = scroll;
+      };
+      const onMove = (p: Phaser.Input.Pointer) => {
+        if (!dragging) return;
+        scroll = Phaser.Math.Clamp(dragScroll - (p.y - dragY), 0, over);
+        applyScroll();
+      };
+      const onUp = () => (dragging = false);
+      const onWheel = (
+        _p: Phaser.Input.Pointer,
+        _o: unknown,
+        _dx: number,
+        dy: number,
+      ) => {
+        if (!this.settingsOpen) return;
+        scroll = Phaser.Math.Clamp(scroll + dy * 0.5, 0, over);
+        applyScroll();
+      };
+      this.input.on('pointerdown', onDown);
+      this.input.on('pointermove', onMove);
+      this.input.on('pointerup', onUp);
+      this.input.on('wheel', onWheel);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.input.off('pointerdown', onDown);
+        this.input.off('pointermove', onMove);
+        this.input.off('pointerup', onUp);
+        this.input.off('wheel', onWheel);
+      });
+      // scroll thumb — right edge of the port, position tracks the drag
+      const thLen = Math.max(30, (scrollH * scrollH) / (contentBot - top));
+      thumb = this.add.rectangle(cx + W / 2 - 11, 0, 6, thLen, 0xffffff, 0.35);
+      card.add(thumb);
+      applyScroll();
+    }
+
+    // DONE — dark candy pill, same family as the lobby's BACK — pinned
+    // below the scroll port, always reachable
     const dg = this.add.graphics();
-    const dw = 150, dh = 42, dcx = cx, dcy = cy + H / 2 - 40;
+    const dw = 150, dh = 42, dcx = cx, dcy = vt + viewH - 40;
     dg.fillStyle(0x0a0710, 1).fillRoundedRect(dcx - dw / 2, dcy - dh / 2 + 3, dw, dh, dh / 2);
     dg.fillStyle(UI.ink, 1).fillRoundedRect(dcx - dw / 2, dcy - dh / 2 - 4, dw, dh - 2, dh / 2);
     dg.fillStyle(0xffffff, 0.14).fillRoundedRect(dcx - dw / 2 + 7, dcy - dh / 2, dw - 14, 13, 7);
