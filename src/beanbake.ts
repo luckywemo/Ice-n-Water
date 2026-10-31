@@ -9,16 +9,24 @@ import { CharDef } from './characters';
 
 const SIZE = 96;
 const TOTAL = 14;
+// row order on the strip — row 0 keeps the legacy front-facing frames
+// 0–13 so Phaser-side anims stay valid; the pitch billboards pick a row
+// by the ent's camera-space travel direction
+const VIEW_YAW = [0, -Math.PI / 2, Math.PI, Math.PI / 2]; // front left back right
 
 /** resolve a baked key to the strip canvas the pitch stage wears as a
- *  2.5D billboard — square cells, so frames = width/height */
+ *  2.5D billboard — square cells: frames = width/SIZE, rows = height/SIZE */
 export function sheetCanvas(
   scene: Phaser.Scene,
   key: string,
-): { canvas: HTMLCanvasElement; frames: number } | undefined {
+): { canvas: HTMLCanvasElement; frames: number; rows: number } | undefined {
   const img = scene.textures.get(key)?.getSourceImage();
   return img instanceof HTMLCanvasElement
-    ? { canvas: img, frames: Math.round(img.width / img.height) }
+    ? {
+        canvas: img,
+        frames: Math.round(img.width / SIZE),
+        rows: Math.round(img.height / SIZE),
+      }
     : undefined;
 }
 
@@ -34,23 +42,26 @@ export function bakeBeanSheet(scene: Phaser.Scene, key: string, def: CharDef): b
 
   const strip = document.createElement('canvas');
   strip.width = SIZE * TOTAL;
-  strip.height = SIZE;
+  strip.height = SIZE * VIEW_YAW.length;
   const ctx = strip.getContext('2d')!;
-  for (let i = 0; i < TOTAL; i++) {
-    const kind = i < 8 ? 'run' : i < 12 ? 'idle' : 'splat';
-    const ph = kind === 'splat' ? (i - 12) * 0.5 : (i % 8) / 8;
-    hero.poseFor(kind, ph);
-    ctx.drawImage(
-      hero.canvas,
-      0,
-      0,
-      hero.canvas.width,
-      hero.canvas.height,
-      i * SIZE,
-      0,
-      SIZE,
-      SIZE,
-    );
+  for (let r = 0; r < VIEW_YAW.length; r++) {
+    hero.viewYaw = VIEW_YAW[r];
+    for (let i = 0; i < TOTAL; i++) {
+      const kind = i < 8 ? 'run' : i < 12 ? 'idle' : 'splat';
+      const ph = kind === 'splat' ? (i - 12) * 0.5 : (i % 8) / 8;
+      hero.poseFor(kind, ph);
+      ctx.drawImage(
+        hero.canvas,
+        0,
+        0,
+        hero.canvas.width,
+        hero.canvas.height,
+        i * SIZE,
+        r * SIZE,
+        SIZE,
+        SIZE,
+      );
+    }
   }
   // addSpriteSheet slices frames directly into a Texture source under ITS
   // key — so the canvas becomes the sheet itself, no wrapper needed

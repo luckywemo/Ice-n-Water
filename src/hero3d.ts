@@ -77,6 +77,9 @@ export class Hero3D {
   /** skydive pose for the drop-in loading screen — arms out, feet trailing,
    *  belly leaned toward camera. Suppresses hops/tricks while set. */
   skydiving = false;
+  /** bake-only facing yaw — poseFor applies it to the whole rig so one
+   *  camera captures front / left / back / right rows of a sheet */
+  viewYaw = 0;
   private tricking = false;
   private flipX = 0; // airborne backflip angle
   private dizzyUntil = 0;
@@ -1117,8 +1120,9 @@ export class Hero3D {
     const g = this.group;
     if (!g || !this.renderer || !this.scene || !this.camera) return;
     const t = ph * Math.PI * 2;
-    // reset every channel update() drives
-    g.rotation.set(0, 0, 0);
+    // reset every channel update() drives — viewYaw survives so the bake
+    // can capture the rig from four facings on the same strip
+    g.rotation.set(0, this.viewYaw, 0);
     g.position.set(0, 0, 0);
     g.scale.set(1, 1, 1);
     if (this.footL) this.footL.rotation.set(0, -0.18, 0);
@@ -1181,7 +1185,7 @@ export class Hero3D {
       g.scale.set(1 - q * 0.5, 1 + q, 1 - q * 0.45);
       g.position.y = Math.sin(t) * 0.045;
       g.rotation.z = Math.sin(t) * 0.022;
-      g.rotation.y = Math.sin(t * 0.6) * 0.14;
+      g.rotation.y = this.viewYaw + Math.sin(t * 0.6) * 0.14;
       if (this.flipL) this.flipL.root.rotation.z = -0.18 - Math.sin(t) * 0.09;
       if (this.flipR) this.flipR.root.rotation.z = 0.18 + Math.sin(t) * 0.09;
     } else {

@@ -21,6 +21,8 @@ interface Ent3D {
     emote: THREE.Sprite;
     t: number;
     frames: number;
+    rows: number;   // facing rows on the strip (1 = legacy front-only)
+    row: number;    // active row — picked from screen-space travel dir
   };
   ring: THREE.Mesh;
   x: number; y: number;   // phaser px
@@ -34,7 +36,8 @@ interface Ent3D {
  *  instead of the 3D rig: our sprite design standing in the street */
 export interface SheetDef {
   canvas: HTMLCanvasElement;
-  frames: number;
+  frames: number; // cells per row (14 = run/idle/splat cycle)
+  rows: number;   // facing rows: 0 front, 1 left, 2 back, 3 right
 }
 
 export class PitchStage {
@@ -207,7 +210,7 @@ export class PitchStage {
       root = new THREE.Group();
       const tex = new THREE.CanvasTexture(sheet.canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.repeat.set(1 / sheet.frames, 1);
+      tex.repeat.set(1 / sheet.frames, 1 / sheet.rows);
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
         map: tex,
         transparent: true,
@@ -220,7 +223,7 @@ export class PitchStage {
       const emote = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoteTexture('…'), depthTest: false, transparent: true }));
       emote.scale.setScalar(.42); emote.position.y = 1.9; emote.visible = false;
       root.add(sprite, marker, emote);
-      bb = { sprite, tex, marker, emote, t: Math.random() * 10, frames: sheet.frames };
+      bb = { sprite, tex, marker, emote, t: Math.random() * 10, frames: sheet.frames, rows: sheet.rows, row: 0 };
     } else {
       bean = makeBean(model);
       root = bean.root;
@@ -481,12 +484,26 @@ export class PitchStage {
       const speedPx = Math.hypot(e.vx, e.vy);
       if (e.bb) {
         // 2.5D billboard — sheet frames do the acting: run 0–7 @13,
-        // idle 8–11 @6, splat 12–13 @5 (frozen). Mirror on left travel.
+        // idle 8–11 @6, splat 12–13 @5 (frozen). The row shows the side
+        // facing travel — front/left/back/right, measured in SCREEN space
+        // so orbiting the cam keeps the facing honest.
         const bb = e.bb;
         bb.t += dt;
+        bb.row = 0;
+        if (!e.frozen && speedPx > 26 && bb.rows > 1) {
+          const p0 = this.project(e.x, e.y, 1);
+          const p1 = this.project(e.x + e.vx * 0.04, e.y + e.vy * 0.04, 1);
+          const a = Math.atan2(p1.y - p0.y, p1.x - p0.x); // screen, +y down
+          bb.row =
+            Math.abs(a) > (3 * Math.PI) / 4 ? 1 : // left
+            a > Math.PI / 4 ? 0 :                 // down-screen → front
+            a > -Math.PI / 4 ? 3 :                // right
+            2;                                    // up-screen → back
+        }
         const [base, fps, count] = e.frozen ? [12, 5, 2] : speedPx > 26 ? [0, 13, 8] : [8, 6, 4];
         bb.tex.offset.x = (base + (Math.floor(bb.t * fps) % count)) / bb.frames;
-        bb.sprite.scale.set(1.9 * e.scale * (e.vx < -2 ? -1 : 1), 1.9 * e.scale, 1);
+        bb.tex.offset.y = 1 - (bb.row + 1) / bb.rows;
+        bb.sprite.scale.set(1.9 * e.scale, 1.9 * e.scale, 1);
         continue;
       }
       const b = e.bean!;
