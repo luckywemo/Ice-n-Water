@@ -420,7 +420,13 @@ export class TitleScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(6)
         .setAlpha(0)
-        .setInteractive({ useHandCursor: true });
+        // hit-test the bean's body, not the transparent 640×700 canvas —
+        // the full-texture rect reached the top bar and ate its taps
+        .setInteractive({
+          hitArea: new Phaser.Geom.Circle(320, 380, 235),
+          hitAreaCallback: Phaser.Geom.Circle.Contains,
+          useHandCursor: true,
+        });
       this.heroImg.on('pointerdown', (p: Phaser.Input.Pointer) => {
         this.hero3d?.poke();
         this.heroDragX = p.x;

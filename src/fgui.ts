@@ -431,13 +431,14 @@ export function fgTopBar(
   // scroll-locked chrome for scenes whose camera moves (the map's rail)
   if (opts?.scrollLock) ui.forEach((o) => o.setScrollFactor(0));
   // y0 anchors the bar to a visible view edge — world-space bars under a
-  // letterboxed stage zoom otherwise drift inside the composition
+  // letterboxed stage zoom otherwise drift inside the composition. The wrap
+  // must keep the bar's depth: children inside a container sort at the
+  // CONTAINER's depth, so a bare container sinks under world objects —
+  // interactive zones included (the podium bean ate every icon tap).
   if (opts?.y0)
-    scene.add.container(
-      0,
-      opts.y0,
-      ui as unknown as Phaser.GameObjects.GameObject[],
-    );
+    scene.add
+      .container(0, opts.y0, ui as unknown as Phaser.GameObjects.GameObject[])
+      .setDepth(30);
 
   return {
     /** pink = the active tab — their SEASONS screen shows the live section pink */

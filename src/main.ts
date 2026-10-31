@@ -54,6 +54,8 @@ const boot = () =>
 
 const go = () => {
   const game = boot();
+  // debug/tests handle — lets tooling inspect scenes + input state
+  (window as unknown as { __iwGame?: Phaser.Game }).__iwGame = game;
   // mobile toolbars move the VISUAL viewport without emitting window.resize
   // (Chrome's dynamic-toolbar model; the page can't scroll past overflow:hidden
   // to trigger one). Phaser only listens to window resize, so the canvas stays
