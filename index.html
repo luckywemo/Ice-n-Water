@@ -271,12 +271,15 @@
       // PWA install — capture the browser's event early so the rotate
       // screen's button can fire the native sheet (device-themed) on tap.
       window.__bip = null;
+      const bipChanged = () => dispatchEvent(new Event('bip-change'));
       addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault(); // hold it — our button decides when to ask
         window.__bip = e;
+        bipChanged();
       });
       addEventListener('appinstalled', () => {
         window.__bip = null;
+        bipChanged();
         const b = document.getElementById('install-btn');
         if (b) b.hidden = true;
       });
@@ -296,7 +299,8 @@
             e.prompt(); // the browser's own install sheet — follows device theme
             await e.userChoice;
             window.__bip = null; // single-shot per the spec — refresh re-offers
-            if (!window.__bip) btn.hidden = true;
+            bipChanged();
+            btn.hidden = true;
           } else {
             // no deferred event (iOS, Firefox, in-app webview) — the manual path
             note.textContent = /iphone|ipad|ipod/i.test(navigator.userAgent)

@@ -17,8 +17,20 @@ export default async function handler(req, res) {
   const { verifier, challenge } = pkce();
   const state = rand();
   const next = safeNext(req.query?.next ?? '', self);
-  // state.verifier.next ride in one cookie — the callback splits it back
-  setCookie(res, 'iw_oauth', `${state}.${verifier}.${next}`, 600, proto(req) === 'https');
+  // a client-generated poll id rides along so the callback can park the
+  // session in redis for the game to redeem — the device-flow handoff
+  // that works where postMessage can't reach (installed PWAs)
+  const sid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(req.query?.sid ?? ''))
+    ? String(req.query.sid)
+    : '';
+  // state.verifier[.sid].next ride in one cookie — the callback splits it
+  setCookie(
+    res,
+    'iw_oauth',
+    sid ? `${state}.${verifier}.${sid}.${next}` : `${state}.${verifier}.${next}`,
+    600,
+    proto(req) === 'https',
+  );
 
   const params = new URLSearchParams({
     response_type: 'code',
