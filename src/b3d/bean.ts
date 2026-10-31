@@ -47,6 +47,7 @@ export interface Bean {
   marker: THREE.Sprite;
   emote: THREE.Sprite;
   bodyMat: THREE.MeshStandardMaterial;
+  furMats: THREE.MeshStandardMaterial[];
   baseColor: number;
   t: number;
   frozen: boolean;
@@ -84,24 +85,21 @@ export function emoteTexture(txt: string, color = '#f5efe0'): THREE.Texture {
 const mat = (color: number, rough = .38) =>
   new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 });
 
-/** pale shaggy frost coat — an inflated jittered shell over the torso */
-function furShell(len: number, color: number): THREE.Mesh {
-  const g = new THREE.CapsuleGeometry(.46, .58, 5, 14);
-  const pos = g.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) {
-    const j = (Math.sin(i * 91.7) * .5 + .5) * .06 * len;
-    pos.setXYZ(i,
-      pos.getX(i) * (1 + j * 1.6),
-      pos.getY(i) * (1 + j * .8),
-      pos.getZ(i) * (1 + j * 1.6));
+/** strand-dot alpha for the fur shells — one texture shared by every bean */
+function furTexture(): THREE.Texture {
+  let t = texCache.get('fur');
+  if (t) return t;
+  const fc = document.createElement('canvas');
+  fc.width = fc.height = 128;
+  const fg = fc.getContext('2d')!;
+  for (let i = 0; i < 2400; i++) {
+    fg.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.65})`;
+    fg.fillRect(Math.random() * 128, Math.random() * 128, 1.5, 1.5);
   }
-  g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-    color, roughness: .95, metalness: 0,
-  }));
-  m.position.y = .78;
-  m.castShadow = true;
-  return m;
+  t = new THREE.CanvasTexture(fc);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  texCache.set('fur', t);
+  return t;
 }
 
 export function makeBean(def: Bean3DModel): Bean {
@@ -120,19 +118,51 @@ export function makeBean(def: Bean3DModel): Bean {
   body.castShadow = true;
   figure.add(body);
 
-  // ---- the militia's pale shaggy coat
-  if (def.furLen && def.furLen > 1) figure.add(furShell(def.furLen, def.body));
+  // ---- shell fur — clones of the torso displaced along normals with the
+  // shared strand-dot alpha texture; alphaTest rises per shell so the coat
+  // thins toward the tips like real hair. Parented to the body mesh so the
+  // run-bob carries the whole coat. furLen scales strand reach.
+  const furMats: THREE.MeshStandardMaterial[] = [];
+  {
+    const len = 1 + ((def.furLen ?? 1) - 1) * 0.5;
+    const src = body.geometry as THREE.BufferGeometry;
+    const pos = src.attributes.position as THREE.BufferAttribute;
+    const nor = src.attributes.normal as THREE.BufferAttribute;
+    const SHELLS = 10;
+    for (let i = 1; i <= SHELLS; i++) {
+      const t = i / SHELLS;
+      const g = src.clone();
+      const gp = g.attributes.position as THREE.BufferAttribute;
+      const gn = g.attributes.normal as THREE.BufferAttribute;
+      for (let v = 0; v < gp.count; v++)
+        gp.setXYZ(
+          v,
+          pos.getX(v) + gn.getX(v) * 0.1 * t * len,
+          pos.getY(v) + gn.getY(v) * 0.1 * t * len,
+          pos.getZ(v) + gn.getZ(v) * 0.1 * t * len,
+        );
+      const shellMat = new THREE.MeshStandardMaterial({
+        color: def.body,
+        roughness: 1,
+        alphaMap: furTexture(),
+        alphaTest: 0.08 + t * 0.6,
+        side: THREE.FrontSide,
+      });
+      furMats.push(shellMat);
+      body.add(new THREE.Mesh(g, shellMat));
+    }
+  }
 
-  // ---- face oval
+  // ---- face oval — pushed proud of the fur tips so it reads through the coat
   const face = new THREE.Mesh(new THREE.SphereGeometry(.3, 18, 14), faceMat);
   face.scale.set(1, 1.25, .45);
-  face.position.set(0, .92, .3);
+  face.position.set(0, .92, .36);
   figure.add(face);
 
   const eyeGeo = new THREE.SphereGeometry(.055, 10, 8);
   const eyeL = new THREE.Mesh(eyeGeo, darkMat);
   eyeL.scale.set(1, 1.9, .7);
-  eyeL.position.set(-.11, .97, .42);
+  eyeL.position.set(-.11, .97, .48);
   const eyeR = eyeL.clone(); eyeR.position.x = .11;
   figure.add(eyeL, eyeR);
 
@@ -140,7 +170,7 @@ export function makeBean(def: Bean3DModel): Bean {
   if (def.rage) {
     const browGeo = new THREE.BoxGeometry(.16, .035, .03);
     const bL = new THREE.Mesh(browGeo, darkMat);
-    bL.position.set(-.11, 1.1, .43); bL.rotation.z = -.5;
+    bL.position.set(-.11, 1.1, .49); bL.rotation.z = -.5;
     const bR = bL.clone(); bR.position.x = .11; bR.rotation.z = .5;
     figure.add(bL, bR);
   }
@@ -176,20 +206,67 @@ export function makeBean(def: Bean3DModel): Bean {
   const footR = footL.clone(); footR.position.x = .18;
   figure.add(footL, footR);
 
-  // ---- painted regalia: chest strip + coral bead arc
-  if (def.marks?.strip) {
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(.11, .5, .03), mat(def.marks.strip, .5));
-    strip.position.set(0, .82, .415);
-    strip.rotation.x = -.1;
-    figure.add(strip);
-  }
-  if (def.marks?.bead) {
-    const beadMat = mat(def.marks.bead, .3);
-    for (let i = -3; i <= 3; i++) {
-      const a = i * .22;
-      const bead = new THREE.Mesh(new THREE.SphereGeometry(.04, 8, 6), beadMat);
-      bead.position.set(Math.sin(a) * .26, 1.22 - Math.abs(i) * .015, Math.cos(a) * .3);
-      figure.add(bead);
+  // ---- painted regalia: chest strip + coral bead arc, baked into a torso
+  // texture (white base → bodyMat.color still dyes the coat). Canvas-centre
+  // lands on the capsule's +z front seam; the fur shells share the torso UVs
+  // so the marks tint the strands too — regalia reads at every fur depth.
+  if (def.marks && (def.marks.strip !== undefined || def.marks.bead !== undefined)) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const c = cv.getContext('2d')!;
+    c.fillStyle = '#ffffff'; // white base → body colour shows through
+    c.fillRect(0, 0, 256, 256);
+    if (def.marks.strip !== undefined) {
+      const ind = '#' + def.marks.strip.toString(16).padStart(6, '0');
+      c.fillStyle = ind;
+      c.fillRect(99, 78, 58, 174); // chest strip, centred on the front seam
+      c.strokeStyle = 'rgba(255,255,255,0.85)';
+      c.lineWidth = 3;
+      c.strokeRect(103, 82, 50, 166); // border threads
+      c.lineWidth = 2;
+      c.strokeRect(109, 88, 38, 154);
+      c.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let y = 104; y < 200; y += 26) {
+        // running diamond + bar motif
+        c.save();
+        c.translate(128, y);
+        c.rotate(Math.PI / 4);
+        c.fillRect(-6.5, -6.5, 13, 13);
+        c.restore();
+        c.fillRect(116, y + 9, 24, 3);
+      }
+      for (const ox of [-9, 9]) {
+        // interlocked knot at the hem
+        c.save();
+        c.translate(128 + ox, 226);
+        c.rotate(Math.PI / 4);
+        c.lineWidth = 4.5;
+        c.strokeRect(-10, -10, 20, 20);
+        c.restore();
+      }
+    }
+    if (def.marks.bead !== undefined) {
+      // coral dots — an arc dipping low on the open chest below the face oval
+      const col = '#' + def.marks.bead.toString(16).padStart(6, '0');
+      c.fillStyle = col;
+      for (let i = 0; i < 11; i++) {
+        const t = i / 10; // 0..1 across the chest
+        const x = 128 + (t - 0.5) * 132;
+        const y = 114 - Math.pow(Math.abs(t - 0.5) * 2, 1.7) * 30; // U-dip at centre
+        c.beginPath();
+        c.arc(x, y, 7, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.offset.x = 0.25; // canvas centre → capsule +z front
+    bodyMat.map = tex;
+    bodyMat.needsUpdate = true;
+    for (const sm of furMats) {
+      sm.map = tex;
+      sm.needsUpdate = true;
     }
   }
 
@@ -279,7 +356,7 @@ export function makeBean(def: Bean3DModel): Bean {
 
   return {
     root, figure, body, face, eyeL, eyeR, armL, armR, footL, footR, iceShell, marker, emote,
-    bodyMat, baseColor: def.body,
+    bodyMat, furMats, baseColor: def.body,
     t: Math.random() * 10, frozen: false, squash: 1,
   };
 }
@@ -289,6 +366,7 @@ export function setFrozen(b: Bean, on: boolean) {
   b.iceShell.visible = on;
   b.marker.visible = on;
   b.bodyMat.color.setHex(on ? ICE_TINT : b.baseColor);
+  for (const sm of b.furMats) sm.color.setHex(on ? ICE_TINT : b.baseColor);
   b.eyeL.scale.y = b.eyeR.scale.y = on ? .5 : 1.9;
 }
 
