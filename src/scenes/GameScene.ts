@@ -13,7 +13,7 @@ import {
 } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
-import { pushProgress, recordStatsEvent } from '../cloudsave';
+import { pushProgress, recordStatsEvent, prepareRunTicket } from '../cloudsave';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { PitchStage } from '../b3d/stage';
@@ -224,6 +224,9 @@ export class GameScene extends Phaser.Scene {
   init(data: { difficulty?: Difficulty; adventure?: LevelDef }) {
     this.diff = DIFFS[data.difficulty ?? 'normal'] ?? DIFFS.normal;
     this.level = data.adventure ?? null;
+    // mint the clear-ticket as the run starts — by match end the server
+    // sees real elapsed play behind any frontier advance
+    if (this.level) prepareRunTicket(this.level.n);
     this.fromWipe = viaWipe(data);
   }
 

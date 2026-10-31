@@ -91,10 +91,45 @@ export async function pullProgress(timeoutMs = 4000): Promise<boolean> {
         })
         .catch(() => {});
     }
+    stockTickets(merged.unlocked); // keep run tickets warm for the frontier
     return true;
   } catch {
     return false; // offline, slow redis, dev — progress is nice-to-have
   }
+}
+
+// ---------- run tickets (server-attested clears) ----------
+// a clear's frontier advance wants a signed ticket minted at match start —
+// it proves real elapsed play the client can't fabricate. Keep a small
+// stock so offline runs still carry one; an exhausted stock degrades to
+// the server's small daily unticketed slot, never a hard block.
+const runTickets = new Map<number, string>();
+const TICKET_STOCK = 3;
+
+async function mintTicket(level: number): Promise<void> {
+  try {
+    const r = await fetch(`${API_URL}/api/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ start: level }),
+    });
+    if (!r.ok) return;
+    const b = (await r.json()) as { ticket?: string };
+    if (b.ticket) runTickets.set(level, b.ticket);
+  } catch {
+    /* offline — the clear rides the daily unticketed slot instead */
+  }
+}
+
+/** call when a level's match starts — mints the clear-ticket so the
+    result arrives server-attested. fire-and-forget, never throws. */
+export function prepareRunTicket(level: number): void {
+  if (!session() || !API_URL) return;
+  if (!runTickets.has(level)) void mintTicket(level);
+}
+
+function stockTickets(unlocked: number): void {
+  for (let i = 0; i < TICKET_STOCK; i++) prepareRunTicket(unlocked + i);
 }
 
 /** report a cleared level — an event, not a state claim. the server
@@ -102,10 +137,12 @@ export async function pullProgress(timeoutMs = 4000): Promise<boolean> {
     is re-covered by the pull-time gap replay. never throws. */
 export function pushProgress(clearedLevel: number, stars: 1 | 2 | 3): void {
   if (!session() || !API_URL) return;
+  const ticket = runTickets.get(clearedLevel);
+  runTickets.delete(clearedLevel); // a ticket attests one clear
   fetch(`${API_URL}/api/progress`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ clearedLevel, stars }),
+    body: JSON.stringify({ clearedLevel, stars, ...(ticket ? { ticket } : {}) }),
   })
     .then(async (r) => {
       if (!r.ok) return;
@@ -113,6 +150,7 @@ export function pushProgress(clearedLevel: number, stars: 1 | 2 | 3): void {
       if (!body.progress) return;
       const merged = mergeProgress(adventureProgress(), body.progress);
       if (!same(merged, adventureProgress())) storeProgress(merged);
+      stockTickets(merged.unlocked); // the frontier moved — restock
     })
     .catch(() => {
       /* offline — pull-time replay covers it */

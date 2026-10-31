@@ -25,13 +25,30 @@ allowlisted origin; no `'*'` fallback exists. The `sid` poll channel
 
 `api/progress.js` — the contiguity bound (`level <= unlocked` as it grows)
 meant `events:[{level:1}..{level:500}]` applied sequentially in a single
-request; the derived board then published the fake road at rank #1.
+request; the derived board then published the fake road at rank #1. A
+first-pass token bucket (30s credit) slowed the forge to ~4 hours, but
+events were still unverifiable.
 
-**Fix shipped:** token-bucket throttle on frontier advances — 1 credit per
-30s wall-clock, 8 banked (`MS_PER_LEVEL`, `BURST`). Real play never binds
-(levels take 60s+, offline replays spend a banked bucket); a script stalls
-to ~4 days for a fake road. Verified live: 500-event forge → 8 levels,
-replay → 0.
+**Fix shipped — run tickets (server attestation):**
+- `POST {start:N}` mints a signed `{id,lvl,t0,exp}` ticket only for
+  `N <= unlocked+2`; the client can't mint these (same `v1.` HMAC as
+  sessions — 48h TTL covers offline runs).
+- A frontier advance requires a ticket that verifies, matches the level,
+  and proves `now - t0 >= 35s` (every campaign level runs a ≥45s clock,
+  so no legit win is faster). A scripted fake must now burn ~a level's
+  wall-clock per advance **and** fit the daily caps.
+- Caps: `dayAdv <= 80/day` all advances, `dayTk <= 5/day` unticketed
+  (offline grace), token bucket kept underneath as a third layer.
+- Within-frontier stars stay free (bounded ≤3) — re-clears need no
+  attestation.
+- Verified live: unticketed 500-batch → 5 advances then `denied`; real
+  ticket + 36s wait → attested advance; wrong-level ticket → refused;
+  over-cap unticketed → refused; offline-aged ticket → accepted.
+
+Residual honesty: a patient script can still spend real time (tickets
+bind wall-clock, not skill) — the bound is ~7 days minimum for a fake
+500-level road, vs. one request before. Full impossibility would need
+server-simulated gameplay; this is the strongest bound without it.
 
 ## Open findings (accepted / queued)
 
