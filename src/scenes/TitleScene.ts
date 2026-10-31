@@ -592,8 +592,10 @@ export class TitleScene extends Phaser.Scene {
 
     // the loading screen — #boot hands off seamlessly (same yellow crown
     // look), then the splash auto-dismisses into the lobby. A wipe arrival
-    // is a menu return, not a fresh boot — straight to the lobby.
-    if (!fromWipe) this.buildSplash(vw, vh, extrude, now);
+    // is a menu return, not a fresh boot — skip the splash container but
+    // still run the reveal (bean fade-in, logo letters, name gate).
+    if (fromWipe) this.revealLobby();
+    else this.buildSplash(vw, vh, extrude, now);
 
     this.refreshPicks();
 
