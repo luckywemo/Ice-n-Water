@@ -24,6 +24,8 @@ const routes = {
   '/api/ticket': '../api/ticket.js',
   '/api/score': '../api/score.js',
   '/api/board': '../api/board.js',
+  '/api/progress': '../api/progress.js',
+  '/api/profile': '../api/profile.js',
 };
 
 /** vercel's res helpers, shimmed onto a node ServerResponse */

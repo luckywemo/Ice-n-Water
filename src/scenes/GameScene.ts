@@ -13,6 +13,7 @@ import {
 } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
+import { pushProgress, recordStatsEvent } from '../cloudsave';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { PitchStage } from '../b3d/stage';
@@ -279,10 +280,12 @@ export class GameScene extends Phaser.Scene {
     this.introObjs = [];
     this.introActive = false;
 
-    // apply the picked difficulty — adventure levels override everything
+    // apply the picked difficulty — adventure levels run their own curve
+    // but the pick still bends chaser speed (the one knob that's harder
+    // in the same direction for every objective kind)
     if (this.level) {
       const L = this.level;
-      this.chaserSpeed = CONFIG.chaser.speed * L.chaserMult;
+      this.chaserSpeed = CONFIG.chaser.speed * L.chaserMult * this.diff.chaserMult;
       this.roundSeconds = L.seconds;
       this.crewSize = L.crew;
       this.initialChasers = L.chasers;
@@ -2526,6 +2529,7 @@ export class GameScene extends Phaser.Scene {
 
     const survived = Math.round(this.roundSeconds - Math.max(0, this.timeLeft));
     const rec = recordResult(!militiaWon, survived);
+    recordStatsEvent(!militiaWon, survived); // journal the result — server recomputes streaks
     this.lastResult = { won: !militiaWon, survived };
     const caught = 'Frozen';
     const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
@@ -2571,6 +2575,7 @@ export class GameScene extends Phaser.Scene {
         stars = this.playerFreezes === 0 ? 3 : this.playerFreezes === 1 ? 2 : 1;
         recordLevel(this.level.n, stars as 1 | 2 | 3);
         submitAdventureScore();
+        pushProgress(this.level.n, stars as 1 | 2 | 3); // report the clear — server advances the road
       }
       const finalLevel = this.level?.n === TOTAL_LEVELS;
       const sub = this.level

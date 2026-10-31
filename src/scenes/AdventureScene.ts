@@ -7,7 +7,7 @@ import { fitZoom } from '../mobile';
 import { viaWipe, wipeTo } from '../wipe';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
-import { loadStats, perfInterval, furQuality } from '../meta';
+import { loadStats, perfInterval, furQuality, loadPicks } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -20,6 +20,7 @@ import {
   AdventureProgress,
 } from '../adventure';
 import { fetchBoard, playerName, setPlayerName, submitAdventureScore } from '../leaderboard';
+import { pushProfile } from '../cloudsave';
 
 const sfx = Sfx.inst;
 
@@ -887,6 +888,7 @@ export class AdventureScene extends Phaser.Scene {
         this.modalOpen = false;
         if (n === null) return;
         setPlayerName(n);
+        pushProfile();
         nameLbl.setText(`NAME: ${playerName() || '—'}`);
         submitAdventureScore(true);
         this.time.delayedCall(700, () => this.renderBoard()); // let the post land
@@ -1296,7 +1298,12 @@ export class AdventureScene extends Phaser.Scene {
   private playLevel(n: number) {
     sfx.ensure();
     sfx.shortWhistle();
-    wipeTo(this, 'drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } });
+    wipeTo(this, 'drop', {
+      game: {
+        adventure: levelDef(Math.min(n, TOTAL_LEVELS)),
+        difficulty: loadPicks().difficulty,
+      },
+    });
   }
 
   /** top-bar icons share one guard — no actions while a modal owns input or
@@ -1335,6 +1342,7 @@ export class AdventureScene extends Phaser.Scene {
       this.modalOpen = false;
       if (n === null) return;
       setPlayerName(n);
+      pushProfile();
       submitAdventureScore(true);
     });
   }

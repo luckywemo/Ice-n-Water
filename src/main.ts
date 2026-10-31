@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
 import { levelDef } from './adventure';
+import { loadPicks } from './meta';
 import { requireAuth } from './xauth';
+import { pullProgress, pullProfile, pushProfile } from './cloudsave';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -94,7 +96,10 @@ const go = () => {
     else if (jump === 'advance')
       jumpTo('adventure', { advance: Number(arg) || undefined });
     else if (jump === 'gamelevel')
-      jumpTo('game', { adventure: levelDef(Number(arg) || 1) });
+      jumpTo('game', {
+        adventure: levelDef(Number(arg) || 1),
+        difficulty: loadPicks().difficulty,
+      });
     else if (jump === 'drop')
       jumpTo('drop', { game: { adventure: levelDef(Number(arg) || 1) } });
     else if (jump) jumpTo(jump);
@@ -110,7 +115,17 @@ const go = () => {
 const start = () =>
   requireAuth().then((s) => {
     if (s === undefined) return; // unreachable, keeps the type honest
-    go();
+    // cloud save: pull before scenes read progress, but never let a slow
+    // api stall boot — late merges still land in storage for the map
+    Promise.race([
+      Promise.allSettled([pullProgress(2500), pullProfile(2500)]),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]).then(() => {
+      // upload whatever local-only fields remote lacked — converges both
+      // directions; fire-and-forget, never gates the menu
+      if (s) pushProfile();
+      go();
+    });
   });
 
 if (document.fonts?.ready) {
