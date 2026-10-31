@@ -1,12 +1,12 @@
-// POST /api/score — submit an adventure score. Server-side only:
-// X-session required, the row id is the verified X id (client ids are
-// ignored entirely — nobody can post under a handle they don't own),
-// rate-limits by account, writes GT-only to Upstash.
+// POST /api/score — publish your board entry. Server-side only:
+// X-session required, the row id is the verified X id — and now the
+// SCORE is too: level/stars are derived from the stored `prog:` record,
+// never read from the body. A client can claim a name, never a number.
+// The only thing a forged post can write is a worse score than the road
+// actually earned — and ZADD GT refuses to lower it anyway.
 
 import { cors, sessionFrom } from './_lib/xsess.js';
 
-const MAX_LEVEL = 1000; // levels cleared across BOTH campaigns (2 × 500)
-const MAX_STARS = 3000; // 1000 levels × 3
 const SUBMITS_PER_HOUR = 30;
 
 async function up(env, cmds) {
@@ -43,16 +43,21 @@ export default async function handler(req, res) {
     const b = req.body ?? {};
     const id = `x_${s.id}`; // identity is the verified session, not the body
     const name = cleanName(b.name);
-    const level = Math.floor(Number(b.level));
-    const stars = Math.floor(Number(b.stars));
-    if (!(level >= 1 && level <= MAX_LEVEL && stars >= 0 && stars <= MAX_STARS))
-      return res.status(400).json({ error: 'bad score' });
 
     const [hits] = await up(env, [
       ['INCR', `rl:${s.id}`],
       ['EXPIRE', `rl:${s.id}`, 3600, 'NX'],
     ]);
     if (Number(hits) > SUBMITS_PER_HOUR) return res.status(429).json({ error: 'slow down' });
+
+    // the board mirrors the verified road — body level/stars are ignored
+    const [raw] = await up(env, [['GET', `prog:x_${s.id}`]]);
+    const prog = raw ? JSON.parse(raw) : null;
+    const level = prog ? Math.max(0, (prog.unlocked ?? 1) - 1) : 0;
+    const stars = prog
+      ? Object.values(prog.stars ?? {}).reduce((a, v) => a + (Number(v) || 0), 0)
+      : 0;
+    if (level < 1) return res.status(400).json({ error: 'no road on record — clear a level first' });
 
     const score = pack(level, stars);
     const [wrote, , rank] = await up(env, [

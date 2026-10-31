@@ -6,6 +6,7 @@ import { IceFxPipeline, WaterFxPipeline } from '../logofx';
 import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
+import { pushProfile } from '../cloudsave';
 import { session } from '../xauth';
 import { TouchControls, keyHintsOn, fitZoom } from '../mobile';
 import {
@@ -249,6 +250,7 @@ export class TitleScene extends Phaser.Scene {
       sfx.ensure();
       sfx.shortWhistle();
       savePicks(this.diff, this.joy, this.perf, this.hints);
+      pushProfile();
       wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
     const toOnline = () => {
@@ -285,6 +287,7 @@ export class TitleScene extends Phaser.Scene {
         this.promptOpen = false;
         if (n === null) return;
         setPlayerName(n);
+        pushProfile();
         this.events.emit('runner-renamed');
       });
     };
@@ -621,7 +624,10 @@ export class TitleScene extends Phaser.Scene {
     this.charIdx = (this.charIdx + dir + CHARACTERS.length) % CHARACTERS.length;
     const ch = CHARACTERS[this.charIdx];
     this.refreshCharPlate?.();
-    if (charUnlocked(ch)) setChar(ch.id);
+    if (charUnlocked(ch)) {
+      setChar(ch.id);
+      pushProfile();
+    }
     // shape/gear change the mesh itself — retint can't do it, so the rig
     // is rebuilt and the frame-blit picks up the new canvas automatically
     if (this.hero3d) {
@@ -1154,6 +1160,7 @@ export class TitleScene extends Phaser.Scene {
     this.perfVal?.setText(PERF_LABEL[this.perf]);
     this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
     savePicks(this.diff, this.joy, this.perf, this.hints);
+    pushProfile(); // difficulty/hints sync; joy/perf stay per-device
     this.settingsFoot?.setVisible(keyHintsOn());
   }
 }

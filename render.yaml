@@ -8,3 +8,13 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm start
+    envVars:
+      # shared X-session signature — same value as the api deployment's
+      # SESSION_SECRET (verifies room tickets AND score posts)
+      - key: SESSION_SECRET
+        sync: false
+      # shared board store — same Upstash db as api/score.js + worker
+      - key: UPSTASH_REST_URL
+        sync: false
+      - key: UPSTASH_REST_TOKEN
+        sync: false
