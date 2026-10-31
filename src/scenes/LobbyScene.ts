@@ -54,10 +54,55 @@ export class LobbyScene extends Phaser.Scene {
     this.lobbyPhase = 'menu';
     this.cameras.main.fadeIn(300, 247, 189, 20); // from the lobby yellow — seamless
 
+    const cx = width / 2;
+
+    // ONLINE is a teaser until the colyseus server ships — flip this off and
+    // the real lobby below comes back untouched. Own dims, clamped to the
+    // screen: the lobby card's fixed 640×500 overflows mobile entirely.
+    if (ONLINE_COMING_SOON) {
+      const scw = Math.min(560, width - 24);
+      const sch = Math.min(420, height - 100);
+      const scy = Math.max(6, Math.min(height / 2 - sch / 2, height - sch - 74));
+      fgBackdrop(this, width, height, cx, scy + sch * 0.42);
+      panel(this, cx - scw / 2, scy, scw, sch, { depth: 3 });
+      const compact = scw < 480;
+      this.add
+        .text(cx, scy + sch * 0.38, 'ONLINE', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: compact ? '30px' : '44px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setShadow(0, 4, '#9c2160', 0, true, false)
+        .setDepth(5);
+      this.add
+        .text(
+          cx,
+          scy + sch * 0.62,
+          'COMING SOON\nchasing friends across the yard needs\na server we have not stood up yet',
+          {
+            fontFamily: UI_FONT,
+            fontSize: compact ? '13px' : '16px',
+            fontStyle: '600',
+            color: '#7a8a99',
+            align: 'center',
+            lineSpacing: 6,
+          },
+        )
+        .setOrigin(0.5)
+        .setDepth(5);
+      pillButton(this, cx, scy + sch + 42, 140, 'BACK', {
+        fill: UI.ink,
+        textColor: UI.paper,
+        fontSize: 14,
+        onDown: () => this.scene.start('title'),
+      });
+      return;
+    }
+
     // one card, two states — menu swaps to the room view in place
     const cw = 640;
     const ch = 500;
-    const cx = width / 2;
     // leave room for the BACK pill under the card on short screens; never let
     // the card top go above the frame (the old min() pushed it off-screen on
     // very short windows)
@@ -66,45 +111,6 @@ export class LobbyScene extends Phaser.Scene {
     panel(this, cx - cw / 2, cy0, cw, ch, { depth: 3 });
     this.menuGroup = this.add.container(0, 0).setDepth(5);
     this.roomGroup = this.add.container(0, 0).setDepth(5).setVisible(false);
-
-    // ONLINE is a teaser until the colyseus server ships — flip this off and
-    // the real lobby below comes back untouched
-    if (ONLINE_COMING_SOON) {
-      this.menuGroup.add(
-        this.add
-          .text(cx, cy0 + 140, 'ONLINE', {
-            fontFamily: DISPLAY_FONT,
-            fontSize: '44px',
-            color: '#e84393',
-          })
-          .setOrigin(0.5)
-          .setShadow(0, 4, '#9c2160', 0, true, false),
-      );
-      this.menuGroup.add(
-        this.add
-          .text(
-            cx,
-            cy0 + 210,
-            'COMING SOON\nchasing friends across the yard needs\na server we have not stood up yet',
-            {
-              fontFamily: UI_FONT,
-              fontSize: '16px',
-              fontStyle: '600',
-              color: '#7a8a99',
-              align: 'center',
-              lineSpacing: 6,
-            },
-          )
-          .setOrigin(0.5),
-      );
-      pillButton(this, cx, cy0 + ch + 42, 140, 'BACK', {
-        fill: UI.ink,
-        textColor: UI.paper,
-        fontSize: 14,
-        onDown: () => this.scene.start('title'),
-      });
-      return;
-    }
 
     this.menuGroup.add(
       this.add
