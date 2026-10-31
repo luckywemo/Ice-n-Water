@@ -100,7 +100,11 @@ export default async function handler(req, res) {
  *  gate overlay can say what happened instead of looking dead. */
 function handoff(token, error, next) {
   const payload = token ? { type: 'iw-x', token } : { type: 'iw-x', error };
-  let target = '*';
+  // '' target = no postMessage at all — a window opened by a hostile page
+  // (no valid `next` in the cookie) must NOT receive the token: '*' would
+  // hand the session to whatever opened the popup. The game always sends a
+  // validated next; PWAs redeem through the sid poll, not postMessage.
+  let target = '';
   let back = '';
   try {
     if (next) {
@@ -121,7 +125,7 @@ function handoff(token, error, next) {
   // hash, which the game harvests on boot wherever it lands.
   const script = `<script>
 var P=${JSON.stringify(payload)},T=${JSON.stringify(target)},B=${JSON.stringify(back || '')};
-try{window.opener&&window.opener.postMessage(P,T)}catch(e){}
+try{T&&window.opener&&window.opener.postMessage(P,T)}catch(e){}
 var ok=0;addEventListener('message',function(e){if(e.data&&e.data.type==='iw-x-ack'){ok=1;window.close()}});
 setTimeout(function(){if(!ok)B?location.href=B:(window.opener&&window.close())},900);
 <\/script>`;

@@ -21,6 +21,14 @@ import { cors, sessionFrom, kv } from './_lib/xsess.js';
 const MAX_LEVEL = 1000; // both campaigns (2 × 500) — headroom like score.js
 const SAVES_PER_HOUR = 240;
 const MAX_EVENTS = 600; // a full-road replay fits in one batch
+// frontier throttle — a token bucket on advances. Events are unverifiable
+// by nature, so contiguity alone can't be the bound: without this a single
+// forged batch {1..500} mints a maxed road. One credit per MS_PER_LEVEL,
+// BURST banked — real play never touches it (a level takes a minute+,
+// refills every 30s; an offline grinder's replay spends a banked bucket),
+// a script stalls to ~4 days for a fake road and lights up the audit trail.
+const MS_PER_LEVEL = 30_000;
+const BURST = 8;
 
 const int = (v, lo, hi) => {
   const n = Math.floor(Number(v));
@@ -89,16 +97,28 @@ export default async function handler(req, res) {
     p.unlocked = Math.min(Math.max(p.unlocked || 1, 1), MAX_LEVEL);
     p.stars = p.stars ?? {};
 
+    // refill the frontier bucket — records created before the throttle
+    // start with a full bank (the burst allowance)
+    const nowMs = Date.now();
+    const rateAt = typeof p.rateAt === 'number' ? p.rateAt : nowMs;
+    let credit = Math.min(BURST, (typeof p.credit === 'number' ? p.credit : BURST) + (nowMs - rateAt) / MS_PER_LEVEL);
+    p.rateAt = nowMs;
+
     // apply in level order — each clear only counts if the road reached it
     let applied = 0;
     for (const e of events) {
       if (e.level > p.unlocked) continue; // can't clear beyond the frontier
       if ((p.stars[e.level] ?? 0) >= e.stars) continue; // already had it
+      const advances = e.level >= p.unlocked;
+      if (advances && credit < 1) break; // throttle — no more frontier today
       p.stars[e.level] = e.stars;
       applied++;
-      if (e.level >= p.unlocked && p.unlocked < MAX_LEVEL)
+      if (advances && p.unlocked < MAX_LEVEL) {
         p.unlocked = e.level + 1;
+        credit--;
+      }
     }
+    p.credit = Math.max(0, credit);
     if (applied > 0) await kv([['SET', key, JSON.stringify(p)]]);
     return res.status(200).json({ progress: p, applied });
   } catch (e) {
