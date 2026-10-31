@@ -34,7 +34,7 @@ const boot = () =>
     width: CONFIG.view.width,
     height: CONFIG.view.height,
     parent: document.body,
-    backgroundColor: '#0d1b2a',
+    transparent: true, // the 3D stage canvas shows through in match scenes
     physics: {
       default: 'arcade',
       arcade: { debug: false },
@@ -56,6 +56,10 @@ const go = () => {
   const game = boot();
   // debug/tests handle — lets tooling inspect scenes + input state
   (window as unknown as { __iwGame?: Phaser.Game }).__iwGame = game;
+  // the 3D stage canvas sits behind (fixed, z:0) — the game canvas must be
+  // positioned to stack above it, since a static element can't win on z
+  game.canvas.style.position = 'relative';
+  game.canvas.style.zIndex = '1';
   // mobile toolbars move the VISUAL viewport without emitting window.resize
   // (Chrome's dynamic-toolbar model; the page can't scroll past overflow:hidden
   // to trigger one). Phaser only listens to window resize, so the canvas stays

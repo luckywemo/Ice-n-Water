@@ -1,0 +1,11 @@
+{
+  "name": "Ice 'N' Water 3D",
+  "short_name": "IceWater3D",
+  "description": "The Nigerian childhood game, reimagined in 3D.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d1b2a",
+  "theme_color": "#0d1b2a",
+  "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+}

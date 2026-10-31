@@ -43,3 +43,6 @@ twitter/*.gif
 cover.png
 cover-new.png
 image_*.png
+
+# CDP video-analysis frames
+.shots/frames/

@@ -155,6 +155,69 @@ export const MILITIA_DEF: CharDef = {
   furLen: 1.45,
 };
 
+// milestone champions — the ice militia's named elite. Spread over
+// MILITIA_DEF so they keep the frozen coat/brows/icicles, but each boss
+// gets a silhouette + headgear you can read at a glance. Keyed by the
+// royal title from MILESTONE_BOSSES: crowns for the great thrones, caps
+// (fila/turban) for lesser obas + emirs, bands for young baales, spikes
+// for the warrior titles, tall for the northern robes.
+export const BOSS_MODELS: Record<string, Partial<CharDef>> = {
+  // — Lagos + Yorubaland
+  'OBA OF LAGOS': { gear: 'crown' }, // the first champion wears the real crown
+  'OBA OF IKOYI': { gear: 'cap' },
+  'BAALE OF SURULERE': { gear: 'band' }, // quarter heads — no crown yet
+  'BAALE OF YABA': { gear: 'band' },
+  'OBA OF IKEJA': { gear: 'cap' },
+  'AYANGBUREN OF IKORODU': { gear: 'cap' },
+  'OLOJA OF EPE': { gear: 'cap' },
+  'AHOLU OF BADAGRY': { gear: 'cap' },
+  'BAALE OF AGEGE': { gear: 'band' },
+  'BAALE OF OSHODI': { gear: 'band' },
+  'ALAKE OF EGBALAND': { gear: 'crown' },
+  'OLUBADAN OF IBADAN': { gear: 'crown', shape: 'round' }, // the big man
+  'ATAOJA OF OSOGBO': { gear: 'crown' },
+  'OONI OF IFE': { gear: 'crown', shape: 'tall' }, // the senior throne
+  'DEJI OF AKURE': { gear: 'cap' },
+  'EWI OF ADO-EKITI': { gear: 'cap' },
+  'OSEMAWE OF ONDO': { gear: 'cap' },
+  'OBA OF BENIN': { gear: 'crown' }, // the legendary throne
+  'OLU OF WARRI': { gear: 'crown', shape: 'round' },
+  'ASAGBA OF ASABA': { gear: 'cap' },
+  // — the East + the rivers
+  'OBI OF ONITSHA': { gear: 'crown' }, // a serious throne
+  'EZE UZU OF AWKA': { gear: 'cap' },
+  'IGWE OF ENUGU': { gear: 'spikes' }, // coal city muscle
+  'IGWE OF ABAKALIKI': { gear: 'cap' },
+  'EZE OF OWERRI': { gear: 'cap' },
+  'IGWE OF UMUAHIA': { gear: 'cap' },
+  'EZE OF ABA': { gear: 'spikes' },
+  'AMANYANABO OF PORT HARCOURT': { gear: 'cap', shape: 'round' }, // river kings run wide
+  'AMANYANABO OF YENAGOA': { gear: 'cap', shape: 'round' },
+  'OBONG OF CALABAR': { gear: 'crown', shape: 'round' },
+  'OBONG OF UYO': { gear: 'cap', shape: 'round' },
+  // — the middle belt
+  'CHIEF OF OGOJA': { gear: 'band' },
+  'TOR TIV OF MAKURDI': { gear: 'spikes' }, // the warrior federation
+  'MAIGARI OF LOKOJA': { gear: 'cap' },
+  'EMIR OF ILORIN': { gear: 'cap', shape: 'tall' }, // first northern throne — the robes run long
+  // — the North
+  'EMIR OF MINNA': { gear: 'cap', shape: 'tall' },
+  'ESU OF ABUJA': { gear: 'cap', shape: 'tall' },
+  'EMIR OF KADUNA': { gear: 'cap', shape: 'tall' },
+  'EMIR OF ZAZZAU': { gear: 'spikes', shape: 'tall' }, // the warrior emirate
+  'EMIR OF KANO': { gear: 'crown', shape: 'tall' }, // the great northern throne
+  'EMIR OF KATSINA': { gear: 'cap', shape: 'tall' },
+  'SULTAN OF SOKOTO': { gear: 'crown', shape: 'tall' }, // the supreme throne
+  'EMIR OF GWANDU': { gear: 'cap', shape: 'tall' },
+  'EMIR OF ZAMFARA': { gear: 'cap', shape: 'tall' },
+  'EMIR OF DUTSE': { gear: 'cap', shape: 'tall' },
+  'EMIR OF BAUCHI': { gear: 'cap', shape: 'tall' },
+  'EMIR OF GOMBE': { gear: 'cap', shape: 'tall' },
+  'LAMIDO OF ADAMAWA': { gear: 'cap', shape: 'tall' },
+  'EMIR OF MURI': { gear: 'cap', shape: 'tall' },
+  'SHEHU OF BORNO': { gear: 'crown', shape: 'tall', furLen: 1.7 }, // the finale — a shaggy ice monster king
+};
+
 const KEY = 'iw-char';
 
 // the wardrobe pick — id chooses the runner, body optionally repaints

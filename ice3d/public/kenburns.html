@@ -1,0 +1,152 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#0d1b2a}canvas{display:block}</style></head>
+<body>
+<canvas id="cv" width="1280" height="720"></canvas>
+<script>
+// Ken-Burns trailer assembler — draws the captured stills on a 720p
+// canvas with pan/zoom + title slates, and records it via MediaRecorder.
+const SHOTS = '/trailer/';
+const CUT = [
+  { t: 'ICE \'N\' WATER', s: 'THE STREET · 3D', d: 2.2 },
+  { img: '03-flyover.png', d: 3.0, zoom: 'in' },
+  { img: '04-skydive.png', d: 2.4, zoom: 'in' },
+  { img: '05-go.png', d: 2.0 },
+  { t: 'RUN.', d: 1.1 },
+  { img: '06-chase-a.png', d: 2.4, pan: 'r' },
+  { img: '07-chase-b.png', d: 2.0, pan: 'l' },
+  { t: 'FREEZE.', d: 1.1 },
+  { img: '08-frozen.png', d: 2.6, zoom: 'in' },
+  { t: 'COME SAVE ME.', d: 1.4 },
+  { img: '09-ping.png', d: 2.4 },
+  { img: '10-rescue.png', d: 2.2 },
+  { t: 'COLLECT THE DROPS —', d: 1.1 },
+  { img: '11-drops.png', d: 2.0, pan: 'r' },
+  { t: '— LEFTOVERS TURN.', d: 1.4 },
+  { img: '12-twist.png', d: 2.4 },
+  { img: '13-exit.png', d: 2.2 },
+  { t: 'EVERY STOP, NEW RULES.', d: 1.6 },
+  { img: '15-school.png', d: 2.4, pan: 'l' },
+  { img: '14-nepa.png', d: 3.0, zoom: 'in' },
+  { t: 'LAGOS → MAIDUGURI', s: 'THE ROAD NORTH', d: 1.8 },
+  { img: '16-results.png', d: 2.2 },
+  { t: 'ICE \'N\' WATER 3D', s: 'free · in your browser', d: 3.0 },
+];
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+const imgs = {};
+let loaded = 0;
+for (const c of CUT) if (c.img) {
+  const im = new Image();
+  im.onload = () => {
+    imgs[c.img] = im;
+    if (++loaded === CUT.filter(x => x.img).length) {
+      window.__ready = true;
+      if (!location.search.includes('manual')) go();
+    }
+  };
+  im.src = SHOTS + c.img;
+}
+function slate(c, k) {
+  g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, 1280, 720);
+  g.fillStyle = '#7fd8f0'; g.globalAlpha = Math.min(1, k * 3);
+  g.textAlign = 'center';
+  g.font = '900 92px Arial Black, sans-serif';
+  g.fillText(c.t, 640, c.s ? 340 : 380);
+  if (c.s) { g.font = '800 34px Arial'; g.fillStyle = '#ffc93c'; g.fillText(c.s, 640, 420); }
+  g.globalAlpha = 1;
+}
+function frame(c, k) {
+  if (c.t) { slate(c, k); return; }
+  const im = imgs[c.img]; if (!im) return;
+  // cover-fit + drift
+  const z = c.zoom === 'in' ? 1.04 + k * .1 : 1.08;
+  const px = c.pan === 'r' ? -k * 40 : c.pan === 'l' ? k * 40 - 40 : -20;
+  const s = Math.max(1280 / im.width, 720 / im.height) * z;
+  g.globalAlpha = Math.min(1, Math.min(k * 4, (1 - k) * 4) + .05);
+  g.drawImage(im, (1280 - im.width * s) / 2 + px, (720 - im.height * s) / 2, im.width * s, im.height * s);
+  g.globalAlpha = 1;
+}
+// deterministic driver for headless recording: advance the timeline by
+// hand instead of relying on requestAnimationFrame (paused in headless)
+let __el = 0;
+const __total = CUT.reduce((a, c) => a + c.d, 0);
+function __step(ms) {
+  __el += ms / 1000;
+  let acc = 0;
+  for (const c of CUT) {
+    if (__el < acc + c.d) { frame(c, (__el - acc) / c.d); break; }
+    acc += c.d;
+  }
+  return __el >= __total;
+}
+window.__step = __step;
+window.__total = __total;
+// headless/CI capture — step the timeline by hand, pull a frame per step
+// at real-time pacing so the recording comes out at the right duration
+window.__capture = async function (fps = 30) {
+  const stream = cv.captureStream(0);
+  const track = stream.getVideoTracks()[0];
+  const mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+    .find((t) => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
+  const parts = [];
+  rec.ondataavailable = (e) => parts.push(e.data);
+  const blob = new Promise((r) => rec.onstop = () => r(new Blob(parts)));
+  // MessageChannel pacing — real task yields, NOT clamped like setTimeout
+  // in headless/backgrounded pages
+  const mc = new MessageChannel();
+  const wait = (ms) => new Promise((res) => {
+    const t = performance.now();
+    mc.port1.onmessage = () => {
+      if (performance.now() - t >= ms) { mc.port1.onmessage = null; res(); }
+      else mc.port2.postMessage(0);
+    };
+    mc.port2.postMessage(0);
+  });
+  rec.start(250);
+  const dt = 1000 / fps;
+  __step(dt); track.requestFrame();
+  while (!__step(dt)) {
+    track.requestFrame();
+    await wait(dt);
+    window.__n = (window.__n || 0) + 1;
+  }
+  track.requestFrame();
+  await wait(300);
+  rec.stop();
+  const b = await blob;
+  const data = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+  const out = { mime, ext: mime.includes('mp4') ? 'mp4' : 'webm', data };
+  window.__vid = out; // big dataURL — fetch it back in chunks, not returnByValue
+  return { mime, ext: out.ext, bytes: b.size };
+};
+function go() {
+  window.__ready = true;
+  const stream = cv.captureStream(30);
+  const mime = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+    .find((t) => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+  const parts = [];
+  rec.ondataavailable = (e) => parts.push(e.data);
+  rec.onstop = () => {
+    const b = new Blob(parts);
+    const r = new FileReader();
+    r.onload = () => { window.__vid = { mime, data: r.result }; };
+    r.readAsDataURL(b);
+  };
+  rec.start(250);
+  const total = CUT.reduce((a, c) => a + c.d, 0);
+  const t0 = performance.now();
+  (function loop() {
+    const el = (performance.now() - t0) / 1000;
+    let acc = 0;
+    for (const c of CUT) {
+      if (el < acc + c.d) { frame(c, (el - acc) / c.d); break; }
+      acc += c.d;
+    }
+    if (el < total) requestAnimationFrame(loop);
+    else { rec.stop(); window.__done = true; }
+  })();
+  window.__total = total;
+}
+</script>
+</body></html>

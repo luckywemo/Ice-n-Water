@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
-import { makeTextures, decorateYard } from '../art';
+import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, pinHud, layoutHud, HudItem, REDUCED_MOTION, shade, viewZoom, hudFactor } from '../ui';
 import {
@@ -15,10 +15,10 @@ import { submitAdventureScore } from '../leaderboard';
 import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
-import { bakeBeanSheet } from '../beanbake';
-import { charMove, currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
-import type { BossMove } from '../adventure';
+import { PitchStage } from '../b3d/stage';
+import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
 import { viaWipe, wipeTo } from '../wipe';
+import type { BossMove } from '../adventure';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -44,6 +44,7 @@ interface RunnerState {
   label: Phaser.GameObjects.Text;
   personality: Personality;
   sheet?: string; // baked bean sheet key — anims instead of the flat circle
+  drawScale?: number; // presentation scale — beans 0.8, boss 1.45, icelings 0.5
 }
 
 interface ChaserState {
@@ -64,6 +65,7 @@ interface ChaserState {
   rageUntil?: number; // boss move — boiling red, runs you down harder
   sheet?: string; // baked bean sheet key
   noTagUntil?: number; // icelings get a warm-up before their touch freezes
+  drawScale?: number; // boss 1.45, icelings 0.5, regular militia 0.8
 }
 
 type ItemType = 'slippers' | 'charm' | 'water';
@@ -115,7 +117,6 @@ export class GameScene extends Phaser.Scene {
   private nextThumpAt = 0;
   private adrenalineOn = false;
   private transitioning = false;
-  private fromWipe = false; // arrived via wipeTo — the blade already revealed us
   private lastShownSec = -1;
   private bannerTween: Phaser.Tweens.Tween | null = null;
 
@@ -183,6 +184,19 @@ export class GameScene extends Phaser.Scene {
   private sheetPlayer: string | null = null;
   private sheetCrew: string | null = null;
   private sheetMilitia: string | null = null;
+  private sheetBoss: string | null = null; // milestone champion's own look
+  // the 3D stage — playground renders in Three.js behind the UI canvas;
+  // everything below stays authoritative Phaser pixels
+  private st3 = PitchStage.get();
+  private stEnt = new Map<Sprite, number>();
+  private stPickup = new Map<Sprite, number>();
+  private stObstacles: { x: number; y: number; r: number }[] = [];
+  private stSafe: { x: number; y: number; r: number } | null = null;
+  private fromWipe = false; // arrived via wipeTo — the blade already revealed us
+  private me = currentChar();
+  private hintText!: Phaser.GameObjects.Text;
+  private hintChip!: Phaser.GameObjects.Graphics;
+  private hintGone = false; // hint bar retired after the first few rounds
   private exitPos: { x: number; y: number; r: number } | null = null;
   private exitGfx: Phaser.GameObjects.Graphics | null = null;
 
@@ -205,7 +219,7 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  init(data: { difficulty?: Difficulty; adventure?: LevelDef; iwWipe?: boolean }) {
+  init(data: { difficulty?: Difficulty; adventure?: LevelDef }) {
     this.diff = DIFFS[data.difficulty ?? 'normal'] ?? DIFFS.normal;
     this.level = data.adventure ?? null;
     this.fromWipe = viaWipe(data);
@@ -286,41 +300,37 @@ export class GameScene extends Phaser.Scene {
       this.mapSeed = Math.floor(Math.random() * 0xffffffff);
     }
 
-    // battlefield size — seeded per level so the same stop always has the
-    // same sprawl, and the road north gets bigger as you go
-    const growRng = seededRng(this.mapSeed ^ 0x5f3759df);
-    const grow =
-      1.12 + growRng() * 0.38 + (this.level ? Math.min(this.level.n * 0.0006, 0.3) : 0);
-    this.arenaW = Math.round((CONFIG.arena.width * grow) / 16) * 16;
-    this.arenaH = Math.round((CONFIG.arena.height * grow) / 16) * 16;
+    // 3D playground — the street/school world owns the battlefield look;
+    // the sim runs in the same pixel space it always did, so every rule,
+    // mutator, and objective keeps working untouched
+    const stMap = this.st3.buildMap(
+      this.level && this.level.n % 3 === 2 ? 'school' : 'street',
+    );
+    this.st3.show();
+    this.st3.clearEnts();
+    this.st3.clearPickups();
+    this.st3.clearProps();
+    this.st3.resetOrbit();
+    this.st3.nepa(false);
+    this.st3.rain(false);
+    this.st3.hideBus();
+    this.st3.showExit(0, 0, false);
+    this.st3.showRefuge(0, 0, 0, false);
+    this.arenaW = stMap.arenaW;
+    this.arenaH = stMap.arenaH;
+    this.stObstacles = stMap.obstacles;
+    this.stSafe = stMap.safeZone;
 
-    // world bounds = the big arena, not the viewport
+    // world bounds = the 3D pitch's footprint
     this.physics.world.setBounds(0, 0, this.arenaW, this.arenaH);
 
     makeTextures(this);
 
-    // baked bean sheets — the 3D lobby rig pre-posed into sprite frames.
-    // First entry pays a few hundred ms; sheets persist in the texture
-    // manager for every later level. No WebGL → flat circles stay.
     const me = currentChar();
     this.playerMove = charMove(me); // beaten champions pass their boss's skill
-    const youKey = `bean-you-${me.id}-${me.body.toString(16)}`; // per-look key — a swapped pick or repaint can't reuse a stale sheet
-    this.sheetPlayer = bakeBeanSheet(this, youKey, me) ? youKey : null;
-    this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
-    this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
-      ? 'bean-militia'
-      : null;
-    for (const k of [this.sheetPlayer, this.sheetCrew, this.sheetMilitia])
-      if (k) this.makeBeanAnims(k);
+    this.me = me;
 
     this.buildArena();
-    decorateYard(
-      this,
-      this.obstacleRects,
-      seededRng(this.mapSeed ^ 0x9e3779b9),
-      this.arenaW,
-      this.arenaH,
-    );
 
     this.itemGroup = this.physics.add.group({ allowGravity: false, immovable: true });
     this.spawnEntities();
@@ -345,6 +355,17 @@ export class GameScene extends Phaser.Scene {
     // the collect group to exist first
     if (this.mutator === 'night') this.applyDusk();
     if (this.mutator === 'decoy') this.spawnDecoys();
+
+    // drag the right half of the screen (or any mouse drag) to orbit the
+    // follow-cam — same feel as the 3D module; wheel zooms
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!p.isDown || this.touch?.isJoyPointer(p)) return;
+      if (p.wasTouch && p.downX < this.scale.width * 0.45) return;
+      this.st3.orbit(p.velocity.x, p.velocity.y);
+    });
+    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) =>
+      this.st3.zoomBy(dy),
+    );
 
     this.touch = new TouchControls(
       this,
@@ -396,6 +417,22 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.scale.on('resize', this.relayout, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
+    // leaving the playground by ANY path drops the 3D layer — restarts
+    // re-show it when create() builds the next map
+    this.events.once('shutdown', () => this.st3.hide());
+    // a phone call / app switch mid-round pauses instead of feeding you to the ice
+    const onBlurPause = () => {
+      if (
+        document.visibilityState === 'hidden' &&
+        (this.phase === 'play' || this.phase === 'countdown')
+      ) {
+        this.togglePause();
+      }
+    };
+    document.addEventListener('visibilitychange', onBlurPause);
+    this.events.once('shutdown', () =>
+      document.removeEventListener('visibilitychange', onBlurPause),
+    );
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
     this.input.on('pointerdown', this.onPauseTap, this);
@@ -510,9 +547,8 @@ export class GameScene extends Phaser.Scene {
     const width = this.arenaW;
     const height = this.arenaH;
 
-    this.add.rectangle(width / 2, height / 2, width, height, colors.ground);
-
-    // outer walls — permanent
+    // the ground + walls live in the 3D stage — Phaser keeps invisible
+    // physics walls so the sim is unchanged
     const walls = [
       { x: width / 2, y: wall / 2, w: width, h: wall },
       { x: width / 2, y: height - wall / 2, w: width, h: wall },
@@ -521,19 +557,102 @@ export class GameScene extends Phaser.Scene {
     ];
     for (const r of walls) {
       const rect = this.add.rectangle(r.x, r.y, r.w, r.h, colors.wall);
+      rect.setVisible(false);
       this.physics.add.existing(rect, true);
       this.wallBodies.push(rect);
     }
 
-    // seeded neighborhood blocks — the layout that changes every game
+    // seeded neighborhood blocks — the layout that changes every game.
+    // Each rect keeps its physics body and gets a 3D cover prop drawn over it,
+    // unless the street's own furniture already owns that spot
     this.obstacleGroup = this.physics.add.staticGroup();
     for (const o of generateLayout(this.mapSeed, width, height)) {
+      const hitsWorld = this.stObstacles.some(
+        (wo) =>
+          Phaser.Math.Distance.Between(o.x, o.y, wo.x, wo.y) <
+          wo.r + Math.max(o.w, o.h) / 2 + 24,
+      );
+      if (hitsWorld) continue;
       const rect = this.add.rectangle(o.x, o.y, o.w, o.h, colors.obstacle);
+      rect.setVisible(false);
       this.obstacleGroup.add(rect);
       this.obstacleRects.push(
         new Phaser.Geom.Rectangle(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h),
       );
+      this.st3.addProp(o.x, o.y, o.w, o.h);
     }
+
+    // the street's own furniture is physical too — kiosks, tyre stacks,
+    // the danfo parked at the curb; invisible boxes standing on the meshes
+    for (const wo of this.stObstacles) {
+      const rect = this.add.rectangle(wo.x, wo.y, wo.r * 1.7, wo.r * 1.7, 0);
+      rect.setVisible(false);
+      this.obstacleGroup.add(rect);
+      this.obstacleRects.push(
+        new Phaser.Geom.Rectangle(wo.x - wo.r, wo.y - wo.r, wo.r * 2, wo.r * 2),
+      );
+    }
+  }
+
+  // ---------- 3D stage seam — Phaser sim → Three.js skin ----------
+
+  private linkEnt(
+    spr: Sprite,
+    model: Parameters<PitchStage['spawnEnt']>[0],
+    ring: number,
+    scale = 1,
+  ) {
+    const id = this.st3.spawnEnt(model, ring, spr.x, spr.y);
+    this.stEnt.set(spr, id);
+    if (scale !== 1) this.st3.scaleEnt(id, scale);
+    spr.setVisible(false);
+  }
+
+  private unlinkEnt(spr: Sprite) {
+    const id = this.stEnt.get(spr);
+    if (id !== undefined) {
+      this.st3.removeEnt(id);
+      this.stEnt.delete(spr);
+    }
+  }
+
+  private linkPickup(spr: Sprite, kind: string) {
+    this.stPickup.set(spr, this.st3.addPickup(spr.x, spr.y, kind));
+    spr.setVisible(false);
+  }
+
+  private unlinkPickup(spr: Sprite) {
+    const id = this.stPickup.get(spr);
+    if (id !== undefined) {
+      this.st3.removePickup(id);
+      this.stPickup.delete(spr);
+    }
+  }
+
+  /** per-frame mirror — Phaser state flows into the 3D scene; labels and
+   *  the camera follow via the stage's own projection */
+  private sync3d(delta: number) {
+    const st = this.st3;
+    for (const [spr, id] of this.stEnt) {
+      if (!spr.active) {
+        this.unlinkEnt(spr);
+        continue;
+      }
+      const b = spr.body as Body;
+      const rs = this.rState.get(spr);
+      st.syncEnt(id, spr.x, spr.y, b.velocity.x, b.velocity.y, rs?.frozen);
+      const label = rs?.label ?? this.cState.get(spr)?.tag;
+      if (label) {
+        const p = st.project(spr.x, spr.y, 2.15);
+        label.setScrollFactor(0).setDepth(40).setPosition(p.x, p.y);
+      }
+    }
+    if (this.duskMode && this.player) st.nepa(true, this.player.x, this.player.y);
+    if (this.bus) {
+      const v = (this.bus.body as Body).velocity;
+      st.setBus(this.bus.x, this.bus.y, Math.atan2(v.y, v.x) - Math.PI / 2);
+    }
+    st.render(delta / 1000, this.player?.x, this.player?.y);
   }
 
   private lit<T extends Phaser.GameObjects.GameObject>(obj: T): T {
@@ -549,47 +668,59 @@ export class GameScene extends Phaser.Scene {
       this.arenaH * 0.5,
       this.sheetPlayer ?? 'player',
     );
+    this.player.setVisible(false); // the 3D bean is the look now
     this.dressBean(this.player, this.sheetPlayer);
     this.runners.push(this.player);
     const pSt = this.freshRunner(this.player, 'YOU', null);
     pSt.sheet = this.sheetPlayer ?? undefined;
+    pSt.drawScale = this.sheetPlayer ? 0.8 : 1;
     this.rState.set(this.player, pSt);
     if (this.sheetPlayer) this.player.play(this.sheetPlayer + '-idle');
+    this.linkEnt(
+      this.player,
+      this.me,
+      this.level?.objective.kind === 'hunt' ? 0xff6b6b : 0xffc93c,
+    );
 
     // crowd mutator packs the field with extra bodies — compound streets
     const crowdBonus = this.mutator === 'crowd' ? 3 : 0;
     for (let i = 0; i < this.crewSize + crowdBonus; i++) {
       const p = this.randomFreePos(this.arenaW * 0.35, this.arenaW - 60);
       const r = this.physics.add.sprite(p.x, p.y, this.sheetCrew ?? 'runner');
+      r.setVisible(false);
       this.dressBean(r, this.sheetCrew);
       this.runners.push(r);
       const who = CONFIG.crew[i % CONFIG.crew.length];
       const st = this.freshRunner(r, who.name, who);
       st.sheet = this.sheetCrew ?? undefined;
+      st.drawScale = this.sheetCrew ? 0.8 : 1;
       this.rState.set(r, st);
       if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
+      this.linkEnt(r, CREW_DEF, 0x4dd0e1);
     }
 
     // militia — adventure levels can field a whole squad from the first whistle
     for (let i = 0; i < this.initialChasers; i++) {
       const y = (this.arenaH / (this.initialChasers + 1)) * (i + 1);
-      const chaser = this.physics.add.sprite(
-        arena.wall + 40,
-        y,
-        this.sheetMilitia ?? 'chaser',
-      );
-      this.dressBean(chaser, this.sheetMilitia);
+      // milestone champions wear their own baked look, not the rank-and-file
+      const boss = Boolean(this.level?.boss && i === 0);
+      const sheet = boss ? (this.sheetBoss ?? this.sheetMilitia) : this.sheetMilitia;
+      const chaser = this.physics.add.sprite(arena.wall + 40, y, sheet ?? 'chaser');
+      chaser.setVisible(false);
+      this.dressBean(chaser, sheet);
       this.chasers.push(chaser);
       const cst = this.freshChaser(chaser);
-      cst.sheet = this.sheetMilitia ?? undefined;
+      cst.sheet = sheet ?? undefined;
+      cst.drawScale = sheet ? 0.8 : 1;
       // milestone levels are boss fights — the named champion is bigger,
       // hotter, and wears their title over their head
-      if (this.level?.boss && i === 0) {
+      if (boss) {
+        cst.drawScale = 1.45;
         chaser.setScale(1.45);
         cst.speedMult = 1.15;
         cst.tint = 0xff8080;
         cst.tag = this.add
-          .text(chaser.x, chaser.y - 44, this.level.boss, {
+          .text(chaser.x, chaser.y - 44, this.level!.boss!, {
             fontFamily: DISPLAY_FONT,
             fontSize: '13px',
             color: '#ffb0b0',
@@ -600,6 +731,12 @@ export class GameScene extends Phaser.Scene {
           .setDepth(8);
       }
       this.cState.set(chaser, cst);
+      this.linkEnt(
+        chaser,
+        boss ? { ...MILITIA_DEF, ...BOSS_MODELS[this.level!.boss!] } : MILITIA_DEF,
+        boss ? 0xff6b6b : 0x9fd8ff,
+        boss ? 1.45 : 1,
+      );
     }
 
     for (const r of this.runners) this.collideWithWorld(r);
@@ -655,7 +792,7 @@ export class GameScene extends Phaser.Scene {
 
   private freshRunner(sprite: Sprite, name: string, personality: Personality): RunnerState {
     const shadow = this.add.sprite(sprite.x, sprite.y + CONFIG.runner.radius, 'shadow');
-    shadow.setDepth(1.5);
+    shadow.setDepth(1.5).setVisible(false); // real shadows live in the 3D pass
     const label = this.add
       .text(sprite.x, sprite.y - 26, name, {
         fontFamily: UI_FONT,
@@ -691,7 +828,7 @@ export class GameScene extends Phaser.Scene {
 
   private freshChaser(sprite: Sprite): ChaserState {
     const shadow = this.add.sprite(sprite.x, sprite.y + CONFIG.chaser.radius, 'shadow');
-    shadow.setDepth(1.5).setScale(1.15);
+    shadow.setDepth(1.5).setScale(1.15).setVisible(false);
     return {
       decideIn: 0,
       strafeUntil: 0,
@@ -731,16 +868,9 @@ export class GameScene extends Phaser.Scene {
     const spawn = (type: ItemType, count: number) => {
       for (let i = 0; i < count; i++) {
         const p = this.randomFreePos();
-        const s = this.lit(this.itemGroup.create(p.x, p.y, type) as Sprite);
-        s.setDepth(1.6);
+        const s = this.itemGroup.create(p.x, p.y, type) as Sprite;
         this.itemType.set(s, type);
-        this.tweens.add({
-          targets: s,
-          y: s.y - 4,
-          duration: 700 + Math.random() * 300,
-          yoyo: true,
-          repeat: -1,
-        });
+        this.linkPickup(s, type);
       }
     };
     // market-day mutator floods the field with pickups
@@ -768,16 +898,8 @@ export class GameScene extends Phaser.Scene {
     this.collectGroup = this.physics.add.group({ allowGravity: false, immovable: true });
     for (let i = 0; i < total; i++) {
       const p = this.randomFreePos();
-      const s = this.lit(this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite).setDepth(1.6);
-      if (!REDUCED_MOTION) {
-        this.tweens.add({
-          targets: s,
-          y: s.y - 5,
-          duration: 650 + Math.random() * 350,
-          yoyo: true,
-          repeat: -1,
-        });
-      }
+      const s = this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite;
+      this.linkPickup(s, 'collect');
     }
     this.physics.add.overlap(this.player, this.collectGroup, (_p, t) =>
       this.collectToken(t as Sprite),
@@ -790,31 +912,16 @@ export class GameScene extends Phaser.Scene {
     const fake = this.level.objective.count; // a trap for every real drop
     for (let i = 0; i < fake; i++) {
       const p = this.randomFreePos();
-      const s = this.lit(
-        this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite,
-      ).setDepth(1.6);
-      s.setTint(0xc9a06a); // browner tint — sharp eyes can tell
+      const s = this.collectGroup.create(p.x, p.y, 'lvltoken') as Sprite;
       this.decoys.add(s);
-      if (!REDUCED_MOTION) {
-        this.tweens.add({
-          targets: s,
-          y: s.y - 5,
-          duration: 650 + Math.random() * 350,
-          yoyo: true,
-          repeat: -1,
-        });
-      }
+      this.linkPickup(s, 'decoy');
     }
   }
 
-  /** night mutator — permanent dusk: your own spotlight, militia as glints */
+  /** night mutator — permanent dusk: the 3D blackout + your torch */
   private applyDusk() {
     this.duskMode = true;
-    this.lights.setAmbientColor(0x2e2e40);
-    this.playerLight = this.lights.addLight(this.player.x, this.player.y, 220, 0xffe9b0, 1.7);
-    this.chaserLights = this.chasers.map((c) =>
-      this.lights.addLight(c.x, c.y, 70, 0xff5050, 0.8),
-    );
+    this.st3.nepa(true, this.player.x, this.player.y);
   }
 
   private collectToken(t: Sprite) {
@@ -825,12 +932,14 @@ export class GameScene extends Phaser.Scene {
       this.burst(t.x, t.y, 0x9a6b3a, 10, 140);
       this.floatText(t.x, t.y, 'BITTER KOLA!');
       sfx.freeze();
+      this.unlinkPickup(t);
       t.destroy();
       return;
     }
     this.burst(t.x, t.y, 0x7fd8f0, 12, 160);
     this.floatText(t.x, t.y, 'WATER DROP!');
     sfx.pickup();
+    this.unlinkPickup(t);
     t.destroy();
     this.objGot++;
     if (
@@ -845,35 +954,27 @@ export class GameScene extends Phaser.Scene {
   // ---------- refuge — the gold safe ring ----------
 
   private spawnRefuge() {
-    // center band — never sits on top of the player's spawn corner
-    const p = this.randomFreePos(this.arenaW * 0.25, this.arenaW * 0.75);
-    this.refugePos = { x: p.x, y: p.y, r: REFUGE_RADIUS };
+    // the police post IS the safe ring when the street provides one
+    const p = this.stSafe ?? {
+      ...this.randomFreePos(this.arenaW * 0.25, this.arenaW * 0.75),
+      r: REFUGE_RADIUS,
+    };
+    this.refugePos = { x: p.x, y: p.y, r: p.r };
 
-    const g = this.add.graphics().setDepth(1.4);
-    this.lit(g);
+    const g = this.add.graphics().setDepth(1.4).setVisible(false);
     this.refugeGfx = g;
-    this.refugeLabel = this.lit(
-      this.add
-        .text(p.x, p.y - REFUGE_RADIUS - 18, 'SAFE RING', {
-          fontFamily: DISPLAY_FONT,
-          fontSize: '13px',
-          color: '#c98a00',
-          stroke: '#2b2115',
-          strokeThickness: 3,
-        })
-        .setOrigin(0.5)
-        .setDepth(1.4),
-    );
-    this.drawRefuge();
-    if (!REDUCED_MOTION) {
-      this.tweens.add({
-        targets: this.refugeLabel,
-        y: this.refugeLabel.y - 6,
-        duration: 900,
-        yoyo: true,
-        repeat: -1,
-      });
-    }
+    this.refugeLabel = this.add
+      .text(p.x, p.y - REFUGE_RADIUS - 18, 'SAFE RING', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '13px',
+        color: '#c98a00',
+        stroke: '#2b2115',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(1.4)
+      .setVisible(false); // the 3D post + ring carry the look
+    this.st3.showRefuge(p.x, p.y, p.r, true);
   }
 
   private drawRefuge() {
@@ -923,22 +1024,23 @@ export class GameScene extends Phaser.Scene {
   /** quota reached: leftover drops freeze into hunters, exit ring opens */
   /** a frozen water drop that hunts — small, cold, half your speed */
   private addIceling(x: number, y: number) {
-    const c = this.lit(
-      this.physics.add
-        .sprite(x, y, this.sheetMilitia ?? 'chaser')
-        .setScale(this.sheetMilitia ? 0.5 : 0.65)
-        .setTint(CONFIG.colors.frozen)
-        .setDepth(3),
-    ) as Sprite;
+    const c = this.physics.add
+      .sprite(x, y, this.sheetMilitia ?? 'chaser')
+      .setScale(this.sheetMilitia ? 0.5 : 0.65)
+      .setTint(CONFIG.colors.frozen)
+      .setDepth(3)
+      .setVisible(false) as Sprite;
     if (this.sheetMilitia) (c.body as Body).setCircle(16, 48 - 16, 54 - 16);
     else (c.body as Body).setCircle(CONFIG.chaser.radius * 0.8);
     this.chasers.push(c);
     const cst = this.freshChaser(c);
     cst.sheet = this.sheetMilitia ?? undefined;
+    cst.drawScale = this.sheetMilitia ? 0.5 : 0.65;
     cst.speedMult = 0.55; // hunters run cold — you can outpace them
     cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
     cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
     this.cState.set(c, cst);
+    this.linkEnt(c, MILITIA_DEF, 0x9fd8ff, 0.55);
     this.collideWithWorld(c);
     this.burst(x, y, CONFIG.colors.frozen, 10, 140);
   }
@@ -952,6 +1054,7 @@ export class GameScene extends Phaser.Scene {
     const kids = this.collectGroup.getChildren() as Sprite[];
     for (const drop of kids) {
       this.addIceling(drop.x, drop.y);
+      this.unlinkPickup(drop);
       drop.destroy();
     }
 
@@ -960,17 +1063,8 @@ export class GameScene extends Phaser.Scene {
     const ex = this.player.x < this.arenaW / 2 ? this.arenaW * 0.8 : this.arenaW * 0.2;
     const p = this.randomFreePos(ex - 150, ex + 150);
     this.exitPos = { x: p.x, y: p.y, r: 70 };
-    this.exitGfx = this.lit(this.add.graphics().setDepth(1.4));
-    this.drawExit();
-    if (!REDUCED_MOTION) {
-      this.tweens.add({
-        targets: this.exitGfx,
-        alpha: { from: 1, to: 0.55 },
-        duration: 500,
-        yoyo: true,
-        repeat: -1,
-      });
-    }
+    this.exitGfx = this.add.graphics().setDepth(1.4).setVisible(false);
+    this.st3.showExit(p.x, p.y, true);
   }
 
   private drawExit() {
@@ -1097,28 +1191,36 @@ export class GameScene extends Phaser.Scene {
 
     const exitLabel = this.level ? 'T — the road' : 'T — title';
     // key strip — never on touch (the pads are already labelled), and gone
-    // on desktop when Settings › Key hints is off
+    // on desktop when Settings › Key hints is off. It also retires after
+    // your first rounds and borrows the pause menu when you need it.
     const hintStr = keyHintsOn()
       ? `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`
       : '';
+    this.hintGone = Number(localStorage.getItem('iw-hint-seen') ?? '0') >= 3;
     if (hintStr) {
-      const hintText = this.pin(
+      this.hintText = this.pin(
         this.add.text(0, 0, hintStr,
           { fontFamily: UI_FONT, fontSize: '13px', fontStyle: '600', color: '#f5efe0' },
         ).setOrigin(0.5, 1).setDepth(10),
         0.5, 1, 0, -12,
       );
       // dark keycap chip behind the hint — the "Select Ⓛ" affordance
-      const chip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
-      chip
+      this.hintChip = this.pin(this.add.graphics().setDepth(9), 0.5, 1, 0, -12);
+      this.hintChip
         .fillStyle(0x0a1420, 0.6)
         .fillRoundedRect(
-          -hintText.width / 2 - 14,
-          -hintText.height - 9,
-          hintText.width + 28,
-          hintText.height + 11,
+          -this.hintText.width / 2 - 14,
+          -this.hintText.height - 9,
+          this.hintText.width + 28,
+          this.hintText.height + 11,
           9,
         );
+      if (this.hintGone) {
+        this.hintText.setVisible(false);
+        this.hintChip.setVisible(false);
+      } else {
+        localStorage.setItem('iw-hint-seen', String(Number(localStorage.getItem('iw-hint-seen') ?? '0') + 1));
+      }
     }
 
     this.staminaGfx = this.add.graphics().setDepth(9);
@@ -1391,21 +1493,22 @@ export class GameScene extends Phaser.Scene {
   // ---------- fx helpers ----------
 
   private burst(x: number, y: number, tint: number, count = 14, speed = 200) {
-    const em = this.add.particles(x, y, 'dot', {
+    const p = this.st3.project(x, y); // world → screen, the 3D cam owns the view
+    const em = this.add.particles(p.x, p.y, 'dot', {
       speed: { min: speed * 0.35, max: speed },
       lifespan: { min: 220, max: 480 },
       scale: { start: 1, end: 0 },
       tint,
       emitting: false,
     });
-    em.setDepth(15);
+    em.setDepth(15).setScrollFactor(0);
     em.explode(count);
     this.time.delayedCall(600, () => em.destroy());
   }
 
   private shake(ms = 120, amount = 0.006) {
     if (REDUCED_MOTION) return;
-    this.cameras.main.shake(ms, amount);
+    this.st3.shake(amount * 90);
   }
 
   private hitstop(ms = 90) {
@@ -1413,8 +1516,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private floatText(x: number, y: number, msg: string, color = '#2b2115') {
+    const p = this.st3.project(x, y);
     const t = this.add
-      .text(x, y - 30, msg, {
+      .text(p.x, p.y - 30, msg, {
         fontFamily: UI_FONT,
         fontSize: '16px',
         fontStyle: '600',
@@ -1423,7 +1527,8 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5)
-      .setDepth(16);
+      .setDepth(16)
+      .setScrollFactor(0);
     this.tweens.add({
       targets: t,
       y: t.y - 34,
@@ -1478,17 +1583,17 @@ export class GameScene extends Phaser.Scene {
     body.moves = false;
     if (st.sheet) runner.play(st.sheet + '-splat'); // knocked flat, dizzy eyes
 
-    st.iceBlock = this.lit(
-      this.add
-        .sprite(runner.x, runner.y, 'iceblock')
-        .setDepth(4)
-        .setAngle(Phaser.Math.Between(-12, 12)),
-    );
+    st.iceBlock = this.add
+      .sprite(runner.x, runner.y, 'iceblock')
+      .setDepth(4)
+      .setAngle(Phaser.Math.Between(-12, 12))
+      .setVisible(false); // the ice shell on the bean carries the look
 
     sfx.freeze();
     this.burst(runner.x, runner.y, CONFIG.colors.frozen, 18, 230);
     this.shake(110, 0.005);
     this.hitstop(85);
+    this.buzz(st.isPlayer ? 90 : 25); // your phone jolts when YOU go down
 
     if (st.isPlayer) {
       this.playerFreezes++;
@@ -1527,7 +1632,7 @@ export class GameScene extends Phaser.Scene {
     this.burst(runner.x, runner.y, CONFIG.colors.water, 16, 210);
     this.floatText(runner.x, runner.y, 'WATER!');
     if (st.sheet) runner.play(st.sheet + '-idle');
-    const base = st.sheet ? 0.8 : 1; // beans dress at 0.8
+    const base = st.drawScale ?? (st.sheet ? 0.8 : 1);
     runner.setScale(base * 1.25);
     this.tweens.add({ targets: runner, scale: base, duration: 200 });
 
@@ -1557,15 +1662,16 @@ export class GameScene extends Phaser.Scene {
     this.burst(item.x, item.y, CONFIG.colors[type], 8, 120);
 
     this.itemType.delete(item);
+    this.unlinkPickup(item);
     item.destroy();
     // market days restock fast
     this.time.delayedCall(
       CONFIG.items.respawnMs * (this.mutator === 'market' ? 0.5 : 1),
       () => {
       const p = this.randomFreePos();
-      const s = this.lit(this.itemGroup.create(p.x, p.y, type)) as Sprite;
-      s.setDepth(1.6);
+      const s = this.itemGroup.create(p.x, p.y, type) as Sprite;
       this.itemType.set(s, type);
+      this.linkPickup(s, type);
     });
   }
 
@@ -1716,12 +1822,16 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
         this.scene.restart(),
       );
-    } else wipeTo(this, key);
+    } else {
+      this.st3.hide(); // leaving the playground — drop the 3D layer
+      wipeTo(this, key);
+    }
   }
 
   private transitionToNextLevel() {
     if (this.transitioning || !this.level) return;
     this.transitioning = true;
+    this.st3.hide(); // leaving the playground — drop the 3D layer
     // back to the road first — the map marches the marker to the next stop,
     // and the player taps the next node (PLAY) to actually enter the level
     wipeTo(this, 'adventure', { advance: this.level.n });
@@ -1732,13 +1842,16 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < this.reinforceCount; i++) {
       const p = this.randomFreePos(CONFIG.arena.wall + 40, this.arenaW * 0.4);
       const c = this.physics.add.sprite(p.x, p.y, this.sheetMilitia ?? 'chaser');
+      c.setVisible(false);
       this.dressBean(c, this.sheetMilitia);
       if (!this.sheetMilitia) (c.body as Body).setCircle(CONFIG.chaser.radius + 2);
       this.chasers.push(c);
       const cst = this.freshChaser(c);
       cst.sheet = this.sheetMilitia ?? undefined;
+      cst.drawScale = this.sheetMilitia ? 0.8 : 1;
       this.cState.set(c, cst);
       if (this.sheetMilitia) c.play(this.sheetMilitia + '-idle');
+      this.linkEnt(c, MILITIA_DEF, 0x9fd8ff);
       this.collideWithWorld(c);
       this.burst(p.x, p.y, CONFIG.colors.chaser, 20, 260);
     }
@@ -1966,6 +2079,12 @@ export class GameScene extends Phaser.Scene {
     sfx.voice(line);
   }
 
+  /** haptics — phone jolts on tags/wins; no-op on desktop and browsers
+   *  without the Vibration API */
+  private buzz(pattern: number | number[]) {
+    if (TouchControls.isTouchDevice()) navigator.vibrate?.(pattern);
+  }
+
   private barkNear(runner: Sprite, kind: BarkKind, chance = 0.5) {
     const c = this.nearestOf(this.chasers, runner);
     if (c && Math.random() < chance) this.bark(c, kind);
@@ -2173,9 +2292,8 @@ export class GameScene extends Phaser.Scene {
     const { arena, events } = CONFIG;
     const y = Phaser.Math.Between(arena.wall + 80, this.arenaH - arena.wall - 80);
     const fromLeft = Math.random() < 0.5;
-    const bus = this.lit(
-      this.physics.add.sprite(fromLeft ? -80 : this.arenaW + 80, y, 'bus'),
-    ) as Sprite;
+    const bus = this.physics.add.sprite(fromLeft ? -80 : this.arenaW + 80, y, 'bus') as Sprite;
+    bus.setVisible(false); // the 3D danfo rolls instead
     bus.setFlipX(!fromLeft);
     bus.setDepth(3);
     const body = bus.body as Body;
@@ -2203,22 +2321,9 @@ export class GameScene extends Phaser.Scene {
       duration: 700,
       onUpdate: (tw) => {
         const v = tw.getValue() ?? 0;
-        this.lights.setAmbientColor(v > 0.6 ? 0x16161c : 0xffffff);
+        if (v > 0.6) this.st3.nepa(true, this.player.x, this.player.y);
       },
-      onComplete: () => {
-        this.lights.setAmbientColor(0x16161c);
-        // spotlight on the player, faint glints on the militia
-        this.playerLight = this.lights.addLight(
-          this.player.x,
-          this.player.y,
-          CONFIG.events.nepa.lightRadius,
-          0xffe9b0,
-          2.2,
-        );
-        this.chaserLights = this.chasers.map((c) =>
-          this.lights.addLight(c.x, c.y, 70, 0xff4040, 0.8),
-        );
-      },
+      onComplete: () => this.st3.nepa(true, this.player.x, this.player.y),
     });
     this.announce('NEPA DON TAKE LIGHT!');
   }
@@ -2226,13 +2331,7 @@ export class GameScene extends Phaser.Scene {
   private endNepa() {
     this.nepaUntil = 0;
     sfx.powerUp();
-    this.lights.setAmbientColor(0xffffff);
-    if (this.playerLight) {
-      this.lights.removeLight(this.playerLight);
-      this.playerLight = null;
-    }
-    for (const l of this.chaserLights) this.lights.removeLight(l);
-    this.chaserLights = [];
+    this.st3.nepa(false);
     this.announce('UP NEPA!');
   }
 
@@ -2253,8 +2352,12 @@ export class GameScene extends Phaser.Scene {
       frequency: 8,
       quantity: 2,
     });
-    em.setDepth(16);
-    this.time.delayedCall(events.rain.durationMs, () => em.destroy());
+    em.setDepth(16).setVisible(false); // the 3D rainfall carries the look
+    this.st3.rain(true);
+    this.time.delayedCall(events.rain.durationMs, () => {
+      em.destroy();
+      this.st3.rain(false);
+    });
 
     this.announce('RAIN — watch your footing!');
   }
@@ -2306,6 +2409,8 @@ export class GameScene extends Phaser.Scene {
     st.backupUntil = this.time.now + 12000; // peels off after 12s
     this.rState.set(r, st);
     if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
+    r.setVisible(false);
+    this.linkEnt(r, CREW_DEF, 0x4dd0e1);
     this.collideWithWorld(r);
     this.burst(r.x, r.y, 0x7df2a8, 14, 200);
     this.backup = r;
@@ -2315,6 +2420,7 @@ export class GameScene extends Phaser.Scene {
     const r = this.backup;
     if (!r) return;
     this.backup = undefined;
+    this.unlinkEnt(r);
     this.tweens.add({
       targets: r,
       alpha: 0,
@@ -2421,6 +2527,7 @@ export class GameScene extends Phaser.Scene {
 
     if (militiaWon) {
       sfx.lose();
+      this.buzz(140);
       this.playResultRibbon(false, timedOut);
       landResult(
         this.level
@@ -2434,6 +2541,7 @@ export class GameScene extends Phaser.Scene {
       this.shake(250, 0.01);
     } else {
       sfx.win();
+      this.buzz([40, 60, 40, 60, 120]);
       let stars = 0;
       if (this.level) {
         // ★ survive · ★★ at most one freeze · ★★★ untouched
@@ -2512,6 +2620,9 @@ export class GameScene extends Phaser.Scene {
     this.time.paused = true; // freezes the event clock — no bus/NEPA/rain mid-pause
     this.tweens.pauseAll(); // entity anims freeze; menu tweens added after are unaffected
     this.buildPauseMenu();
+    // the retired controls strip borrows the pause menu
+    this.hintText?.setVisible(true).setDepth(45);
+    this.hintChip?.setVisible(true).setDepth(44);
   }
 
   private resume() {
@@ -2526,6 +2637,9 @@ export class GameScene extends Phaser.Scene {
     this.time.paused = false;
     this.tweens.resumeAll();
     this.touch?.setActive(true);
+    // hint strip goes back to whatever it was before the pause
+    this.hintText?.setVisible(!this.hintGone).setDepth(10);
+    this.hintChip?.setVisible(!this.hintGone).setDepth(9);
   }
 
   /** pause card — a menu, so paper card + candy pills (unlike the banner-only result) */
@@ -2844,19 +2958,21 @@ export class GameScene extends Phaser.Scene {
         shadow?: Phaser.GameObjects.Sprite;
         bobPhase?: number;
         iceBlock?: Phaser.GameObjects.Sprite | null;
+        drawScale?: number;
       },
     ) => {
       const body = s.body as Body;
       if (st.shadow) st.shadow.setPosition(s.x, s.y + CONFIG.runner.radius + 2);
       s.setDepth(2 + s.y * 0.002);
+      const ds = st.drawScale ?? 1;
       const speed = Math.hypot(body.velocity.x, body.velocity.y);
       if (!st.frozen && speed > 12) {
         const target = Math.atan2(body.velocity.y, body.velocity.x);
         s.rotation = Phaser.Math.Angle.RotateTo(s.rotation, target, 9 * dt);
         const bob = st.bobPhase !== undefined ? 1 + Math.sin(t / 70 + st.bobPhase) * 0.045 : 1;
-        s.setScale(bob);
+        s.setScale(bob * ds);
       } else if (!st.frozen) {
-        s.setScale(1);
+        s.setScale(ds);
       }
       if (st.iceBlock) st.iceBlock.setPosition(s.x, s.y);
     };
@@ -2877,6 +2993,7 @@ export class GameScene extends Phaser.Scene {
     for (const c of this.chasers) {
       present(c, this.cState.get(c)!);
     }
+    this.sync3d(delta); // mirror the sim into the 3D stage
     this.drawMinimap();
   }
 

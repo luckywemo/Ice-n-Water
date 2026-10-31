@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1d140c" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./favicon.png" type="image/png" />
+    <title>Ice 'N' Water 3D — Nigerian street chase</title>
+    <meta name="description" content="The Nigerian childhood game, reimagined in 3D. Run, freeze, rescue — free in your browser." />
+    <!-- social cards — no og:url on purpose: invite links must keep their query -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Ice 'N' Water 3D — the childhood game, reimagined" />
+    <meta property="og:description" content="Run. Freeze. Rescue your crew. The Nigerian street game — free in your browser." />
+    <meta property="og:image" content="./og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Ice 'N' Water 3D — beans chasing on a dusty Lagos pitch" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Ice 'N' Water 3D" />
+    <meta name="twitter:description" content="The Nigerian childhood game in 3D — free in your browser." />
+    <meta name="twitter:image" content="./og.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@400;500;600&family=Titan+One&family=Baloo+2:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+
+    <!-- ============ SCREENS ============ -->
+    <div id="loading" class="screen show">
+      <div class="load-card">
+        <img class="load-logo" src="./logo.jpg" alt="" />
+        <div class="load-title">ICE 'N' WATER</div>
+        <div class="load-sub">3D · THE STREET</div>
+        <div class="load-bar"><div id="loadFill"></div></div>
+        <div id="loadMsg" class="load-msg">warming up the pitch…</div>
+      </div>
+    </div>
+
+    <div id="menu" class="screen">
+      <div class="menu-wrap">
+        <div class="logo">
+          <img class="logo-img" src="./logo.jpg" alt="Ice 'N' Water" />
+          <div class="logo-main">ICE <em>'N'</em> WATER</div>
+          <div class="logo-tag">THE STREET · 3D</div>
+        </div>
+        <div class="menu-btns">
+          <button id="btnPlay" class="btn big yellow">PLAY</button>
+          <button id="btnRoad" class="btn road-btn">THE ROAD NORTH ➤</button>
+          <button id="btnHow" class="btn">HOW TO PLAY</button>
+          <button id="btnSettings" class="btn">SETTINGS</button>
+        </div>
+        <div id="joinChip" class="join-chip"></div>
+        <div class="menu-foot">free · no download · mobile &amp; desktop</div>
+      </div>
+    </div>
+
+    <div id="setup" class="screen">
+      <div class="panel">
+        <div class="panel-title">PICK YOUR GAME</div>
+        <div class="modes" id="modeList"></div>
+        <div class="panel-title small">PICK YOUR GROUND</div>
+        <div class="maprow" id="mapList"></div>
+        <div class="panel-title small">PICK YOUR RUNNER — <span id="charName">NGOZI</span></div>
+        <div class="podium-row">
+          <canvas id="podium" width="170" height="190"></canvas>
+          <div class="podium-side">
+            <div id="charMove" class="char-move">SUMMON</div>
+            <div class="char-move-sub">inherited move · F</div>
+            <div class="swatches" id="swatches"></div>
+          </div>
+        </div>
+        <div class="row">
+          <button id="btnBack" class="btn">← BACK</button>
+          <button id="btnStart" class="btn big yellow">START MATCH</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="campaign" class="screen">
+      <div class="panel">
+        <div class="panel-title">THE ROAD NORTH</div>
+        <div class="road-sub">Lagos → Maiduguri · every stop has its own rules</div>
+        <div class="road" id="roadList"></div>
+        <div class="row">
+          <button id="btnRoadBack" class="btn">← BACK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="howto" class="screen modal">
+      <div class="panel">
+        <div class="panel-title">HOW TO PLAY</div>
+        <div class="how-body">
+          <p><b>WATER</b> chases. Touch an ICE player to <b>freeze</b> them. Freeze everyone before time runs out to win.</p>
+          <p><b>ICE</b> runs. Frozen teammates wait for a rescue — <b>touch them</b> to set them free. Keep at least one player unfrozen until the whistle.</p>
+          <p class="kbd-row"><span class="kbd">W A S D</span> move · <span class="kbd">SHIFT</span> sprint · <span class="kbd">SPACE</span> jump · <span class="kbd">E</span> shout · <span class="kbd">drag</span> camera · <span class="kbd">P</span> pause</p>
+          <p class="kbd-row">📱 left thumb joystick · buttons on the right</p>
+        </div>
+        <button id="btnHowClose" class="btn big yellow">GOT IT</button>
+      </div>
+    </div>
+
+    <div id="settings" class="screen modal">
+      <div class="panel">
+        <div class="panel-title">SETTINGS</div>
+        <div class="set-row"><span>Sound &amp; voices</span><button id="setSfx" class="btn toggle"></button></div>
+        <div class="set-row"><span>Music</span><button id="setMusic" class="btn toggle"></button></div>
+        <div class="set-row"><span>Quality</span><button id="setQuality" class="btn toggle"></button></div>
+        <button id="btnSetClose" class="btn big yellow">DONE</button>
+      </div>
+    </div>
+
+    <div id="pause" class="screen modal">
+      <div class="panel">
+        <div class="panel-title">PAUSED</div>
+        <div class="pause-hint"><span class="kbd">W A S D</span> move · <span class="kbd">SHIFT</span> sprint · <span class="kbd">SPACE</span> jump · <span class="kbd">E</span> shout</div>
+        <div class="col">
+          <button id="btnResume" class="btn big yellow">RESUME</button>
+          <button id="btnRestart" class="btn">RESTART</button>
+          <button id="btnQuit" class="btn">QUIT TO MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="results" class="screen">
+      <div class="panel results">
+        <div id="resBanner" class="res-banner">YOU WIN!</div>
+        <div id="resSub" class="res-sub"></div>
+        <div id="resStats" class="res-stats"></div>
+        <div class="row">
+          <button id="btnNextCh" class="btn big yellow" style="display:none">NEXT STOP ➤</button>
+          <button id="btnRematch" class="btn big yellow">REMATCH</button>
+          <button id="btnResMenu" class="btn">MENU</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ HUD ============ -->
+    <div id="hud">
+      <div class="hud-top">
+        <div class="hud-chip" id="hudTeam">WATER</div>
+        <div class="hud-timer" id="hudTimer">1:30</div>
+        <div class="hud-chip" id="hudFrozen">0 FROZEN</div>
+      </div>
+      <canvas id="radar" width="120" height="120"></canvas>
+      <div id="crewDots" class="crew-dots"></div>
+      <div id="hudSkill" class="hud-skill">F — SUMMON</div>
+      <div class="hud-stam"><div id="stamFill"></div></div>
+      <div id="hudToast" class="hud-toast"></div>
+      <button id="btnPause" class="hud-pause">❚❚</button>
+    </div>
+
+    <!-- ============ TOUCH ============ -->
+    <div id="touch">
+      <div id="stick"><div id="knob"></div></div>
+      <div class="tbtns">
+        <button id="tSkill" class="tbtn">⚡</button>
+        <button id="tShout" class="tbtn">📣</button>
+        <button id="tJump" class="tbtn">⤒</button>
+        <button id="tSprint" class="tbtn big">RUN</button>
+      </div>
+    </div>
+
+    <div id="countdown" class="countdown"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
