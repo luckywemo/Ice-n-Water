@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Hero3D } from '../hero3d';
+import { Podium3D as Hero3D } from '../b3d/podium';
 import { REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
 import { CHARACTERS, CharDef, charTitle, charTitleShort, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';

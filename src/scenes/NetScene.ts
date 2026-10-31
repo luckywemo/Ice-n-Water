@@ -2,12 +2,15 @@ import Phaser from 'phaser';
 import { Client, Room, getStateCallbacks } from '@colyseus/sdk';
 import { SERVER_URL } from '../net';
 import { CONFIG } from '../config';
-import { makeTextures, decorateYard } from '../art';
+import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade, viewZoom, hudFactor } from '../ui';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { loadPicks } from '../meta';
-import { generateLayout, seededRng } from '../mapgen';
+import { generateLayout } from '../mapgen';
+import { PitchStage } from '../b3d/stage';
+import { currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
+import { PALETTE } from '../b3d/bean';
 
 type Body = Phaser.Physics.Arcade.Body;
 
@@ -39,10 +42,19 @@ interface RemoteSprite {
   sprite: Phaser.Physics.Arcade.Sprite;
   label: Phaser.GameObjects.Text;
   ice?: Phaser.GameObjects.Image;
+  entId: number;
+  team: string;
   targetX: number;
   targetY: number;
   targetAngle: number;
 }
+
+/** stable per-player coat for remote runners — same faces every round */
+const remoteModel = (id: string) => {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+};
 
 const sfx = Sfx.inst;
 const SEND_EVERY_MS = 66; // ~15 pos updates per second
@@ -64,6 +76,7 @@ export class NetScene extends Phaser.Scene {
   private sendIn = 0;
   private wallBodies: Phaser.GameObjects.Rectangle[] = [];
   private obstacleGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private worldObstacleGroup!: Phaser.Physics.Arcade.StaticGroup;
   private obstacleRects: Phaser.Geom.Rectangle[] = [];
   private decor: Phaser.GameObjects.GameObject[] = [];
   private mapSeed = -1;
@@ -84,6 +97,10 @@ export class NetScene extends Phaser.Scene {
   private leaving = false;
   private connText: Phaser.GameObjects.Text | null = null;
   private hudItems: HudItem[] = [];
+  // 3D stage — the street world renders behind the HUD canvas
+  private st3 = PitchStage.get();
+  private myEnt = -1;
+  private stObstacles: { x: number; y: number; r: number }[] = [];
 
   constructor() {
     super('net');
@@ -106,20 +123,47 @@ export class NetScene extends Phaser.Scene {
     });
     makeTextures(this);
     this.cameras.main.fadeIn(250, 0, 0, 0);
-    const { arena } = CONFIG;
-    this.physics.world.setBounds(0, 0, arena.width, arena.height);
+    // 3D street owns the battlefield look; the sim keeps its pixel space
+    this.st3.buildMap('street');
+    this.st3.show();
+    this.st3.clearEnts();
+    this.st3.clearPickups();
+    this.st3.clearProps();
+    this.st3.resetOrbit();
+    // the server simulates in the classic landscape arena — keep that pixel
+    // space so positions line up, and stretch-map it onto the 3D pitch
+    const stMap = this.st3.setPxSpace(CONFIG.arena.width, CONFIG.arena.height);
+    this.stObstacles = stMap.obstacles;
+    this.physics.world.setBounds(0, 0, CONFIG.arena.width, CONFIG.arena.height);
     this.buildArena();
     if (this.room.state.mapSeed) this.rebuildMap(this.room.state.mapSeed);
+
+    // drag the right half (or any mouse drag) to orbit the follow-cam
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!p.isDown || this.touch?.isJoyPointer(p)) return;
+      if (p.wasTouch && p.downX < this.scale.width * 0.45) return;
+      this.st3.orbit(p.velocity.x, p.velocity.y);
+    });
+    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) =>
+      this.st3.zoomBy(dy),
+    );
 
     const myId = this.room.sessionId;
     this.myTeam = this.room.state.players?.get(myId)?.team ?? 'water';
 
-    // my sprite — ice hunts, water runs
+    // my sprite — ice hunts, water runs (invisible; the bean is the look)
     const myTex = this.myTeam === 'ice' ? 'chaser' : 'player';
     this.me = this.physics.add.sprite(
-      arena.width / 2 + Phaser.Math.Between(-80, 80),
-      arena.height / 2 + Phaser.Math.Between(-80, 80),
+      CONFIG.arena.width / 2 + Phaser.Math.Between(-80, 80),
+      CONFIG.arena.height / 2 + Phaser.Math.Between(-80, 80),
       myTex,
+    );
+    this.me.setVisible(false);
+    this.myEnt = this.st3.spawnEnt(
+      this.myTeam === 'ice' ? MILITIA_DEF : currentChar(),
+      0xffc93c,
+      this.me.x,
+      this.me.y,
     );
     (this.me.body as Body).setCircle(CONFIG.runner.radius + 2);
     (this.me.body as Body).setCollideWorldBounds(true);
@@ -128,7 +172,7 @@ export class NetScene extends Phaser.Scene {
 
     // camera rides on you — the neighborhood is bigger than the screen
     this.cameras.main
-      .setBounds(0, 0, arena.width, arena.height)
+      .setBounds(0, 0, CONFIG.arena.width, CONFIG.arena.height)
       .setZoom(viewZoom(this.scale.width, this.scale.height))
       .setDeadzone(CONFIG.camera.deadzone.w, CONFIG.camera.deadzone.h)
       .startFollow(this.me, true, 0.1, 0.1);
@@ -209,6 +253,8 @@ export class NetScene extends Phaser.Scene {
     this.relayout();
     this.scale.on('resize', this.relayout, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
+    // any exit drops the 3D layer — re-shown on the next match's create()
+    this.events.once('shutdown', () => this.st3.hide());
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
 
@@ -233,7 +279,7 @@ export class NetScene extends Phaser.Scene {
   private buildArena() {
     const { arena, colors } = CONFIG;
     const { width, height, wall } = arena;
-    this.add.rectangle(width / 2, height / 2, width, height, colors.ground);
+    // invisible physics walls — the 3D stage draws the real ground + walls
     const walls = [
       { x: width / 2, y: wall / 2, w: width, h: wall },
       { x: width / 2, y: height - wall / 2, w: width, h: wall },
@@ -242,25 +288,37 @@ export class NetScene extends Phaser.Scene {
     ];
     for (const r of walls) {
       const rect = this.add.rectangle(r.x, r.y, r.w, r.h, colors.wall);
+      rect.setVisible(false);
       this.physics.add.existing(rect, true);
       this.wallBodies.push(rect);
     }
     this.obstacleGroup = this.physics.add.staticGroup();
+    // the street's furniture is physical too — its own group so the round
+    // rebuilds don't strip it
+    this.worldObstacleGroup = this.physics.add.staticGroup();
+    for (const wo of this.stObstacles) {
+      const rect = this.add
+        .rectangle(wo.x, wo.y, wo.r * 1.7, wo.r * 1.7, 0)
+        .setVisible(false);
+      this.worldObstacleGroup.add(rect);
+    }
   }
 
-  /** Server picked a new map seed — rebuild blocks + set dressing. */
+  /** Server picked a new map seed — rebuild blocks + matching 3D cover. */
   private rebuildMap(seed: number) {
     this.mapSeed = seed;
     this.obstacleGroup.clear(true, true);
     for (const d of this.decor) d.destroy();
     this.decor = [];
     this.obstacleRects = [];
+    this.st3.clearProps();
     for (const o of generateLayout(seed)) {
       const rect = this.add.rectangle(o.x, o.y, o.w, o.h, CONFIG.colors.obstacle);
+      rect.setVisible(false);
       this.obstacleGroup.add(rect);
       this.obstacleRects.push(new Phaser.Geom.Rectangle(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h));
+      this.st3.addProp(o.x, o.y, o.w, o.h);
     }
-    this.decor = decorateYard(this, this.obstacleRects, seededRng(seed ^ 0x9e3779b9));
   }
 
   /** corner radar — everyone, colored by team */
@@ -313,6 +371,13 @@ export class NetScene extends Phaser.Scene {
     if (myState && myState.team && myState.team !== this.myTeam) {
       this.myTeam = myState.team;
       this.me.setTexture(this.myTeam === 'ice' ? 'chaser' : 'player');
+      this.st3.removeEnt(this.myEnt);
+      this.myEnt = this.st3.spawnEnt(
+        this.myTeam === 'ice' ? MILITIA_DEF : currentChar(),
+        0xffc93c,
+        this.me.x,
+        this.me.y,
+      );
       if (this.myTeam === 'ice') this.banner("YOU'RE ICE NOW — go freeze them!", '#e84848');
     }
 
@@ -326,12 +391,11 @@ export class NetScene extends Phaser.Scene {
       for (const [, r] of this.remotes) r.ice?.setVisible(false);
     }
 
-    // ── frozen overlay on me ──────────────────────────────────
+    // ── frozen overlay on me — the 3D ice shell does the work now ──
     if (frozen !== (this.myIce?.visible ?? false)) {
-      this.myIce ??= this.add.image(this.me.x, this.me.y, 'iceblock').setDepth(7);
-      this.myIce.setVisible(frozen);
+      this.myIce ??= this.add.image(this.me.x, this.me.y, 'iceblock').setDepth(7).setVisible(false);
+      this.myIce.setVisible(false); // kept for state, never drawn
     }
-    if (this.myIce?.visible) this.myIce.setPosition(this.me.x, this.me.y);
 
     // ── my movement (locked while frozen / not playing) ──────
     const dir = new Phaser.Math.Vector2(0, 0);
@@ -350,7 +414,11 @@ export class NetScene extends Phaser.Scene {
     (this.me.body as Body).setVelocity(dir.x * speed, dir.y * speed);
     const v = (this.me.body as Body).velocity;
     if (Math.hypot(v.x, v.y) > 12) this.me.rotation = Math.atan2(v.y, v.x);
-    this.meLabel.setPosition(this.me.x, this.me.y - 24);
+    {
+      const lp = this.st3.project(this.me.x, this.me.y, 2.1);
+      this.meLabel.setScrollFactor(0).setDepth(40).setPosition(lp.x, lp.y);
+    }
+    this.st3.syncEnt(this.myEnt, this.me.x, this.me.y, v.x, v.y, frozen);
 
     // send position (server ignores us when frozen anyway)
     if (playing && !frozen) {
@@ -371,19 +439,27 @@ export class NetScene extends Phaser.Scene {
       r.sprite.x += (r.targetX - r.sprite.x) * Math.min(1, 12 * dt);
       r.sprite.y += (r.targetY - r.sprite.y) * Math.min(1, 12 * dt);
       r.sprite.rotation = Phaser.Math.Angle.RotateTo(r.sprite.rotation, r.targetAngle, 10 * dt);
-      r.sprite.setDepth(2 + r.sprite.y * 0.002);
-      r.label.setPosition(r.sprite.x, r.sprite.y - 24);
-      // team flip live (infection conversion)
-      const tex = p.team === 'ice' ? 'chaser' : 'runner';
-      if (r.sprite.texture.key !== tex) r.sprite.setTexture(tex);
-      // frozen overlay
-      if (p.out !== (r.ice?.visible ?? false)) {
-        r.ice ??= this.add.image(r.sprite.x, r.sprite.y, 'iceblock').setDepth(6.5);
-        r.ice.setVisible(p.out);
+      const lp = this.st3.project(r.sprite.x, r.sprite.y, 2.1);
+      r.label.setScrollFactor(0).setDepth(40).setPosition(lp.x, lp.y);
+      // team flip live (infection conversion) — swap the bean's coat
+      if (p.team !== r.team) {
+        r.team = p.team;
+        this.st3.removeEnt(r.entId);
+        r.entId = this.st3.spawnEnt(
+          p.team === 'ice' ? MILITIA_DEF : remoteModel(id),
+          p.team === 'ice' ? 0x9fd8ff : 0x4dd0e1,
+          r.sprite.x,
+          r.sprite.y,
+        );
       }
-      if (r.ice?.visible) r.ice.setPosition(r.sprite.x, r.sprite.y);
+      // remotes lerp, they don't simulate — the chase delta stands in for
+      // velocity so the bean's facing + run cycle read correctly
+      this.st3.syncEnt(
+        r.entId, r.sprite.x, r.sprite.y,
+        (r.targetX - r.sprite.x) * 12, (r.targetY - r.sprite.y) * 12, p.out,
+      );
     }
-    this.me.setDepth(2 + this.me.y * 0.002);
+    this.st3.render(dt, this.me.x, this.me.y);
     this.drawMinimap();
 
     // ── HUD ──────────────────────────────────────────────────
@@ -566,6 +642,7 @@ export class NetScene extends Phaser.Scene {
       $(this.room.state.players).onRemove((_p: NetPlayer, id: string) => {
         const r = this.remotes.get(id);
         if (r) {
+          this.st3.removeEnt(r.entId);
           r.sprite.destroy();
           r.label.destroy();
           r.ice?.destroy();
@@ -579,9 +656,17 @@ export class NetScene extends Phaser.Scene {
   private spawnRemote(p: NetPlayer, id: string) {
     if (id === this.room.sessionId || this.remotes.has(id)) return;
     const sprite = this.physics.add.sprite(p.x, p.y, p.team === 'ice' ? 'chaser' : 'runner');
+    sprite.setVisible(false);
     (sprite.body as Body).setCircle(CONFIG.runner.radius + 2);
     for (const w of this.wallBodies) this.physics.add.collider(sprite, w);
     this.physics.add.collider(sprite, this.obstacleGroup);
+    this.physics.add.collider(sprite, this.worldObstacleGroup);
+    const entId = this.st3.spawnEnt(
+      p.team === 'ice' ? MILITIA_DEF : remoteModel(id),
+      p.team === 'ice' ? 0x9fd8ff : 0x4dd0e1,
+      p.x,
+      p.y,
+    );
     const label = this.add
       .text(p.x, p.y - 26, p.name, {
         fontFamily: UI_FONT,
@@ -593,7 +678,10 @@ export class NetScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(8);
-    this.remotes.set(id, { sprite, label, targetX: p.x, targetY: p.y, targetAngle: 0 });
+    this.remotes.set(id, {
+      sprite, label, entId, team: p.team,
+      targetX: p.x, targetY: p.y, targetAngle: 0,
+    });
   }
 
   /** Dropped connection — keep trying the reconnection token for ~25s. */
@@ -637,6 +725,7 @@ export class NetScene extends Phaser.Scene {
 
   private leave() {
     this.leaving = true;
+    this.st3.hide();
     void this.room?.leave();
     this.scene.start('title');
   }

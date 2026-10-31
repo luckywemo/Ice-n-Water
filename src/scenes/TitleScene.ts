@@ -22,7 +22,7 @@ import {
   fgKeycapHint,
   promptModal,
 } from '../fgui';
-import { Hero3D } from '../hero3d';
+import { Podium3D as Hero3D } from '../b3d/podium';
 import { CHARACTERS, charTitleShort, charUnlocked, currentChar, currentPick, setChar } from '../characters';
 
 const sfx = Sfx.inst;

@@ -2,7 +2,7 @@
 // body = vinyl/fur colour, skin = face oval, shape = body silhouette,
 // gear = head-mounted extra. Shape/gear change the actual MODEL, not
 // just the paint — they build different meshes on the shared skeleton.
-import type { BeanGear, BeanMarks, BeanShape } from './hero3d';
+import type { BeanGear, BeanMarks, BeanShape } from './b3d/bean';
 import { adventureProgress, LEVELS_PER_MILESTONE, MILESTONE_BOSSES, levelDef } from './adventure';
 import type { BossMove } from './adventure';
 import { playerName } from './leaderboard';

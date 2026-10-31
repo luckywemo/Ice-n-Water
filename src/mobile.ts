@@ -172,6 +172,12 @@ export class TouchControls {
     scene.input.on('pointerupoutside', release);
   }
 
+  /** is this pointer currently driving the joystick? lets the camera orbit
+   *  handler skip stick drags */
+  isJoyPointer(p: Phaser.Input.Pointer) {
+    return p.id === this.joyPointerId;
+  }
+
   /** freeze every pad + hide the buttons — e.g. when the result dashboard is up */
   setActive(on: boolean) {
     this.active = on;

@@ -4,7 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { fitZoom } from '../mobile';
-import { Hero3D } from '../hero3d';
+import { Podium3D as Hero3D } from '../b3d/podium';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality } from '../meta';
 import {
