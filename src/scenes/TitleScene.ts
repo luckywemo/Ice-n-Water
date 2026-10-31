@@ -7,7 +7,7 @@ import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { pushProfile } from '../cloudsave';
-import { session } from '../xauth';
+import { session, signOut } from '../xauth';
 import { TouchControls, keyHintsOn, fitZoom } from '../mobile';
 import {
   FG,
@@ -765,7 +765,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 476 : 600; // desktop fits the Key hints row
+    const H = isTouch ? 560 : 680; // ACCOUNT section adds ~80 on both layouts
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -1068,6 +1068,78 @@ export class TitleScene extends Phaser.Scene {
         keycap(cx + W / 2 - 38 - (cap.length * 9.5 + 18), ry - 9, cap);
       });
     }
+
+    // ---- ACCOUNT — verified identity, road/stats readout, sign-out ----
+    y += isTouch ? 64 : 196; // clear the controls block
+    section(y, 'ACCOUNT');
+    y += 44;
+    const sess = session();
+    const who = sess?.handle
+      ? `@${sess.handle}${playerName() ? `  ·  ${playerName()}` : ''}`
+      : 'not connected — sign-in is required to play';
+    card.add(
+      this.add
+        .text(cx - W / 2 + 38, y, who, {
+          fontFamily: FG_BODY,
+          fontSize: '14px',
+          fontStyle: '800',
+          color: '#ffffff',
+        })
+        .setOrigin(0, 0.5),
+    );
+    if (sess) {
+      // log-out pill — two taps: first arms it (SURE?), second signs out
+      const loW = 108;
+      const loH = 32;
+      const lox = cx + W / 2 - 24 - loW / 2;
+      const lg = this.add.graphics();
+      lg.fillStyle(0x0a0710, 1).fillRoundedRect(lox - loW / 2, y - loH / 2 + 3, loW, loH, loH / 2);
+      lg.fillStyle(0xd94f3d, 1).fillRoundedRect(lox - loW / 2, y - loH / 2 - 4, loW, loH - 2, loH / 2);
+      lg.fillStyle(0xffffff, 0.14).fillRoundedRect(lox - loW / 2 + 7, y - loH / 2 - 4, loW - 14, 11, 6);
+      card.add(lg);
+      const loT = this.add
+        .text(lox, y - 3, 'LOG OUT', { fontFamily: FG_FONT, fontSize: '12px', color: '#f5efe0' })
+        .setOrigin(0.5);
+      card.add(loT);
+      let armed = false;
+      const loZ = gateZone(
+        this.add
+          .zone(lox - loW / 2, y - loH / 2 - 4, loW, loH + 4)
+          .setOrigin(0, 0)
+          .setInteractive({ useHandCursor: true }),
+      );
+      loZ.on('pointerdown', () => {
+        if (armed) {
+          signOut();
+          location.reload(); // re-gates at boot — the overlay is the gate
+          return;
+        }
+        armed = true;
+        loT.setText('SURE?');
+        this.time.delayedCall(2500, () => {
+          armed = false;
+          loT.setText('LOG OUT');
+        });
+      });
+    }
+    y += 30;
+    const prog = adventureProgress();
+    const st = loadStats();
+    card.add(
+      this.add
+        .text(
+          cx - W / 2 + 38,
+          y,
+          `road ${Math.max(0, prog.unlocked - 1)}/${TOTAL_LEVELS}  ·  ★${totalStars(prog)}  ·  ${st.wins}w/${st.games}g  ·  streak ${st.streak}  ·  best ${st.bestSurvived}s`,
+          {
+            fontFamily: FG_BODY,
+            fontSize: '12px',
+            fontStyle: '700',
+            color: '#eaf6fb',
+          },
+        )
+        .setOrigin(0, 0.5),
+    );
 
     // DONE — dark candy pill, same family as the lobby's BACK
     const dg = this.add.graphics();
