@@ -324,7 +324,7 @@ export function fgTopBar(
   // centered icon row — first button wider, group ends chamfered "/" and "\"
   const bw = 46;
   const bh = 36;
-  const gap = 8;
+  const gap = 16; // fat-finger room — 8px stage units was ~5px on a phone
   const widths = items.map((_, i) => (i === 0 ? bw * 1.35 : bw));
   const total = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
   const bumper = (bx: number, label: string) =>
@@ -373,7 +373,9 @@ export function fgTopBar(
     ui.push(b);
     ui.push(
       scene.add
-        .zone(x, top, w, bh)
+        // full bar-height hit strip — the visual button is 36px in a 46px
+        // bar, so forgiving vertical taps still land on the right icon
+        .zone(x, 0, w, H)
         .setOrigin(0, 0)
         .setDepth(32)
         .setInteractive({ useHandCursor: true })
