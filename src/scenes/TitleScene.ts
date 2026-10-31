@@ -24,6 +24,7 @@ import {
 } from '../fgui';
 import { Hero3D } from '../hero3d';
 import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
+import { viaWipe, wipeTo } from '../wipe';
 
 const sfx = Sfx.inst;
 
@@ -178,9 +179,10 @@ export class TitleScene extends Phaser.Scene {
     };
   }
 
-  create() {
+  create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
     makeTextures(this);
+    const fromWipe = viaWipe(data);
     const picks = loadPicks();
     this.diff = picks.difficulty;
     this.joy = picks.joy;
@@ -195,12 +197,13 @@ export class TitleScene extends Phaser.Scene {
     this.iceDecos = [];
     this.lobbyArm = undefined;
     this.lobbyDrop = undefined;
-    this.started = false;
+    this.started = fromWipe;
     this.settingsOpen = false;
 
     this.cameras.main.setBackgroundColor(FG.yellow);
-    // fade from the boot screen's yellow — seamless handoff into the splash
-    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 350, 247, 189, 20);
+    // fade from the boot screen's yellow — seamless handoff into the splash.
+    // a wipe arrival is already revealed by the blade, and skips the intro
+    if (!fromWipe) this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 350, 247, 189, 20);
     // fixed 1280×800 virtual stage — uniform scale in BOTH directions so the
     // composition is identical on any window (no max width, no reflow)
     const vw = 1280;
@@ -240,32 +243,23 @@ export class TitleScene extends Phaser.Scene {
     const toAdventure = () => {
       sfx.ensure();
       sfx.pickup();
-      this.cameras.main.fadeOut(220, 0, 0, 0);
-      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('adventure'),
-      );
+      wipeTo(this, 'adventure');
     };
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
       savePicks(this.diff, this.joy, this.perf, this.hints);
-      this.cameras.main.fadeOut(220, 0, 0, 0);
-      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('drop', { game: { difficulty: this.diff } }),
-      );
+      wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
     const toOnline = () => {
       sfx.ensure();
       sfx.pickup();
-      this.cameras.main.fadeOut(220, 0, 0, 0);
-      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-        this.scene.start('lobby'),
-      );
+      wipeTo(this, 'lobby');
     };
     const openBoard = () => {
       sfx.ensure();
       sfx.pickup();
-      this.scene.start('adventure', { board: true });
+      wipeTo(this, 'adventure', { board: true });
     };
 
     // ================= LOBBY =================
@@ -306,10 +300,7 @@ export class TitleScene extends Phaser.Scene {
           icon: 'hanger',
           onDown: () =>
             this.gate(() => {
-              this.cameras.main.fadeOut(160, 0x2b, 0xb8, 0xf0);
-              this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-                this.scene.start('outfit'),
-              );
+              wipeTo(this, 'outfit');
             }),
         },
         {
@@ -600,8 +591,9 @@ export class TitleScene extends Phaser.Scene {
     this.buildSettingsCard(vw, vh, isTouch, { l: visL, t: visT, r: visR, b: visB });
 
     // the loading screen — #boot hands off seamlessly (same yellow crown
-    // look), then the splash auto-dismisses into the lobby
-    this.buildSplash(vw, vh, extrude, now);
+    // look), then the splash auto-dismisses into the lobby. A wipe arrival
+    // is a menu return, not a fresh boot — straight to the lobby.
+    if (!fromWipe) this.buildSplash(vw, vh, extrude, now);
 
     this.refreshPicks();
 

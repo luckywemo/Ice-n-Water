@@ -66,7 +66,7 @@ try {
         ...(type === 'mouseMoved' ? { buttons: 0 } : {}),
       });
     }
-    await sleep(2500); // RAF-throttled tweens need wall-time
+    await sleep(+(process.env.CLICK_WAIT || 2500)); // RAF-throttled tweens need wall-time
   }
 
   if (process.env.EVAL) {

@@ -155,6 +155,11 @@ export class Sfx {
     this.noise(0.2, 0.16, 800, 2600, 0, 'bandpass');
   }
 
+  /** Screen-change blade whoosh — softer than the dash, rides the wipe */
+  swoosh() {
+    this.noise(0.26, 0.1, 600, 3200, 0, 'bandpass');
+  }
+
   /** Heartbeat — militia is closing in */
   thump() {
     this.tone('sine', 95, 42, 0.13, 0.45);

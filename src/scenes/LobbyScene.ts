@@ -8,6 +8,7 @@ import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
 import { keyHintsOn } from '../mobile';
 import { authTicket } from '../xauth';
+import { viaWipe, wipeTo } from '../wipe';
 
 type LobbyPlayer = {
   name: string;
@@ -47,12 +48,12 @@ export class LobbyScene extends Phaser.Scene {
     super('lobby');
   }
 
-  create() {
+  create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
     makeTextures(this);
     this.room = null;
     this.lobbyPhase = 'menu';
-    this.cameras.main.fadeIn(300, 247, 189, 20); // from the lobby yellow — seamless
+    if (!viaWipe(data)) this.cameras.main.fadeIn(300, 247, 189, 20); // from the lobby yellow — seamless
 
     const cx = width / 2;
 
@@ -95,7 +96,7 @@ export class LobbyScene extends Phaser.Scene {
         fill: UI.ink,
         textColor: UI.paper,
         fontSize: 14,
-        onDown: () => this.scene.start('title'),
+        onDown: () => wipeTo(this, 'title'),
       });
       return;
     }
@@ -234,7 +235,7 @@ export class LobbyScene extends Phaser.Scene {
       fill: UI.ink,
       textColor: UI.paper,
       fontSize: 14,
-      onDown: () => this.scene.start('title'),
+      onDown: () => wipeTo(this, 'title'),
     });
 
     // ---- room group (swaps in on join) ----
@@ -464,13 +465,13 @@ export class LobbyScene extends Phaser.Scene {
     const room = this.room;
     this.room = null; // NetScene owns it now
     this.cleanupInputs();
-    this.scene.start('net', { room });
+    wipeTo(this, 'net', { room });
   }
 
   private leave() {
     void this.room?.leave();
     this.cleanupInputs();
-    this.scene.start('title');
+    wipeTo(this, 'title');
   }
 
   private cleanupInputs() {

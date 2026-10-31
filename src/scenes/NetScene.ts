@@ -7,6 +7,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, popIn, pinHud, layoutHud, HudItem, shade, viewZoom, hudFactor } from '../ui';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { loadPicks } from '../meta';
+import { viaWipe, wipeTo } from '../wipe';
 import { generateLayout, seededRng } from '../mapgen';
 
 type Body = Phaser.Physics.Arcade.Body;
@@ -55,6 +56,7 @@ const SPEED = 205;
  */
 export class NetScene extends Phaser.Scene {
   private room!: Room<NetState>;
+  private fromWipe = false;
   private me!: Phaser.Physics.Arcade.Sprite;
   private meLabel!: Phaser.GameObjects.Text;
   private myTeam = 'water';
@@ -89,8 +91,9 @@ export class NetScene extends Phaser.Scene {
     super('net');
   }
 
-  init(data: { room: Room<NetState> }) {
+  init(data: { room: Room<NetState>; iwWipe?: boolean }) {
     this.room = data.room;
+    this.fromWipe = viaWipe(data);
   }
 
   create() {
@@ -105,7 +108,7 @@ export class NetScene extends Phaser.Scene {
       if (!this.leaving) void this.tryReconnect(code);
     });
     makeTextures(this);
-    this.cameras.main.fadeIn(250, 0, 0, 0);
+    if (!this.fromWipe) this.cameras.main.fadeIn(250, 0, 0, 0);
     const { arena } = CONFIG;
     this.physics.world.setBounds(0, 0, arena.width, arena.height);
     this.buildArena();
@@ -638,6 +641,6 @@ export class NetScene extends Phaser.Scene {
   private leave() {
     this.leaving = true;
     void this.room?.leave();
-    this.scene.start('title');
+    wipeTo(this, 'title');
   }
 }

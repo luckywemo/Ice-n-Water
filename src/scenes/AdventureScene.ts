@@ -4,6 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { fitZoom } from '../mobile';
+import { viaWipe, wipeTo } from '../wipe';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality } from '../meta';
@@ -131,7 +132,7 @@ export class AdventureScene extends Phaser.Scene {
     this.stripImgs = [];
     this.heroMs = perfInterval(); // re-read per create — the pick can change
     this.cameras.main.setBackgroundColor(FG.cyan);
-    this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
+    if (!viaWipe(data)) this.cameras.main.fadeIn(REDUCED_MOTION ? 120 : 300, 0x2b, 0xb8, 0xf0);
 
     // the lobby's virtual stage — uniform zoom, centred, letterboxed. The
     // rail lives in world space past the stage edge; fixed chrome uses
@@ -1295,10 +1296,7 @@ export class AdventureScene extends Phaser.Scene {
   private playLevel(n: number) {
     sfx.ensure();
     sfx.shortWhistle();
-    this.cameras.main.fadeOut(220, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } }),
-    );
+    wipeTo(this, 'drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } });
   }
 
   /** top-bar icons share one guard — no actions while a modal owns input or
@@ -1342,16 +1340,10 @@ export class AdventureScene extends Phaser.Scene {
   }
 
   private toLobby() {
-    this.cameras.main.fadeOut(220, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('lobby'),
-    );
+    wipeTo(this, 'lobby');
   }
 
   private toTitle() {
-    this.cameras.main.fadeOut(220, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('title'),
-    );
+    wipeTo(this, 'title');
   }
 }

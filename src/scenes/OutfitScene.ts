@@ -7,6 +7,7 @@ import { playerName } from '../leaderboard';
 import { perfInterval, furQuality } from '../meta';
 import { keyHintsOn, fitZoom } from '../mobile';
 import { Sfx } from '../audio';
+import { viaWipe, wipeTo } from '../wipe';
 
 // OutfitScene — the wardrobe. Fall Guys' CUSTOMISE › OUTFITS layout:
 // live bean on the podium left, a swatch card right with two tabs —
@@ -66,7 +67,7 @@ export class OutfitScene extends Phaser.Scene {
     super('outfit');
   }
 
-  create() {
+  create(data?: { iwWipe?: boolean }) {
     const { width: W, height: H } = this.scale;
     const zoom = fitZoom(W, H, VW, VH);
     this.cameras.main.setZoom(zoom).centerOn(VW / 2, VH / 2);
@@ -204,7 +205,7 @@ export class OutfitScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-Q', () => this.setTab('chars'));
     this.input.keyboard?.on('keydown-E', () => this.setTab('coat'));
 
-    this.cameras.main.fadeIn(200, 0x2b, 0xb8, 0xf0);
+    if (!viaWipe(data)) this.cameras.main.fadeIn(200, 0x2b, 0xb8, 0xf0);
     this.events.once('shutdown', () => {
       this.hero3d?.dispose();
       this.hero3d = undefined;
@@ -213,10 +214,7 @@ export class OutfitScene extends Phaser.Scene {
   }
 
   private back() {
-    this.cameras.main.fadeOut(160, 0x2b, 0xb8, 0xf0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('title'),
-    );
+    wipeTo(this, 'title');
   }
 
   // ---- tabs: two chamfered pills between LB/RB bumpers ----

@@ -18,6 +18,7 @@ import { generateLayout, seededRng } from '../mapgen';
 import { bakeBeanSheet } from '../beanbake';
 import { charMove, currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
 import type { BossMove } from '../adventure';
+import { viaWipe, wipeTo } from '../wipe';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -114,6 +115,7 @@ export class GameScene extends Phaser.Scene {
   private nextThumpAt = 0;
   private adrenalineOn = false;
   private transitioning = false;
+  private fromWipe = false; // arrived via wipeTo — the blade already revealed us
   private lastShownSec = -1;
   private bannerTween: Phaser.Tweens.Tween | null = null;
 
@@ -203,9 +205,10 @@ export class GameScene extends Phaser.Scene {
     super('game');
   }
 
-  init(data: { difficulty?: Difficulty; adventure?: LevelDef }) {
+  init(data: { difficulty?: Difficulty; adventure?: LevelDef; iwWipe?: boolean }) {
     this.diff = DIFFS[data.difficulty ?? 'normal'] ?? DIFFS.normal;
     this.level = data.adventure ?? null;
+    this.fromWipe = viaWipe(data);
   }
 
   create() {
@@ -398,7 +401,7 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', this.onPauseTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onPauseTap, this));
 
-    this.cameras.main.fadeIn(280, 0, 0, 0);
+    if (!this.fromWipe) this.cameras.main.fadeIn(280, 0, 0, 0);
 
     this.timeLeft = this.roundSeconds;
     this.nextEventAt =
@@ -1707,11 +1710,13 @@ export class GameScene extends Phaser.Scene {
   private transitionTo(key: string, restart = false) {
     if (this.transitioning) return;
     this.transitioning = true;
-    this.cameras.main.fadeOut(220, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      if (restart) this.scene.restart();
-      else this.scene.start(key);
-    });
+    if (restart) {
+      // scene.transition refuses its own key — restarts keep the dip
+      this.cameras.main.fadeOut(220, 0, 0, 0);
+      this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
+        this.scene.restart(),
+      );
+    } else wipeTo(this, key);
   }
 
   private transitionToNextLevel() {
@@ -1719,11 +1724,7 @@ export class GameScene extends Phaser.Scene {
     this.transitioning = true;
     // back to the road first — the map marches the marker to the next stop,
     // and the player taps the next node (PLAY) to actually enter the level
-    const cleared = this.level.n;
-    this.cameras.main.fadeOut(220, 0, 0, 0);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () =>
-      this.scene.start('adventure', { advance: cleared }),
-    );
+    wipeTo(this, 'adventure', { advance: this.level.n });
   }
 
   private spawnReinforcement() {

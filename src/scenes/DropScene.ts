@@ -6,6 +6,7 @@ import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
 import { currentChar } from '../characters';
 import { fitZoom } from '../mobile';
+import { viaWipe, wipeTo } from '../wipe';
 
 // DropScene — the FALL GUYS "populating" beat, retold our way: the furry
 // bean skydives through a cyan sky while the level name lands under it.
@@ -127,7 +128,7 @@ export class DropScene extends Phaser.Scene {
     this.input.keyboard?.once('keydown-SPACE', () => this.go(gameData));
 
     this.time.delayedCall(REDUCED_MOTION ? 1200 : HOLD, () => this.go(gameData));
-    this.cameras.main.fadeIn(240, 98, 200, 242);
+    if (!viaWipe(data)) this.cameras.main.fadeIn(240, 98, 200, 242);
     this.events.once('shutdown', () => {
       this.hero3d?.dispose();
       this.hero3d = undefined;
@@ -138,8 +139,7 @@ export class DropScene extends Phaser.Scene {
   private go(gameData: DropData['game']) {
     if (this.gone) return;
     this.gone = true;
-    this.cameras.main.fadeOut(200, 98, 200, 242);
-    this.time.delayedCall(200, () => this.scene.start('game', gameData));
+    wipeTo(this, 'game', gameData);
   }
 
   update(_t: number, delta: number) {
