@@ -12,13 +12,29 @@ const SCALE = 44;          // px per world unit — arena ~1619x2411 on street
 const PROP_COLS = [0x8a5a2a, 0x5d6b73, 0x1c1c1e, 0x74563c];
 
 interface Ent3D {
-  bean: Bean;
+  root: THREE.Group;
+  bean: Bean | null;
+  bb?: {
+    sprite: THREE.Sprite;
+    tex: THREE.Texture;
+    marker: THREE.Sprite;
+    emote: THREE.Sprite;
+    t: number;
+    frames: number;
+  };
   ring: THREE.Mesh;
   x: number; y: number;   // phaser px
   vx: number; vy: number;
   frozen: boolean;
   scale: number;          // boss 1.45, iceling .55 — animBean owns root.scale so this multiplies on top
   label?: Phaser.GameObjects.Text; // scene may anchor its own text via project()
+}
+
+/** a baked bean strip (beanbake.ts) — ents wear it as a 2.5D billboard
+ *  instead of the 3D rig: our sprite design standing in the street */
+export interface SheetDef {
+  canvas: HTMLCanvasElement;
+  frames: number;
 }
 
 export class PitchStage {
@@ -183,19 +199,43 @@ export class PitchStage {
   }
 
   // ---------- entities ----------
-  spawnEnt(model: Bean3DModel, ringColor: number, px: number, py: number): number {
-    const bean = makeBean(model);
-    bean.root.position.set(this.toWX(px), 0, this.toWZ(py));
-    this.scene.add(bean.root);
+  spawnEnt(model: Bean3DModel, ringColor: number, px: number, py: number, sheet?: SheetDef): number {
+    let bean: Bean | null = null;
+    let bb: Ent3D['bb'];
+    let root: THREE.Group;
+    if (sheet) {
+      root = new THREE.Group();
+      const tex = new THREE.CanvasTexture(sheet.canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.repeat.set(1 / sheet.frames, 1);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        alphaTest: .02, // cut fully-empty texels so their depth doesn't punch holes
+      }));
+      sprite.center.set(.5, .12); // baked feet land on the ground plane
+      sprite.scale.set(1.9, 1.9, 1);
+      const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoteTexture('!', '#ffd25e'), depthTest: false }));
+      marker.scale.setScalar(.5); marker.position.y = 1.9; marker.visible = false;
+      const emote = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoteTexture('…'), depthTest: false, transparent: true }));
+      emote.scale.setScalar(.42); emote.position.y = 1.9; emote.visible = false;
+      root.add(sprite, marker, emote);
+      bb = { sprite, tex, marker, emote, t: Math.random() * 10, frames: sheet.frames };
+    } else {
+      bean = makeBean(model);
+      root = bean.root;
+    }
+    root.position.set(this.toWX(px), 0, this.toWZ(py));
+    this.scene.add(root);
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(.5, .66, 24),
       new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: .85, depthWrite: false, side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = .04;
-    bean.root.add(ring);
+    root.add(ring);
     const id = this.nextId++;
-    this.ents.set(id, { bean, ring, x: px, y: py, vx: 0, vy: 0, frozen: false, scale: 1 });
+    this.ents.set(id, { root, bean, bb, ring, x: px, y: py, vx: 0, vy: 0, frozen: false, scale: 1 });
     return id;
   }
   scaleEnt(id: number, s: number) {
@@ -208,20 +248,31 @@ export class PitchStage {
     e.x = px; e.y = py; e.vx = vx; e.vy = vy;
     if (frozen !== undefined && frozen !== e.frozen) {
       e.frozen = frozen;
-      setFrozen(e.bean, frozen);
+      if (e.bean) setFrozen(e.bean, frozen);
+      else if (e.bb) e.bb.marker.visible = frozen; // splat frames carry the ice
     }
   }
   setEmote(id: number, txt: string | null) {
     const e = this.ents.get(id);
-    if (!e) return;
+    const emote = e?.bean ? e.bean.emote : e?.bb?.emote;
+    if (!e || !emote) return;
     if (txt) {
-      (e.bean.emote.material as THREE.SpriteMaterial).map = emoteTexture(txt);
-      e.bean.emote.visible = true;
-    } else e.bean.emote.visible = false;
+      (emote.material as THREE.SpriteMaterial).map = emoteTexture(txt);
+      emote.visible = true;
+    } else emote.visible = false;
   }
   removeEnt(id: number) {
     const e = this.ents.get(id);
-    if (e) { this.scene.remove(e.bean.root); this.ents.delete(id); }
+    if (!e) return;
+    this.scene.remove(e.root);
+    if (e.bb) {
+      e.bb.tex.dispose(); // per-ent CanvasTexture over the shared strip
+      (e.bb.sprite.material as THREE.Material).dispose();
+      // marker/emote MAPS are texCache-shared — dispose materials only
+      (e.bb.marker.material as THREE.Material).dispose();
+      (e.bb.emote.material as THREE.Material).dispose();
+    }
+    this.ents.delete(id);
   }
   clearEnts() { for (const id of [...this.ents.keys()]) this.removeEnt(id); }
   entScreenPos(id: number): { x: number; y: number } | null {
@@ -426,9 +477,20 @@ export class PitchStage {
     if (this.world) updateWorld(this.world, dt);
     const t = performance.now() / 1000;
     for (const e of this.ents.values()) {
-      const b = e.bean;
-      b.root.position.set(this.toWX(e.x), b.root.position.y, this.toWZ(e.y));
-      const speed = Math.hypot(e.vx, e.vy) / SCALE;
+      e.root.position.set(this.toWX(e.x), e.root.position.y, this.toWZ(e.y));
+      const speedPx = Math.hypot(e.vx, e.vy);
+      if (e.bb) {
+        // 2.5D billboard — sheet frames do the acting: run 0–7 @13,
+        // idle 8–11 @6, splat 12–13 @5 (frozen). Mirror on left travel.
+        const bb = e.bb;
+        bb.t += dt;
+        const [base, fps, count] = e.frozen ? [12, 5, 2] : speedPx > 26 ? [0, 13, 8] : [8, 6, 4];
+        bb.tex.offset.x = (base + (Math.floor(bb.t * fps) % count)) / bb.frames;
+        bb.sprite.scale.set(1.9 * e.scale * (e.vx < -2 ? -1 : 1), 1.9 * e.scale, 1);
+        continue;
+      }
+      const b = e.bean!;
+      const speed = speedPx / SCALE;
       if (speed > .3 && !e.frozen) {
         const yaw = Math.atan2(e.vx / SCALE, e.vy / SCALE);
         let d = yaw - b.root.rotation.y;
@@ -437,6 +499,9 @@ export class PitchStage {
         b.root.rotation.y += d * Math.min(1, dt * 10);
       }
       animBean(b, dt, speed, false, e.frozen);
+      // frozen early-returns inside animBean before its squash reset —
+      // normalize or the scale multiply below compounds every frame
+      if (e.frozen) b.root.scale.set(1, 1, 1);
       if (e.scale !== 1) b.root.scale.multiplyScalar(e.scale);
     }
     // pickups bob + spin

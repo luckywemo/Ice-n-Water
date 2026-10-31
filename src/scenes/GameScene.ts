@@ -17,6 +17,7 @@ import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { PitchStage } from '../b3d/stage';
 import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
+import { bakeBeanSheet, sheetCanvas } from '../beanbake';
 import { viaWipe, wipeTo } from '../wipe';
 import type { BossMove } from '../adventure';
 
@@ -330,6 +331,23 @@ export class GameScene extends Phaser.Scene {
     this.playerMove = charMove(me); // beaten champions pass their boss's skill
     this.me = me;
 
+    // baked bean sheets — the lobby rig pre-posed into sprite frames; the
+    // pitch stage wears them as 2.5D billboards (our sprite design in the
+    // street). No WebGL → the rig renders ents in 3D instead.
+    const youKey = `bean-you-${me.id}-${me.body.toString(16)}`; // per-look key — a swapped pick or repaint can't reuse a stale sheet
+    this.sheetPlayer = bakeBeanSheet(this, youKey, me) ? youKey : null;
+    this.sheetCrew = bakeBeanSheet(this, 'bean-crew', CREW_DEF) ? 'bean-crew' : null;
+    this.sheetMilitia = bakeBeanSheet(this, 'bean-militia', MILITIA_DEF)
+      ? 'bean-militia'
+      : null;
+    if (this.level?.boss) {
+      const bKey = `bean-boss-${this.level.boss}`;
+      const bDef = { ...MILITIA_DEF, ...BOSS_MODELS[this.level.boss], id: 'boss', name: this.level.boss };
+      this.sheetBoss = bakeBeanSheet(this, bKey, bDef) ? bKey : null;
+    }
+    for (const k of [this.sheetPlayer, this.sheetCrew, this.sheetMilitia])
+      if (k) this.makeBeanAnims(k);
+
     this.buildArena();
 
     this.itemGroup = this.physics.add.group({ allowGravity: false, immovable: true });
@@ -601,8 +619,10 @@ export class GameScene extends Phaser.Scene {
     model: Parameters<PitchStage['spawnEnt']>[0],
     ring: number,
     scale = 1,
+    sheet?: string | null,
   ) {
-    const id = this.st3.spawnEnt(model, ring, spr.x, spr.y);
+    const bb = sheet ? sheetCanvas(this, sheet) : undefined;
+    const id = this.st3.spawnEnt(model, ring, spr.x, spr.y, bb);
     this.stEnt.set(spr, id);
     if (scale !== 1) this.st3.scaleEnt(id, scale);
     spr.setVisible(false);
@@ -680,6 +700,8 @@ export class GameScene extends Phaser.Scene {
       this.player,
       this.me,
       this.level?.objective.kind === 'hunt' ? 0xff6b6b : 0xffc93c,
+      1,
+      this.sheetPlayer,
     );
 
     // crowd mutator packs the field with extra bodies — compound streets
@@ -696,7 +718,7 @@ export class GameScene extends Phaser.Scene {
       st.drawScale = this.sheetCrew ? 0.8 : 1;
       this.rState.set(r, st);
       if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
-      this.linkEnt(r, CREW_DEF, 0x4dd0e1);
+      this.linkEnt(r, CREW_DEF, 0x4dd0e1, 1, this.sheetCrew);
     }
 
     // militia — adventure levels can field a whole squad from the first whistle
@@ -736,6 +758,7 @@ export class GameScene extends Phaser.Scene {
         boss ? { ...MILITIA_DEF, ...BOSS_MODELS[this.level!.boss!] } : MILITIA_DEF,
         boss ? 0xff6b6b : 0x9fd8ff,
         boss ? 1.45 : 1,
+        boss ? (this.sheetBoss ?? this.sheetMilitia) : this.sheetMilitia,
       );
     }
 
@@ -1040,7 +1063,7 @@ export class GameScene extends Phaser.Scene {
     cst.nextBarkAt = Number.MAX_SAFE_INTEGER; // drops don't bark
     cst.noTagUntil = this.time.now + 1600; // freeze-in grace — no spawn-tag
     this.cState.set(c, cst);
-    this.linkEnt(c, MILITIA_DEF, 0x9fd8ff, 0.55);
+    this.linkEnt(c, MILITIA_DEF, 0x9fd8ff, 0.55, this.sheetMilitia);
     this.collideWithWorld(c);
     this.burst(x, y, CONFIG.colors.frozen, 10, 140);
   }
@@ -1851,7 +1874,7 @@ export class GameScene extends Phaser.Scene {
       cst.drawScale = this.sheetMilitia ? 0.8 : 1;
       this.cState.set(c, cst);
       if (this.sheetMilitia) c.play(this.sheetMilitia + '-idle');
-      this.linkEnt(c, MILITIA_DEF, 0x9fd8ff);
+      this.linkEnt(c, MILITIA_DEF, 0x9fd8ff, 1, this.sheetMilitia);
       this.collideWithWorld(c);
       this.burst(p.x, p.y, CONFIG.colors.chaser, 20, 260);
     }
@@ -2410,7 +2433,7 @@ export class GameScene extends Phaser.Scene {
     this.rState.set(r, st);
     if (this.sheetCrew) r.play(this.sheetCrew + '-idle');
     r.setVisible(false);
-    this.linkEnt(r, CREW_DEF, 0x4dd0e1);
+    this.linkEnt(r, CREW_DEF, 0x4dd0e1, 1, this.sheetCrew);
     this.collideWithWorld(r);
     this.burst(r.x, r.y, 0x7df2a8, 14, 200);
     this.backup = r;

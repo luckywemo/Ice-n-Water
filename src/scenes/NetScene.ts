@@ -10,8 +10,9 @@ import { loadPicks } from '../meta';
 import { generateLayout } from '../mapgen';
 import { viaWipe, wipeTo } from '../wipe';
 import { PitchStage } from '../b3d/stage';
-import { currentChar, CREW_DEF, MILITIA_DEF } from '../characters';
+import { currentChar, CREW_DEF, MILITIA_DEF, type CharDef } from '../characters';
 import { PALETTE } from '../b3d/bean';
+import { bakeBeanSheet, sheetCanvas } from '../beanbake';
 
 type Body = Phaser.Physics.Arcade.Body;
 
@@ -51,11 +52,12 @@ interface RemoteSprite {
 }
 
 /** stable per-player coat for remote runners — same faces every round */
-const remoteModel = (id: string) => {
+const remoteIndex = (id: string) => {
   let h = 0;
   for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length];
+  return h % PALETTE.length;
 };
+const remoteModel = (id: string) => PALETTE[remoteIndex(id)];
 
 const sfx = Sfx.inst;
 const SEND_EVERY_MS = 66; // ~15 pos updates per second
@@ -106,6 +108,25 @@ export class NetScene extends Phaser.Scene {
 
   constructor() {
     super('net');
+  }
+
+  /** baked bean sheet → billboard payload for the stage (cached texture is global) */
+  private bbFor(key: string, def: CharDef) {
+    if (!bakeBeanSheet(this, key, def)) return undefined;
+    return sheetCanvas(this, key);
+  }
+
+  private myBb() {
+    if (this.myTeam === 'ice') return this.bbFor('bean-militia', MILITIA_DEF);
+    const me = currentChar();
+    return this.bbFor(`bean-you-net-${me.id}`, me);
+  }
+
+  private remoteBb(id: string, team: string) {
+    if (team === 'ice') return this.bbFor('bean-militia', MILITIA_DEF);
+    const i = remoteIndex(id);
+    const m = PALETTE[i];
+    return this.bbFor(`bean-pal-${i}`, { id: `pal-${i}`, skin: 0xf0d5a5, ...m });
   }
 
   init(data: { room: Room<NetState> }) {
@@ -167,6 +188,7 @@ export class NetScene extends Phaser.Scene {
       0xffc93c,
       this.me.x,
       this.me.y,
+      this.myBb(),
     );
     (this.me.body as Body).setCircle(CONFIG.runner.radius + 2);
     (this.me.body as Body).setCollideWorldBounds(true);
@@ -380,6 +402,7 @@ export class NetScene extends Phaser.Scene {
         0xffc93c,
         this.me.x,
         this.me.y,
+        this.myBb(),
       );
       if (this.myTeam === 'ice') this.banner("YOU'RE ICE NOW — go freeze them!", '#e84848');
     }
@@ -453,6 +476,7 @@ export class NetScene extends Phaser.Scene {
           p.team === 'ice' ? 0x9fd8ff : 0x4dd0e1,
           r.sprite.x,
           r.sprite.y,
+          this.remoteBb(id, p.team),
         );
       }
       // remotes lerp, they don't simulate — the chase delta stands in for
@@ -669,6 +693,7 @@ export class NetScene extends Phaser.Scene {
       p.team === 'ice' ? 0x9fd8ff : 0x4dd0e1,
       p.x,
       p.y,
+      this.remoteBb(id, p.team),
     );
     const label = this.add
       .text(p.x, p.y - 26, p.name, {
