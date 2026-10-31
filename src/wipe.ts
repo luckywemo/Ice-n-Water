@@ -60,24 +60,26 @@ function drawWedge(tgt: Phaser.Scene, p: number) {
   }
   const cam = tgt.cameras.main;
   const g = wipes.get(tgt);
-  const mask = g ?? tgt.add.graphics().setVisible(false);
+  // scrollFactor(0): the mask is evaluated in screen space, not through the
+  // camera — drawing in worldView coords would under/over-cover whenever the
+  // target is zoomed (mobile boost) or scrolled (the map's rail)
+  const mask = g ?? tgt.add.graphics().setVisible(false).setScrollFactor(0);
   if (!g) {
     wipes.set(tgt, mask);
     cam.setMask(mask.createGeometryMask());
   }
-  // the edge rides the target camera's world rect — correct under the
-  // letterboxed stage zoom instead of raw scale dims
-  const wv = cam.worldView;
-  const rise = wv.width * 0.4; // "/" slope — the blade angle Fall Guys uses
-  const b = wv.right - p * (wv.width + rise); // edge x at the bottom edge
+  const w = tgt.scale.width;
+  const h = tgt.scale.height;
+  const rise = w * 0.4; // "/" slope — the blade angle Fall Guys uses
+  const b = w - p * (w + rise); // edge x at the bottom edge
   mask.clear();
   mask.fillStyle(0xffffff);
   mask.fillPoints(
     [
-      { x: b, y: wv.bottom },
-      { x: wv.right, y: wv.bottom },
-      { x: wv.right, y: wv.top },
-      { x: b + rise, y: wv.top },
+      { x: b, y: h },
+      { x: w, y: h },
+      { x: w, y: 0 },
+      { x: b + rise, y: 0 },
     ],
     true,
   );
