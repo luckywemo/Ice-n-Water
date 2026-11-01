@@ -1040,7 +1040,7 @@ export class AdventureScene extends Phaser.Scene {
       t.img.setTexture(key).setScale(sc).setVisible(true);
       const mine = e.rank === myRank;
       t.veil
-        .fillStyle(0x081420, 0.5)
+        .fillStyle(0x081420, 0.35)
         .fillRoundedRect(tx, ty, tw, th - 2, 8);
       if (mine)
         t.veil.lineStyle(3, 0xffffff, 0.95).strokeRoundedRect(tx + 1.5, ty + 1.5, tw - 3, th - 5, 7);
