@@ -215,6 +215,7 @@ export class OutfitScene extends Phaser.Scene {
   }
 
   private back() {
+    sfx.uiBack();
     wipeTo(this, 'title');
   }
 
@@ -289,7 +290,7 @@ export class OutfitScene extends Phaser.Scene {
   private setTab(t: Tab) {
     if (this.tab === t) return;
     this.tab = t;
-    sfx.pickup();
+    sfx.uiTap();
     this.drawTabs();
     this.buildGrid();
     this.refreshHead();

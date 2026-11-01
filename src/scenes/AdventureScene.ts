@@ -413,6 +413,8 @@ export class AdventureScene extends Phaser.Scene {
       return;
     }
     this.frontier.x = this.cardX(a - 1); // stage on the card just cleared
+    sfx.beanHop(); // the walker takes two little steps across the rail
+    this.time.delayedCall(330, () => sfx.beanHop());
     this.tweens.add({ targets: this.frontier, x: toX, duration: 650, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: cam, scrollX: camX, duration: 650, ease: 'Sine.easeInOut' });
     this.time.delayedCall(680, done);
@@ -733,6 +735,7 @@ export class AdventureScene extends Phaser.Scene {
   // ---------- global leaderboard overlay ----------
 
   private showBoard() {
+    sfx.uiOpen();
     if (this.boardLayer) return;
     const width = this.visW,
       height = this.visH;
@@ -1023,6 +1026,7 @@ export class AdventureScene extends Phaser.Scene {
   }
 
   private closeBoard() {
+    sfx.uiClose();
     this.boardLayer?.destroy();
     this.boardLayer = null;
     this.boardTiles = [];
@@ -1308,9 +1312,12 @@ export class AdventureScene extends Phaser.Scene {
         .setShadow(0, 3, open ? '#c98a00' : '#3a4656', 0, true, false),
     );
 
-    this.cardHit = open
-      ? [{ x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => this.playLevel(n) }]
-      : [];
+    this.cardHit = [
+      open
+        ? { x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => this.playLevel(n) }
+        : // locked cards still answer — the muted "nope" buzz, not silence
+          { x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => sfx.denied() },
+    ];
 
     this.detailLayer = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(46);
   }
@@ -1330,6 +1337,7 @@ export class AdventureScene extends Phaser.Scene {
    *  the frontier marker is mid-march */
   private gated(fn: () => void) {
     if (this.modalOpen || this.boardLayer || this.marching) return;
+    sfx.uiTap(); // every gated control pops — top bar, focus target
     fn();
   }
 

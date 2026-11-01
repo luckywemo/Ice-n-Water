@@ -197,6 +197,143 @@ export class Sfx {
     [392, 330, 262, 196].forEach((f, i) => this.tone('sawtooth', f, f * 0.92, 0.3, 0.1, i * 0.17));
   }
 
+  /** the crowd's "oooOOOH!" — a tag that just missed */
+  crowdOoh() {
+    // four staggered voice-band layers sliding down + a low fall — reads as
+    // a stadium gasp without any samples
+    for (let i = 0; i < 4; i++)
+      this.noise(0.45, 0.09, 1400 - i * 260, 240, i * 0.05, 'bandpass');
+    this.tone('triangle', 700, 380, 0.5, 0.08);
+  }
+
+  /** the militia heard your shout — a quick "you're made" alert pair */
+  marked() {
+    this.tone('triangle', 520, 520, 0.09, 0.16);
+    this.tone('triangle', 660, 660, 0.12, 0.16, 0.1);
+    this.noise(0.1, 0.05, 2000, 5000, 0, 'highpass');
+  }
+
+  // ---------- UI chrome — Fall Guys-style candy blips ----------
+  // shared recipe: a rounded sine body with a fast pitch sweep, an octave
+  // sparkle on top, and a tiny high-end click for the attack — reads as a
+  // soft "bwip", bright but never harsh. Tap sounds self-ensure (they only
+  // ever fire inside user gestures).
+
+  /** the default button pop */
+  uiTap() {
+    this.ensure();
+    this.tone('sine', 520, 940, 0.07, 0.2);
+    this.tone('triangle', 1040, 1880, 0.05, 0.08, 0.012);
+    this.noise(0.025, 0.045, 5200, 9000, 0, 'highpass');
+  }
+
+  /** back / cancel — the tap's mirror, pitched down */
+  uiBack() {
+    this.ensure();
+    this.tone('sine', 760, 430, 0.08, 0.18);
+    this.noise(0.025, 0.04, 4800, 8000, 0, 'highpass');
+  }
+
+  /** panel / modal open — an airy swell + a pop */
+  uiOpen() {
+    this.ensure();
+    this.noise(0.14, 0.07, 700, 3600, 0, 'bandpass');
+    this.tone('sine', 620, 1150, 0.09, 0.16, 0.02);
+    this.tone('triangle', 1240, 1720, 0.07, 0.07, 0.05);
+  }
+
+  /** panel / modal close — a softer settle, no swell */
+  uiClose() {
+    this.ensure();
+    this.noise(0.1, 0.05, 2400, 700, 0, 'bandpass');
+    this.tone('sine', 880, 470, 0.07, 0.13, 0.015);
+  }
+
+  /** hover — a whisper tick. No self-ensure: it should only sound once
+   *  audio is already running (a real tap has happened) */
+  uiHover() {
+    this.tone('sine', 1500, 1900, 0.028, 0.04);
+  }
+
+  /** denied — the muted "brrt" for locked / not-allowed taps */
+  denied() {
+    this.ensure();
+    this.tone('square', 190, 150, 0.14, 0.1);
+    this.tone('square', 143, 110, 0.12, 0.07, 0.02);
+  }
+
+  /** confirm — the bigger two-note commit chirp (READY / START / saves) */
+  uiConfirm() {
+    this.ensure();
+    this.tone('triangle', 660, 990, 0.09, 0.2);
+    this.tone('triangle', 990, 1480, 0.12, 0.14, 0.07);
+    this.noise(0.05, 0.05, 5000, 8000, 0.06, 'highpass');
+  }
+
+  // ---------- bean noises — the little creature living in the menus ----------
+  // Pitched higher and rounder than the chrome blips — these are the bean's
+  // "voice", not UI. Hooked inside Hero3D so every podium/map/drop bean gets
+  // the same vocabulary automatically. Ambient ones (hops, tricks) still
+  // self-ensure harmlessly — they just stay silent until audio is running.
+
+  /** startle squeak — "eep!" when the bean gets poked */
+  beanEep() {
+    this.ensure();
+    this.tone('triangle', 1350, 2200, 0.06, 0.15);
+    this.tone('triangle', 2100, 2600, 0.05, 0.08, 0.05);
+  }
+
+  /** idle hop — a tiny "boip" on take-off */
+  beanHop() {
+    this.ensure();
+    this.tone('sine', 400, 720, 0.08, 0.12);
+    this.tone('triangle', 640, 980, 0.06, 0.05, 0.02);
+  }
+
+  /** pratfall launch — the big cartoon spring */
+  beanBoing() {
+    this.ensure();
+    this.tone('sine', 260, 620, 0.14, 0.17);
+    this.tone('triangle', 520, 1150, 0.1, 0.08, 0.04);
+  }
+
+  /** midair backflip — excited "whee!" slide whistle */
+  beanWhee() {
+    this.ensure();
+    this.tone('sine', 900, 1950, 0.2, 0.11, 0.05);
+    this.tone('triangle', 1400, 2400, 0.16, 0.05, 0.14);
+  }
+
+  /** soft landing pomf after a hop */
+  beanLand() {
+    this.ensure();
+    this.tone('sine', 230, 130, 0.09, 0.13);
+    this.noise(0.05, 0.05, 1200, 400, 0);
+  }
+
+  /** the pancake SPLAT — flat pomf + a dazed little "oof" */
+  beanSplat() {
+    this.ensure();
+    this.noise(0.09, 0.15, 900, 220, 0);
+    this.tone('sine', 180, 85, 0.12, 0.17);
+    this.tone('triangle', 950, 480, 0.1, 0.06, 0.13);
+  }
+
+  /** drag-spin warble — two-tone wobble, callers throttle the repeat */
+  beanSpin() {
+    this.ensure();
+    this.tone('sine', 680, 1150, 0.05, 0.08);
+    this.tone('sine', 1150, 700, 0.05, 0.07, 0.05);
+  }
+
+  /** skydive — wind rush + the classic long falling whistle */
+  beanWhistle() {
+    this.ensure();
+    this.noise(0.9, 0.05, 3200, 800, 0, 'bandpass');
+    this.tone('sine', 1700, 480, 0.8, 0.09);
+    this.tone('triangle', 2400, 700, 0.7, 0.04, 0.06);
+  }
+
   // ---------- militia voice ----------
   // Browser speech synthesis — deep pitch + quick delivery approximates the
   // street-shout energy. No audio files needed. (A true Pidgin accent needs

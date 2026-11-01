@@ -12,8 +12,8 @@ import {
   TOTAL_LEVELS,
 } from '../adventure';
 import { submitAdventureScore } from '../leaderboard';
-import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks } from '../meta';
-import { pushProgress, recordStatsEvent, prepareRunTicket } from '../cloudsave';
+import { DIFFS, Difficulty, DiffPreset, recordResult, loadPicks, savePicks, CamView, CAM_ORDER, CAM_LABEL, CamFacing, CAM_FACE_ORDER, CAM_FACE_LABEL } from '../meta';
+import { pushProgress, recordStatsEvent, prepareRunTicket, pushProfile } from '../cloudsave';
 import { TouchControls, keyHintsOn } from '../mobile';
 import { generateLayout, seededRng } from '../mapgen';
 import { PitchStage } from '../b3d/stage';
@@ -65,6 +65,7 @@ interface ChaserState {
   tint?: number; // boss body color (warn flash overrides it temporarily)
   tag?: Phaser.GameObjects.Text; // floating boss name
   rageUntil?: number; // boss move — boiling red, runs you down harder
+  heardUntil?: number; // a shout in earshot — locked onto the shouter
   sheet?: string; // baked bean sheet key
   noTagUntil?: number; // icelings get a warm-up before their touch freezes
   drawScale?: number; // boss 1.45, icelings 0.5, regular militia 0.8
@@ -79,6 +80,13 @@ type BarkKind = keyof typeof CONFIG.barks;
 const sfx = Sfx.inst;
 const REFUGE_COVER_MS = 5000;
 const REFUGE_RADIUS = 120;
+const TAUNT_LINES = [
+  'COME CATCH ME NA!',
+  'OLORO!',
+  'YOU TOO SLOW!',
+  'WAKA PASS!',
+  'ICE NO DEY CATCH ME!',
+];
 const MUT_LABEL: Record<Mutator, string> = {
   night: 'NIGHT',
   storm: 'STORM',
@@ -138,6 +146,17 @@ export class GameScene extends Phaser.Scene {
   private lastEvent: EventKind | null = null;
   private slipperyUntil = 0;
   private helpUntil = 0; // COME SAVE ME ping — brave mates come running
+  // juke juice — armed hunter↔runner pairs that separate without a tag get
+  // the crowd's gasp; and the taunt economy: shout near hunters for a speed
+  // burst, but they lock onto you while the mark lasts
+  private nearPairs = new Map<Sprite, Set<Sprite>>();
+  private nearMisses = 0;
+  private tauntUntil = 0; // +speed window after a heard shout
+  private tauntCooldownUntil = 0;
+  private markUntil = 0; // hunters keep their lock for this long
+  private markPing?: Phaser.GameObjects.Arc; // pulsing ring over a marked player
+  private killer: Sprite | null = null; // who iced you — the kill-cam's shoulder
+  private killCamUntil = 0; // replay the tag from their POV before spectate
   private playerMove?: BossMove; // inherited from the beaten champion
   private moveReadyAt = 0; // champion skills run a 14s cooldown
   private lastDir = new Phaser.Math.Vector2(1, 0); // blink dashes where you're headed
@@ -159,6 +178,7 @@ export class GameScene extends Phaser.Scene {
   private endButtons: Phaser.GameObjects.Container[] = []; // result dashboard
   private endHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
   private paused = false; // single-player only — net play never pauses
+  private pauseView: 'menu' | 'settings' = 'menu'; // pause-card page
   private pauseObjs: { destroy: () => void }[] = [];
   private pauseHitZones: { ax: number; ay: number; ox: number; oy: number; bw: number; bh: number; go: () => void }[] = [];
 
@@ -246,6 +266,14 @@ export class GameScene extends Phaser.Scene {
     this.nextThumpAt = 0;
     this.adrenalineOn = false;
     this.transitioning = false;
+    this.nearPairs.clear();
+    this.nearMisses = 0;
+    this.tauntUntil = 0;
+    this.tauntCooldownUntil = 0;
+    this.markUntil = 0;
+    this.markPing = undefined;
+    this.killer = null;
+    this.killCamUntil = 0;
     this.lastShownSec = -1;
     this.playerFreezes = 0;
     this.playerRescues = 0;
@@ -403,8 +431,10 @@ export class GameScene extends Phaser.Scene {
       this,
       {
         onWater: () => this.useItem(this.player),
+        onShout: () => this.taunt(),
         onRestart: () => {
           // after an adventure win, ↻ means "on to the next stop" — same as SPACE
+          sfx.uiTap();
           if (this.phase === 'over' && this.lastResult?.won && this.level && this.level.n < TOTAL_LEVELS) {
             this.transitionToNextLevel();
           } else {
@@ -687,6 +717,9 @@ export class GameScene extends Phaser.Scene {
       st.setBus(this.bus.x, this.bus.y, Math.atan2(v.y, v.x) - Math.PI / 2);
     }
     const pv = (this.player?.body as Body | undefined)?.velocity;
+    const frozen = !!this.rState.get(this.player)?.frozen;
+    const killcam =
+      !REDUCED_MOTION && frozen && this.time.now < this.killCamUntil && this.killer;
     st.render(
       delta / 1000,
       this.player
@@ -695,8 +728,9 @@ export class GameScene extends Phaser.Scene {
             fy: this.player.y,
             vx: pv?.x ?? 0,
             vy: pv?.y ?? 0,
-            spectate: !!this.rState.get(this.player)?.frozen,
+            spectate: frozen && !killcam,
             danger: this.camDanger,
+            killcam: killcam ? { x: this.killer!.x, y: this.killer!.y } : undefined,
           }
         : undefined,
     );
@@ -1244,7 +1278,7 @@ export class GameScene extends Phaser.Scene {
     // on desktop when Settings › Key hints is off. It also retires after
     // your first rounds and borrows the pause menu when you need it.
     const hintStr = keyHintsOn()
-      ? `arrows — move   shift — sprint   E — pure water   R — restart   ${exitLabel}`
+      ? `arrows — move   shift — sprint   E — water/shout   SPACE — taunt   R — restart   ${exitLabel}`
       : '';
     this.hintGone = Number(localStorage.getItem('iw-hint-seen') ?? '0') >= 3;
     if (hintStr) {
@@ -1608,6 +1642,12 @@ export class GameScene extends Phaser.Scene {
       this.floatText(runner.x, runner.y, 'JUJU BLOCKED IT!');
       return;
     }
+    if (st.isPlayer) {
+      // kill-cam — replay the tag parked on the hunter's shoulder before the
+      // frozen spectate pulls wide
+      this.killer = chaser;
+      this.killCamUntil = this.time.now + 2100;
+    }
     this.freeze(runner);
   }
 
@@ -1687,7 +1727,11 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: runner, scale: base, duration: 200 });
 
     if (rescuer && this.rState.get(rescuer)!.isPlayer) this.playerRescues++;
-    if (st.isPlayer) this.clearBanner();
+    if (st.isPlayer) {
+      this.clearBanner();
+      this.killer = null;
+      this.killCamUntil = 0;
+    }
   }
 
   private pickupItem(runner: Sprite, item: Sprite) {
@@ -1737,10 +1781,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.paused) {
-      if (
-        Phaser.Input.Keyboard.JustDown(this.keys.ESC) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.SPACE)
-      ) {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
+        if (this.pauseView === 'settings') this.showPauseMenu();
+        else this.resume();
+      } else if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) {
         this.resume();
       }
       return;
@@ -1828,6 +1872,8 @@ export class GameScene extends Phaser.Scene {
     this.updatePlayer(dt);
     for (const r of this.runners) if (!this.rState.get(r)!.isPlayer) this.updateAiRunner(r, delta);
     for (const c of this.chasers) this.updateChaser(c, delta);
+    this.updateNearMiss();
+    this.updateMarkPing();
 
     // on hunt stops your catches stay down — nobody thaws them
     if (!this.huntMode) {
@@ -1860,6 +1906,7 @@ export class GameScene extends Phaser.Scene {
       this.transitionTo(this.level ? 'adventure' : 'title');
     }
     if (Phaser.Input.Keyboard.JustDown(this.keys.E)) this.useItem(this.player);
+    if (Phaser.Input.Keyboard.JustDown(this.keys.SPACE)) this.taunt();
     if (Phaser.Input.Keyboard.JustDown(this.keys.F)) this.useSkill();
   }
 
@@ -1962,6 +2009,7 @@ export class GameScene extends Phaser.Scene {
     let speed = st.sprinting ? CONFIG.runner.sprintSpeed : CONFIG.runner.speed;
     if (this.time.now < st.slipperUntil) speed *= CONFIG.items.slippers.speedMult;
     if (this.time.now < (st.skillUntil ?? 0)) speed *= 1.5; // inherited RAGE burst
+    if (this.time.now < this.tauntUntil) speed *= 1.18; // a heard shout's burst
     if (this.isLastFree(st)) speed *= CONFIG.runner.adrenalineMult;
 
     if (moving) {
@@ -2101,7 +2149,10 @@ export class GameScene extends Phaser.Scene {
     if (st.decideIn <= 0) {
       st.decideIn = CONFIG.ai.chaserThinkMs;
       const free = this.runners.filter((r) => !this.rState.get(r)!.frozen);
-      const target = this.nearestOf(free, c);
+      let target = this.nearestOf(free, c);
+      // a shout in earshot outs you — heard hunters run you down specifically
+      if (this.time.now < (st.heardUntil ?? 0) && !this.rState.get(this.player)!.frozen)
+        target = this.player;
       if (target) {
         // lead the target slightly — aim where they're going
         const tv = (target.body as Body).velocity;
@@ -2243,21 +2294,23 @@ export class GameScene extends Phaser.Scene {
       if (st.isPlayer) this.cryForHelp(); // E / H2O while frozen = shout for the crew
       return;
     }
-    if (st.water <= 0) return;
-
     // pure water — thaw the nearest frozen mate from range
     const frozen = this.nearestOf(
       this.runners.filter((o) => this.rState.get(o)!.frozen),
       runner,
     );
     if (
+      st.water > 0 &&
       frozen &&
       Phaser.Math.Distance.Between(runner.x, runner.y, frozen.x, frozen.y) <=
         CONFIG.items.water.thawRange
     ) {
       st.water--;
       this.thaw(frozen, runner);
+      return;
     }
+    // nothing to thaw and no water to spend — the interact key is a shout
+    if (st.isPlayer) this.taunt();
   }
 
   /** Shout for the crew — brave mates (rescue >= .5) run to you even under
@@ -2279,6 +2332,117 @@ export class GameScene extends Phaser.Scene {
         this.floatText(savior.x, savior.y - 24, 'I dey come o!', '#7dd0ff');
         sfx.voice('I dey come o!');
       });
+    }
+  }
+
+  /** The taunt economy — shout within earshot of the militia and you get a
+   *  speed burst, but every hunter who heard locks onto you for the mark.
+   *  Brave, loud, and exactly as dumb as it sounds. */
+  private taunt() {
+    const st = this.rState.get(this.player)!;
+    if (st.frozen || this.phase !== 'play' || this.huntMode) return;
+    const now = this.time.now;
+    if (now < this.tauntCooldownUntil) return;
+    this.tauntCooldownUntil = now + 1400;
+
+    const line = Phaser.Math.RND.pick(TAUNT_LINES);
+    this.floatText(this.player.x, this.player.y - 34, line, '#ffd54a');
+    sfx.voice(line);
+    this.burst(this.player.x, this.player.y, 0xffd54a, 10, 130);
+
+    let heard = 0;
+    for (const c of this.chasers) {
+      if (Phaser.Math.Distance.Between(c.x, c.y, this.player.x, this.player.y) < 340) {
+        const cst = this.cState.get(c)!;
+        cst.heardUntil = now + 3000;
+        cst.decideIn = 0; // they heard you — rethink right now
+        heard++;
+      }
+    }
+    if (heard > 0) {
+      this.tauntUntil = now + 3500;
+      this.markUntil = now + 3000;
+      sfx.marked();
+    }
+  }
+
+  /** a tag that just missed — ring flash + the crowd's gasp */
+  private nearMiss(hunter: Sprite, t: Sprite) {
+    this.nearMisses++;
+    sfx.crowdOoh();
+    const ring = this.add
+      .circle((hunter.x + t.x) / 2, (hunter.y + t.y) / 2, 10, 0xffffff, 0)
+      .setStrokeStyle(3, 0xffffff, 0.85)
+      .setDepth(9);
+    this.tweens.add({
+      targets: ring,
+      scale: 3.2,
+      alpha: 0,
+      duration: 380,
+      onComplete: () => ring.destroy(),
+    });
+    if (this.rState.get(t)?.isPlayer) {
+      this.shake(90, 0.004);
+      this.buzz(15);
+    }
+  }
+
+  /** arms hunter↔runner pairs inside brush distance; a pair that drifts
+   *  apart without a tag pays out the near-miss. ice3d's oooOOOH economy. */
+  private updateNearMiss() {
+    if (this.phase !== 'play') return;
+    const tagD = CONFIG.tagRange + CONFIG.runner.radius;
+    const nearD = tagD * 1.9;
+    const hunters = this.huntMode ? [...this.chasers, this.player] : this.chasers;
+    for (const w of hunters) {
+      let armed = this.nearPairs.get(w);
+      for (const t of this.runners) {
+        if (t === w) continue;
+        const tst = this.rState.get(t)!;
+        if (tst.frozen) continue;
+        const d2 = Phaser.Math.Distance.Squared(w.x, w.y, t.x, t.y);
+        if (d2 < nearD * nearD) {
+          if (!armed) {
+            armed = new Set();
+            this.nearPairs.set(w, armed);
+          }
+          armed.add(t);
+        }
+      }
+    }
+    for (const [w, armed] of this.nearPairs) {
+      for (const t of armed) {
+        const tst = this.rState.get(t);
+        if (!tst || tst.frozen || this.phase !== 'play') {
+          armed.delete(t);
+          continue;
+        }
+        const d2 = Phaser.Math.Distance.Squared(w.x, w.y, t.x, t.y);
+        if (d2 > nearD * nearD * 1.4) {
+          armed.delete(t);
+          this.nearMiss(w, t);
+        }
+      }
+      if (armed.size === 0) this.nearPairs.delete(w);
+    }
+  }
+
+  /** while the mark lasts, a red ring pulses over your head — the whole
+   *  pitch can see what your big mouth did */
+  private updateMarkPing() {
+    if (this.time.now < this.markUntil && !this.rState.get(this.player)!.frozen) {
+      if (!this.markPing) {
+        this.markPing = this.add
+          .circle(0, 0, 26, 0xff2d2d, 0)
+          .setStrokeStyle(3, 0xff2d2d, 0.9)
+          .setDepth(9);
+      }
+      this.markPing.setPosition(this.player.x, this.player.y - 26);
+      const ph = (this.time.now % 700) / 700;
+      this.markPing.setScale(0.6 + ph * 0.8).setAlpha(0.9 - ph * 0.7);
+    } else if (this.markPing) {
+      this.markPing.destroy();
+      this.markPing = undefined;
     }
   }
 
@@ -2556,6 +2720,10 @@ export class GameScene extends Phaser.Scene {
     this.phase = 'over';
     sfx.stopMusic();
     this.vignette.setAlpha(0);
+    // the taunt mark dies with the round — updateMarkPing only runs in play
+    this.markPing?.destroy();
+    this.markPing = undefined;
+    this.markUntil = 0;
     this.tweens.killTweensOf(this.countText);
     this.countText.setText('').setAlpha(1).setScale(1);
 
@@ -2569,7 +2737,7 @@ export class GameScene extends Phaser.Scene {
     recordStatsEvent(!militiaWon, survived); // journal the result — server recomputes streaks
     this.lastResult = { won: !militiaWon, survived };
     const caught = 'Frozen';
-    const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived`;
+    const stats = `${caught} ${this.playerFreezes}x  ·  Rescues ${this.playerRescues}  ·  ${survived}s survived${this.nearMisses ? `  ·  ${this.nearMisses} jukes` : ''}`;
     // touch + hints-off get tappable dashboard pills, no key legend in the sub
     const hints = keyHintsOn();
 
@@ -2679,24 +2847,45 @@ export class GameScene extends Phaser.Scene {
 
   private togglePause() {
     if (this.phase === 'over' || this.transitioning || this.paused) return;
+    sfx.uiOpen(); // the pause card pops in
     this.paused = true;
     this.touch?.setActive(false); // pads off — the menu owns the taps
     this.physics.pause();
     this.time.paused = true; // freezes the event clock — no bus/NEPA/rain mid-pause
     this.tweens.pauseAll(); // entity anims freeze; menu tweens added after are unaffected
+    this.pauseView = 'menu';
     this.buildPauseMenu();
     // the retired controls strip borrows the pause menu
     this.hintText?.setVisible(true).setDepth(45);
     this.hintChip?.setVisible(true).setDepth(44);
   }
 
-  private resume() {
-    if (!this.paused) return;
+  /** destroy the current pause-card page — menu and settings share the
+   *  tracked-object pool, so swapping pages is just clear + rebuild */
+  private clearPauseObjs() {
     const gone = new Set<unknown>(this.pauseObjs);
     for (const o of this.pauseObjs) o.destroy();
     this.pauseObjs = [];
     this.pauseHitZones = [];
     this.hudItems = this.hudItems.filter((it) => !gone.has(it.obj));
+  }
+
+  private showPauseMenu() {
+    this.clearPauseObjs();
+    this.pauseView = 'menu';
+    this.buildPauseMenu();
+  }
+
+  private showPauseSettings() {
+    this.clearPauseObjs();
+    this.pauseView = 'settings';
+    this.buildPauseSettings();
+  }
+
+  private resume() {
+    if (!this.paused) return;
+    sfx.uiClose(); // the card settles out (quit/restart wipe takes over next)
+    this.clearPauseObjs();
     this.paused = false;
     this.physics.resume();
     this.time.paused = false;
@@ -2776,45 +2965,191 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5);
       c.add([g, t]);
       track(c, 0.5, 0.5, 0, oy);
-      this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy, bw, bh, go });
+      this.pauseHitZones.push({
+        ax: 0.5, ay: 0.5, ox: 0, oy, bw, bh,
+        go: () => { sfx.uiTap(); go(); },
+      });
     };
 
-    pill(cy - 34, 'RESUME', UI.danfo, () => this.resume());
-    pill(cy + 22, 'RESTART', 0x29b6f6, () => {
+    pill(cy - 58, 'RESUME', UI.danfo, () => this.resume());
+    pill(cy - 2, 'SETTINGS', 0x9db2ef, () => this.showPauseSettings(), false);
+    pill(cy + 54, 'RESTART', 0x29b6f6, () => {
       this.resume();
       this.transitionTo('game', true);
     }, false);
-    pill(cy + 78, this.level ? 'QUIT — THE ROAD' : 'QUIT — TITLE', UI.ink, () => {
+    pill(cy + 110, this.level ? 'QUIT — THE ROAD' : 'QUIT — TITLE', UI.ink, () => {
       this.resume();
       this.transitionTo(this.level ? 'adventure' : 'title');
     }, false);
-
-    // sound toggle — a live chip reflecting sfx mute state
-    const sg = this.add.graphics().setDepth(42);
-    const st = this.add
-      .text(0, -1, '', { fontFamily: DISPLAY_FONT, fontSize: '13px', color: '#ffffff' })
-      .setOrigin(0.5)
-      .setDepth(42);
-    const sw = 130;
-    const sh = 32;
-    const soy = cy + 128;
-    const drawSound = () => {
-      const on = !sfx.isMuted;
-      sg.clear();
-      sg.fillStyle(0x0a0710, 1).fillRoundedRect(-sw / 2, -sh / 2 + 2, sw, sh, sh / 2);
-      sg.fillStyle(on ? 0x29b6f6 : 0x5a7184, 1).fillRoundedRect(-sw / 2, -sh / 2 - 2, sw, sh - 2, sh / 2);
-      sg.fillStyle(0xffffff, 0.18).fillRoundedRect(-sw / 2 + 6, -sh / 2 - 2 + 3, sw - 12, sh * 0.32, sh / 4);
-      st.setText(on ? 'SOUND ON' : 'SOUND OFF');
-    };
-    drawSound();
-    track(sg, 0.5, 0.5, 0, soy);
-    track(st, 0.5, 0.5, 0, soy - 2);
-    this.pauseHitZones.push({ ax: 0.5, ay: 0.5, ox: 0, oy: soy, bw: sw, bh: sh, go: () => { sfx.toggleMute(); drawSound(); } });
 
     if (keyHintsOn())
       track(
         this.add
           .text(0, 0, 'esc — resume', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
+          .setOrigin(1, 1)
+          .setDepth(42),
+        0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
+      );
+    this.relayout(); // pinned post-create — place everything now
+  }
+
+  /** pause-card settings page — the live, match-relevant picks only. Same
+   *  tracked-object + manual-hit-zone machinery as the menu page; rows are
+   *  chevron selectors like the lobby's settings card. Camera picks apply to
+   *  the 3D stage instantly — the world stays frozen behind the card. */
+  private buildPauseSettings() {
+    const W = 340;
+    const H = 380;
+    const cy = -10;
+    const VW = this.scale.width / this.hf;
+    const VH = this.scale.height / this.hf;
+    const track = <T extends HudItem['obj']>(o: T, ax = 0.5, ay = 0.5, ox = 0, oy = 0): T => {
+      this.pin(o, ax, ay, ox, oy);
+      this.pauseObjs.push(o as unknown as { destroy: () => void });
+      return o;
+    };
+
+    const dim = this.add.graphics().setDepth(40);
+    dim.fillStyle(0x0a1420, 0.62).fillRect(-VW / 2 - 80, cy - VH / 2 - 80, VW + 160, VH + 160);
+    track(dim);
+    track(panel(this, -W / 2, cy - H / 2, W, H, { depth: 41 }), 0.5, 0.5, 0, 0);
+
+    track(
+      this.add
+        .text(0, 0, 'SETTINGS', {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '26px',
+          color: '#e84393',
+        })
+        .setOrigin(0.5)
+        .setDepth(42)
+        .setShadow(0, 4, '#9c2160', 0, true, false),
+      0.5, 0.5, 0, cy - H / 2 + 40,
+    );
+    track(
+      this.add
+        .text(0, 0, 'tune it mid-run — applies instantly', {
+          fontFamily: UI_FONT,
+          fontSize: '12px',
+          fontStyle: '600',
+          color: '#7a8a99',
+        })
+        .setOrigin(0.5)
+        .setDepth(42),
+      0.5, 0.5, 0, cy - H / 2 + 64,
+    );
+
+    // chevron row — label left, ‹ value › right; each chevron is its own
+    // manual hit zone (touch-padded like the menu pills)
+    const row = (
+      oy: number,
+      label: string,
+      get: () => string,
+      set: (dir: -1 | 1) => void,
+    ) => {
+      const c = this.add.container(0, 0).setDepth(42);
+      const lab = this.add
+        .text(-148, 0, label, {
+          fontFamily: UI_FONT,
+          fontSize: '13px',
+          fontStyle: '700',
+          color: '#5a7184',
+        })
+        .setOrigin(0, 0.5);
+      const val = this.add
+        .text(96, 0, get(), {
+          fontFamily: DISPLAY_FONT,
+          fontSize: '13px',
+          color: '#1c1626',
+        })
+        .setOrigin(0.5);
+      const chev = (x: number, ch: string) =>
+        this.add
+          .text(x, -2, ch, { fontFamily: DISPLAY_FONT, fontSize: '22px', color: '#e84393' })
+          .setOrigin(0.5);
+      c.add([lab, chev(50, '‹'), val, chev(142, '›')]);
+      track(c, 0.5, 0.5, 0, oy);
+      const step = (dir: -1 | 1) => {
+        sfx.uiTap();
+        set(dir);
+        val.setText(get());
+      };
+      this.pauseHitZones.push(
+        { ax: 0.5, ay: 0.5, ox: 50, oy, bw: 40, bh: 44, go: () => step(-1) },
+        { ax: 0.5, ay: 0.5, ox: 142, oy, bw: 40, bh: 44, go: () => step(1) },
+      );
+    };
+
+    const picks = loadPicks();
+    const persist = () => {
+      savePicks(
+        picks.difficulty,
+        picks.joy,
+        picks.perf,
+        picks.hints,
+        picks.camView,
+        picks.camRange,
+        picks.camFacing,
+      );
+      pushProfile(); // hints sync; cam stays per-device, harmless to send
+    };
+
+    const ry = cy - 84;
+    row(ry, 'Sound', () => (sfx.isMuted ? 'OFF' : 'ON'), () => {
+      const off = sfx.toggleMute();
+      if (!off) sfx.uiTap(); // audible confirmation the moment sound returns
+    });
+    row(ry + 48, 'View', () => CAM_LABEL[picks.camView], (d) => {
+      const i = CAM_ORDER.indexOf(picks.camView);
+      picks.camView = CAM_ORDER[(i + d + CAM_ORDER.length) % CAM_ORDER.length];
+      this.st3.setView(picks.camView);
+      persist();
+    });
+    row(ry + 96, 'Range', () => `${picks.camRange}%`, (d) => {
+      picks.camRange = Math.min(160, Math.max(70, picks.camRange + d * 10));
+      this.st3.setRange(picks.camRange);
+      persist();
+    });
+    row(ry + 144, 'Facing', () => CAM_FACE_LABEL[picks.camFacing], (d) => {
+      const i = CAM_FACE_ORDER.indexOf(picks.camFacing);
+      picks.camFacing =
+        CAM_FACE_ORDER[(i + d + CAM_FACE_ORDER.length) % CAM_FACE_ORDER.length];
+      this.st3.setFacing(picks.camFacing);
+      persist();
+    });
+    row(ry + 192, 'Key hints', () => (picks.hints ? 'ON' : 'OFF'), () => {
+      picks.hints = !picks.hints;
+      persist();
+    });
+
+    // BACK pill — same candy style as the menu's, returns to the pause page
+    const bw = 150;
+    const bh = 42;
+    const lip = 5;
+    const bc = this.add.container(0, 0).setDepth(42);
+    const bg = this.add.graphics();
+    bg.fillStyle(shade(UI.danfo, -38), 1).fillRoundedRect(-bw / 2, -bh / 2 - 2, bw, bh, bh / 2);
+    bg.fillStyle(UI.danfo, 1).fillRoundedRect(-bw / 2, -bh / 2 - lip, bw, bh - 2, bh / 2);
+    bg.fillStyle(0xffffff, 0.2).fillRoundedRect(-bw / 2 + 7, -bh / 2 - lip + 4, bw - 14, bh * 0.34, bh / 4);
+    const bt = this.add
+      .text(0, -lip / 2 - 1, '‹ BACK', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '15px',
+        color: '#1c1626',
+      })
+      .setOrigin(0.5);
+    bc.add([bg, bt]);
+    const bOy = cy + 158;
+    track(bc, 0.5, 0.5, 0, bOy);
+    this.pauseHitZones.push({
+      ax: 0.5, ay: 0.5, ox: 0, oy: bOy, bw, bh,
+      go: () => { sfx.uiBack(); this.showPauseMenu(); },
+    });
+
+    if (keyHintsOn())
+      track(
+        this.add
+          .text(0, 0, 'esc — back', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: '600', color: '#b9c4cf' })
           .setOrigin(1, 1)
           .setDepth(42),
         0.5, 0.5, W / 2 - 16, cy + H / 2 - 14,
@@ -2885,7 +3220,10 @@ export class GameScene extends Phaser.Scene {
       c.add([g, t]);
       this.pin(c, 0.5, 0.5, ox, 128);
       this.endButtons.push(c);
-      this.endHitZones.push({ ax: 0.5, ay: 0.5, ox, oy: 128, bw, bh, go: b.go });
+      this.endHitZones.push({
+        ax: 0.5, ay: 0.5, ox, oy: 128, bw, bh,
+        go: () => { sfx.uiTap(); b.go(); },
+      });
       this.tweens.add({ targets: c, alpha: 1, duration: 350, delay: 320 + i * 90 });
     });
     this.relayout(); // pinned post-create — place them now, not on next resize

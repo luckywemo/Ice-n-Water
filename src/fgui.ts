@@ -1,6 +1,9 @@
 // Fall Guys-style UI kit — candy palette, pattern backdrops, chunky widgets.
 // Our identity (ICE 'N' WATER / the road north) rendered in their visual language.
 import { shade, panel, pillButton, domInput, UI, UI_FONT, DISPLAY_FONT } from './ui';
+import { Sfx } from './audio';
+
+const sfx = Sfx.inst;
 
 export const FG_FONT = '"Titan One", "Baloo 2", sans-serif';
 export const FG_BODY = '"Baloo 2", "Fredoka", sans-serif';
@@ -850,6 +853,7 @@ export function promptModal(
   const { width: vw, height: vh } = scene.scale;
   const cx = vw / 2;
   const cy = vh / 2;
+  sfx.uiOpen(); // the panel's airy pop-in
   const parts: Phaser.GameObjects.GameObject[] = [];
   const track = <T extends Phaser.GameObjects.GameObject>(o: T, d = depth): T => {
     (o as { setScrollFactor?: (n: number) => unknown }).setScrollFactor?.(0);
@@ -967,26 +971,31 @@ export function promptModal(
     const submit = () => {
       const v = el.value.trim();
       if (required && !v) {
+        sfx.denied(); // the muted "nope" buzz rides the shake
         scene.tweens.add({ targets: dom, x: '+=7', yoyo: true, repeat: 3, duration: 45 });
         el.focus();
         return;
       }
       cleanup(v || (required ? v : null));
     };
+    const cancelPrompt = () => {
+      sfx.uiClose();
+      cleanup(null);
+    };
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation(); // keep Phaser's global key handlers out of the field
       if (e.key === 'Enter') submit();
-      else if (e.key === 'Escape' && !required) cleanup(null);
+      else if (e.key === 'Escape' && !required) cancelPrompt();
     };
     const onEsc = () => {
-      if (!required) cleanup(null);
+      if (!required) cancelPrompt();
     };
     el.addEventListener('keydown', onKey);
     scene.input.keyboard?.on('keydown-ESC', onEsc);
     scene.events.once('shutdown', () => cleanup(null)); // never leak the DOM el
     if (!required) {
-      dim.on('pointerdown', () => cleanup(null)); // tap outside = cancel
-      closeT?.on('pointerdown', () => cleanup(null));
+      dim.on('pointerdown', cancelPrompt); // tap outside = cancel
+      closeT?.on('pointerdown', cancelPrompt);
     }
 
     // required = single centered SAVE; optional = OK + CANCEL pair
@@ -1003,7 +1012,7 @@ export function promptModal(
         fill: UI.ink,
         fontSize: 15,
         depth: depth + 2,
-        onDown: () => cleanup(null),
+        onDown: cancelPrompt,
       });
       track(cancel.container, depth + 2);
     }

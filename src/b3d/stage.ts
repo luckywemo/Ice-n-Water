@@ -26,6 +26,7 @@ interface CamFollow {
   vx?: number; vy?: number;    // px/s — drives lead, FOV kick, heading-chase
   spectate?: boolean;          // frozen → high & wide rescue view
   danger?: number;             // 0–1 hunter proximity → pull-back
+  killcam?: { x: number; y: number }; // killer's px pos — over-shoulder tag replay
 }
 
 interface Ent3D {
@@ -523,6 +524,20 @@ export class PitchStage {
       }
     }
     const tx = this.toWX(o.fx), tz = this.toWZ(o.fy);
+    // kill-cam — park at the hunter's shoulder for the tag replay: it stays
+    // in frame, the frozen body holds the gaze, a tight 40° sells the shot
+    if (o.killcam) {
+      const kx = this.toWX(o.killcam.x), kz = this.toWZ(o.killcam.y);
+      const dx = kx - tx, dz = kz - tz;
+      const dd = Math.hypot(dx, dz) || 1;
+      this.camPos.set(kx + (dx / dd) * 2.2, 2.4, kz + (dz / dd) * 2.2);
+      this.camera.position.lerp(this.camPos, Math.min(1, dt * 7));
+      this.camera.fov += (40 - this.camera.fov) * Math.min(1, dt * 6);
+      this.camera.updateProjectionMatrix();
+      this.camTarget.set(tx, 1, tz);
+      this.camera.lookAt(this.camTarget);
+      return;
+    }
     const yaw = this.camYaw, pitch = this.camPitch;
     const p = CAM_PRESETS[this.camView];
     let dist = p.dist * this.camDist * this.camRange;

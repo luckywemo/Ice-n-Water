@@ -25,6 +25,7 @@ export class TouchControls {
   private thumb!: Phaser.GameObjects.Arc;
   private sprintBtn!: Phaser.GameObjects.Container;
   private waterBtn!: Phaser.GameObjects.Container;
+  private shoutBtn?: Phaser.GameObjects.Container; // only when onShout is supplied
   private restartBtn!: Phaser.GameObjects.Container;
   private pauseBtn: Phaser.GameObjects.Container | null = null;
   private hudItems: HudItem[] = [];
@@ -44,7 +45,7 @@ export class TouchControls {
 
   constructor(
     scene: Phaser.Scene,
-    cbs: { onWater: () => void; onRestart: () => void; onPause?: () => void },
+    cbs: { onWater: () => void; onRestart: () => void; onPause?: () => void; onShout?: () => void },
     joy: JoyMode = 'floating',
   ) {
     this.scene = scene;
@@ -72,6 +73,8 @@ export class TouchControls {
 
     this.sprintBtn = this.makeButton(scene, 44, 'RUN', 0xf7bd14, '#17151f');
     this.waterBtn = this.makeButton(scene, 36, 'H₂O', 0x29b6f6);
+    // the taunt economy's button — only where a handler is supplied
+    if (cbs.onShout) this.shoutBtn = this.makeButton(scene, 36, 'HEY!', 0xe84848);
     this.restartBtn = this.makeButton(scene, 22, '↻', 0x17151f); // beside the HUD panel — minimap owns top-right
     // pause only exists where a handler is supplied — net play never gets one
     if (cbs.onPause) this.pauseBtn = this.makeButton(scene, 22, 'II', 0x17151f);
@@ -79,6 +82,7 @@ export class TouchControls {
     // pin: sprint bottom-right, water just above-left of it, restart top-left
     this.pin(this.sprintBtn, 1, 1, -80, -96);
     this.pin(this.waterBtn, 1, 1, -180, -150);
+    if (this.shoutBtn) this.pin(this.shoutBtn, 1, 1, -282, -96);
     this.pin(this.restartBtn, 0, 0, 384, 34); // hugs the HUD card's right edge
     if (this.pauseBtn) this.pin(this.pauseBtn, 0, 0, 438, 34);
 
@@ -132,6 +136,10 @@ export class TouchControls {
       if (this.inside(p, this.waterBtn, 46 * this.hf)) {
         cbs.onWater();
         this.tapFlash(scene, this.waterBtn);
+      }
+      if (this.shoutBtn && this.inside(p, this.shoutBtn, 46 * this.hf)) {
+        cbs.onShout?.();
+        this.tapFlash(scene, this.shoutBtn);
       }
       if (this.inside(p, this.restartBtn, 30 * this.hf)) {
         cbs.onRestart();
@@ -190,6 +198,7 @@ export class TouchControls {
     this.thumb.setVisible(on && this.sticky);
     this.sprintBtn.setVisible(on);
     this.waterBtn.setVisible(on);
+    this.shoutBtn?.setVisible(on);
     this.restartBtn.setVisible(on);
     this.pauseBtn?.setVisible(on);
   }
