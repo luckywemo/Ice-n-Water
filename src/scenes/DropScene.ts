@@ -38,6 +38,10 @@ export class DropScene extends Phaser.Scene {
   create(data: DropData) {
     const gameData = data?.game ?? (data as DropData['game']) ?? {};
     this.heroMs = perfInterval(); // re-read per create — the pick can change
+    // scene instance persists — a restart (resize mid-drop) would otherwise
+    // leave `gone` latched and finish() permanently unreachable
+    this.gone = false;
+    this.streaks = [];
     const W = this.scale.width,
       H = this.scale.height;
     const zoom = fitZoom(W, H, VW, VH);

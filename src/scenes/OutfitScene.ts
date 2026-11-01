@@ -4,6 +4,7 @@ import { REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT, FG_BODY, fgRings } from '../fgui';
 import { CHARACTERS, CharDef, charTitle, charTitleShort, charUnlocked, currentChar, currentPick, runnerName, setChar } from '../characters';
 import { playerName } from '../leaderboard';
+import { pushProfile } from '../cloudsave';
 import { perfInterval, furQuality } from '../meta';
 import { keyHintsOn, fitZoom } from '../mobile';
 import { Sfx } from '../audio';
@@ -501,6 +502,7 @@ export class OutfitScene extends Phaser.Scene {
 
   private pickChar(def: CharDef) {
     setChar(def.id); // keeps the coat paint
+    pushProfile();
     const ch = currentChar();
     const sig = `${ch.shape ?? 'bean'}|${ch.gear ?? 'none'}|${ch.rage ? 'r' : ''}`;
     if (sig !== this.modelSig) {
@@ -516,6 +518,7 @@ export class OutfitScene extends Phaser.Scene {
 
   private pickCoat(body: number | null) {
     setChar(currentChar().id, body);
+    pushProfile();
     const ch = currentChar();
     this.hero3d?.setVariant(ch.body, ch.skin); // repaint — no rebuild needed
   }

@@ -22,20 +22,14 @@ const SERVER_API = (() => {
 /** worker/local-server shaped API — both speak the same {top, me} contract */
 const REST_API = USE_WORKER ? BOARD_URL : SERVER_API;
 
-const PID_KEY = 'icenwater_pid';
 const NAME_KEY = 'icenwater_name';
 
 export function playerId(): string {
-  // signed-in runners are their verified X id — the api enforces the
-  // same binding server-side, so a forged body can never post as you
+  // every real player is their verified X id — the auth gate means a
+  // session always exists by the time this is called; anonymous ids
+  // were retired when progress sync made them orphans
   const x = session();
-  if (x) return `x_${x.id}`;
-  let id = localStorage.getItem(PID_KEY);
-  if (!id) {
-    id = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    localStorage.setItem(PID_KEY, id);
-  }
-  return id;
+  return x ? `x_${x.id}` : 'anon';
 }
 
 export function playerName(): string {
@@ -54,6 +48,7 @@ export interface BoardRow {
   name: string;
   level: number;
   stars: number;
+  pfp?: string; // verified X avatar — board tiles wear it as their face
 }
 
 export interface Board {

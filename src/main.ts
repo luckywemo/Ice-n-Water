@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
 import { levelDef } from './adventure';
+import { loadPicks } from './meta';
 import { requireAuth } from './xauth';
+import { pullProgress, pullProfile, pushProfile } from './cloudsave';
 import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
 import { LobbyScene } from './scenes/LobbyScene';
@@ -52,6 +54,15 @@ const boot = () =>
     scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene, DropScene, OutfitScene],
   });
 
+// page-load timestamp — the READY handler below holds #boot until the
+// two-frame art sequence has had its >= 3s on screen
+const bootShownAt = performance.now();
+
+// honest loading % — raises the counter's cap at each real milestone;
+// the page-side ticker drifts toward it, never past it
+const bootPct = (n: number) =>
+  (window as unknown as { __bootPct?: (n: number) => void }).__bootPct?.(n);
+
 const go = () => {
   const game = boot();
   // debug/tests handle — lets tooling inspect scenes + input state
@@ -60,6 +71,9 @@ const go = () => {
   // positioned to stack above it, since a static element can't win on z
   game.canvas.style.position = 'relative';
   game.canvas.style.zIndex = '1';
+  // ...and the DOM container rides ABOVE the game canvas (z:2) — inputs,
+  // prompts and name fields live there; canvas z:1 was burying them all
+  if (game.domContainer) game.domContainer.style.zIndex = '2';
   // mobile toolbars move the VISUAL viewport without emitting window.resize
   // (Chrome's dynamic-toolbar model; the page can't scroll past overflow:hidden
   // to trigger one). Phaser only listens to window resize, so the canvas stays
@@ -81,9 +95,12 @@ const go = () => {
     vv.addEventListener('scroll', sync);
   }
   // drop the boot splash once Phaser is live — covers every scene entry,
-  // including the dev hash jumps below that skip the title screen
+  // including the dev hash jumps below that skip the title screen — but
+  // hold it >= 3s from page start so the two-frame art sequence plays out
   game.events.once(Phaser.Core.Events.READY, () => {
-    document.getElementById('boot')?.remove();
+    bootPct(100); // engine live — the art hands off
+    const hold = Math.max(0, 3000 - (performance.now() - bootShownAt));
+    setTimeout(() => document.getElementById('boot')?.remove(), hold);
     // dev shortcut — #adventure / #advance:5 / #gamelevel:3 / #lobby.
     // Route through the title scene's own plugin so `start` stops it — a bare
     // game.scene.start leaves the title running behind (its DOM hero leaks).
@@ -94,7 +111,10 @@ const go = () => {
     else if (jump === 'advance')
       jumpTo('adventure', { advance: Number(arg) || undefined });
     else if (jump === 'gamelevel')
-      jumpTo('game', { adventure: levelDef(Number(arg) || 1) });
+      jumpTo('game', {
+        adventure: levelDef(Number(arg) || 1),
+        difficulty: loadPicks().difficulty,
+      });
     else if (jump === 'drop')
       jumpTo('drop', { game: { adventure: levelDef(Number(arg) || 1) } });
     else if (jump) jumpTo(jump);
@@ -107,11 +127,25 @@ const go = () => {
 // boots silently; a missing one swaps the boot splash for the connect
 // overlay and the promise simply never resolves until sign-in lands.
 // (dev with no api configured passes through — see xauth.ts)
-const start = () =>
+const start = () => {
+  bootPct(15); // fonts landed — past the parse phase
   requireAuth().then((s) => {
     if (s === undefined) return; // unreachable, keeps the type honest
-    go();
+    bootPct(40); // session resolved (gate path stalls here on purpose)
+    // cloud save: pull before scenes read progress, but never let a slow
+    // api stall boot — late merges still land in storage for the map
+    Promise.race([
+      Promise.allSettled([pullProgress(2500), pullProfile(2500)]),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]).then(() => {
+      bootPct(75); // progression + profile merged (or capped)
+      // upload whatever local-only fields remote lacked — converges both
+      // directions; fire-and-forget, never gates the menu
+      if (s) pushProfile();
+      go();
+    });
   });
+};
 
 if (document.fonts?.ready) {
   document.fonts.ready.then(start);

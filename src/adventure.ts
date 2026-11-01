@@ -352,3 +352,19 @@ export function recordLevel(n: number, stars: 1 | 2 | 3): AdventureProgress {
 export function totalStars(p: AdventureProgress): number {
   return Object.values(p.stars).reduce((a, b) => a + b, 0);
 }
+
+/** write a progress blob straight to storage — used by the cloud-sync
+    merge (recordLevel stays the win path, this is for remote merges) */
+export function storeProgress(p: AdventureProgress): void {
+  try {
+    localStorage.setItem(
+      ADV_KEY,
+      JSON.stringify({
+        unlocked: Math.max(1, Math.min(p.unlocked, TOTAL_LEVELS)),
+        stars: p.stars ?? {},
+      }),
+    );
+  } catch {
+    /* progress is nice-to-have */
+  }
+}

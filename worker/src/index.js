@@ -2,14 +2,12 @@
 // The game never sees Upstash credentials: this worker holds them,
 // validates every score, rate-limits by IP, and writes GT-only.
 
-const MAX_LEVEL = 1000; // levels cleared across BOTH campaigns (2 × 500)
-const MAX_STARS = 3000; // 1000 levels × 3
 const SUBMITS_PER_HOUR = 30; // generous — real clients post ~1 per level win
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 const json = (body, code = 200) =>
@@ -41,8 +39,54 @@ const cleanName = (n) =>
     .replace(/[^\w \-!'áéíóúñ]/gi, '')
     .trim() || 'runner';
 
+// ---------- session verify (v1.payload.sig, SESSION_SECRET) ----------
+// same blob as api/_lib/xsess.js — verified here with WebCrypto since
+// node:crypto doesn't exist in the worker runtime.
+
+const te = new TextEncoder();
+const b64url = (buf) =>
+  btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+async function sessionId(req, env) {
+  const h = req.headers.get('Authorization') ?? '';
+  const tok = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
+  if (!env.SESSION_SECRET || !tok.startsWith('v1.')) return null;
+  const dot = tok.lastIndexOf('.');
+  if (dot < 0) return null;
+  const payload = tok.slice(3, dot);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    te.encode(env.SESSION_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = b64url(await crypto.subtle.sign('HMAC', key, te.encode(payload)));
+  const got = tok.slice(dot + 1);
+  // constant-time-ish compare — workers lack timingSafeEqual
+  if (sig.length !== got.length) return null;
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ got.charCodeAt(i);
+  if (diff !== 0) return null;
+  try {
+    const s = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof s.id !== 'string' || typeof s.exp !== 'number') return null;
+    if (s.exp * 1000 < Date.now()) return null;
+    return { id: s.id, pfp: typeof s.pfp === 'string' ? s.pfp : undefined };
+  } catch {
+    return null;
+  }
+}
+
 async function handleScore(req, env) {
   const ip = req.headers.get('cf-connecting-ip') ?? 'anon';
+  const sess = await sessionId(req, env);
+  if (!sess) return json({ error: 'connect x first' }, 401);
+  const sid = sess.id;
+  const id = `x_${sid}`; // verified session, never the body's claim
 
   let b;
   try {
@@ -50,13 +94,7 @@ async function handleScore(req, env) {
   } catch {
     return json({ error: 'bad json' }, 400);
   }
-  const id = String(b.id ?? '');
   const name = cleanName(b.name);
-  const level = Math.floor(Number(b.level));
-  const stars = Math.floor(Number(b.stars));
-  if (id.length < 8 || id.length > 64) return json({ error: 'bad id' }, 400);
-  if (!(level >= 1 && level <= MAX_LEVEL && stars >= 0 && stars <= MAX_STARS))
-    return json({ error: 'bad score' }, 400);
 
   // hourly cap per IP — INCR + first hit sets the window
   const [hits] = await up(env, [
@@ -65,11 +103,22 @@ async function handleScore(req, env) {
   ]);
   if (Number(hits) > SUBMITS_PER_HOUR) return json({ error: 'slow down' }, 429);
 
+  // the board mirrors the verified road — level/stars come from the
+  // stored progress record, not the request body
+  const [raw] = await up(env, [['GET', `prog:x_${sid}`]]);
+  const prog = raw ? JSON.parse(raw) : null;
+  const level = prog ? Math.max(0, (prog.unlocked ?? 1) - 1) : 0;
+  const stars = prog
+    ? Object.values(prog.stars ?? {}).reduce((a, v) => a + (Number(v) || 0), 0)
+    : 0;
+  if (level < 1) return json({ error: 'no road on record — clear a level first' }, 400);
+
   const score = pack(level, stars);
   const [wrote, , rank] = await up(env, [
     ['ZADD', 'board', 'GT', score, id],
     ['HSET', 'names', id, name],
     ['ZREVRANK', 'board', id],
+    ...(sess.pfp ? [['HSET', 'avatars', id, sess.pfp]] : []),
   ]);
   return json({
     rank: rank == null ? null : Number(rank) + 1,
@@ -85,24 +134,37 @@ async function handleBoard(url, env) {
   const cmds = [
     ['ZREVRANGE', 'board', 0, 49, 'WITHSCORES'],
     ['HGETALL', 'names'],
+    ['HGETALL', 'avatars'],
   ];
   if (me) cmds.push(['ZREVRANK', 'board', me], ['ZSCORE', 'board', me]);
   const results = await up(env, cmds);
   const flat = results[0] ?? [];
-  const namePairs = results[1] ?? [];
-  const names = new Map();
-  for (let i = 0; i + 1 < namePairs.length; i += 2) names.set(namePairs[i], namePairs[i + 1]);
+  const hmap = (pairs) => {
+    const m = new Map();
+    const arr = pairs ?? [];
+    for (let i = 0; i + 1 < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
+    return m;
+  };
+  const names = hmap(results[1]);
+  const avatars = hmap(results[2]);
 
   const top = [];
   for (let i = 0; i + 1 < flat.length; i += 2) {
     const { level, stars } = unpack(Number(flat[i + 1]));
-    top.push({ rank: top.length + 1, name: names.get(flat[i]) ?? 'runner', level, stars });
+    const pfp = avatars.get(flat[i]);
+    top.push({
+      rank: top.length + 1,
+      name: names.get(flat[i]) ?? 'runner',
+      level,
+      stars,
+      ...(pfp ? { pfp } : {}),
+    });
   }
 
   let meOut = null;
   if (me) {
-    const rank = results[2];
-    const score = results[3];
+    const rank = results[3];
+    const score = results[4];
     if (rank != null && score != null) {
       const { level, stars } = unpack(Number(score));
       meOut = { rank: Number(rank) + 1, name: names.get(me) ?? 'you', level, stars };

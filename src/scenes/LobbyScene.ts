@@ -6,6 +6,7 @@ import { DISPLAY_FONT, UI_FONT, UI, panel, pillButton, plate, domInput, PillHand
 import { fgBackdrop, FG } from '../fgui';
 import { makeTextures } from '../art';
 import { loadPicks } from '../meta';
+import { pushProfile } from '../cloudsave';
 import { keyHintsOn } from '../mobile';
 import { authTicket } from '../xauth';
 import { viaWipe, wipeTo } from '../wipe';
@@ -321,6 +322,7 @@ export class LobbyScene extends Phaser.Scene {
     const n = (this.nameInput?.value ?? '').trim().slice(0, 12);
     const name = n || `player-${Math.floor(Math.random() * 900 + 100)}`;
     localStorage.setItem('icenwater_name', name);
+    pushProfile();
     return name;
   }
 

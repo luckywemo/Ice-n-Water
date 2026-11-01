@@ -18,6 +18,12 @@ async function up(env, cmds) {
 }
 
 const unpack = (v) => ({ level: Math.floor(v / 2000), stars: Math.round(v % 2000) });
+const hmap = (pairs) => {
+  const m = new Map();
+  const arr = pairs ?? [];
+  for (let i = 0; i + 1 < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
+  return m;
+};
 
 export default async function handler(req, res) {
   cors(res, 'GET,OPTIONS');
@@ -33,24 +39,31 @@ export default async function handler(req, res) {
     const cmds = [
       ['ZREVRANGE', 'board', 0, 49, 'WITHSCORES'],
       ['HGETALL', 'names'],
+      ['HGETALL', 'avatars'],
     ];
     if (me) cmds.push(['ZREVRANK', 'board', me], ['ZSCORE', 'board', me]);
     const results = await up(env, cmds);
     const flat = results[0] ?? [];
-    const namePairs = results[1] ?? [];
-    const names = new Map();
-    for (let i = 0; i + 1 < namePairs.length; i += 2) names.set(namePairs[i], namePairs[i + 1]);
+    const names = hmap(results[1]);
+    const avatars = hmap(results[2]);
 
     const top = [];
     for (let i = 0; i + 1 < flat.length; i += 2) {
       const { level, stars } = unpack(Number(flat[i + 1]));
-      top.push({ rank: top.length + 1, name: names.get(flat[i]) ?? 'runner', level, stars });
+      const pfp = avatars.get(flat[i]);
+      top.push({
+        rank: top.length + 1,
+        name: names.get(flat[i]) ?? 'runner',
+        level,
+        stars,
+        ...(pfp ? { pfp } : {}),
+      });
     }
 
     let meOut = null;
     if (me) {
-      const rank = results[2];
-      const score = results[3];
+      const rank = results[3];
+      const score = results[4];
       if (rank != null && score != null) {
         const { level, stars } = unpack(Number(score));
         meOut = { rank: Number(rank) + 1, name: names.get(me) ?? 'you', level, stars };

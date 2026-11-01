@@ -61,6 +61,7 @@ export interface Stats {
   streak: number;
   bestStreak: number;
   bestSurvived: number; // seconds
+  updatedAt?: number; // epoch ms — the streak-merge clock for cloud sync
 }
 
 const STATS_KEY = 'icenwater_stats';
@@ -80,6 +81,7 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
   const s = loadStats();
   s.games++;
   s.bestSurvived = Math.max(s.bestSurvived, survivedSec);
+  s.updatedAt = Date.now();
   if (win) {
     s.wins++;
     s.streak++;
@@ -93,6 +95,16 @@ export function recordResult(win: boolean, survivedSec: number): Stats {
     /* storage full/blocked — stats are nice-to-have */
   }
   return s;
+}
+
+/** write a stats blob straight to storage — used by the cloud-sync
+    merge (recordResult stays the match-result path) */
+export function storeStats(s: Stats): void {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(s));
+  } catch {
+    /* stats are nice-to-have */
+  }
 }
 
 export function loadPicks(): {

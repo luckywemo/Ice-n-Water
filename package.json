@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "server": "npm --prefix server run dev",
+    "api": "node --watch .shots/api-serve.mjs",
     "zip": "powershell -NoProfile -Command \"Compress-Archive -Path 'dist\\\\*' -DestinationPath 'icenwater-itch.zip' -Force\"",
     "build": "vite build",
     "preview": "vite preview"

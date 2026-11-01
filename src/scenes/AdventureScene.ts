@@ -2,12 +2,12 @@ import Phaser from 'phaser';
 import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
-import { promptModal, fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
+import { fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { fitZoom } from '../mobile';
 import { viaWipe, wipeTo } from '../wipe';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
-import { loadStats, perfInterval, furQuality } from '../meta';
+import { loadStats, perfInterval, furQuality, loadPicks } from '../meta';
 import {
   TOTAL_LEVELS,
   LEVELS_PER_MILESTONE,
@@ -19,7 +19,7 @@ import {
   totalStars,
   AdventureProgress,
 } from '../adventure';
-import { fetchBoard, playerName, setPlayerName, submitAdventureScore } from '../leaderboard';
+import { fetchBoard, submitAdventureScore, BoardRow } from '../leaderboard';
 
 const sfx = Sfx.inst;
 
@@ -85,6 +85,8 @@ export class AdventureScene extends Phaser.Scene {
   private boardTiles: {
     c: Phaser.GameObjects.Container;
     face: Phaser.GameObjects.Graphics;
+    img: Phaser.GameObjects.Image;
+    veil: Phaser.GameObjects.Graphics;
     rank: Phaser.GameObjects.Text;
     name: Phaser.GameObjects.Text;
     stat: Phaser.GameObjects.Text;
@@ -252,7 +254,6 @@ export class AdventureScene extends Phaser.Scene {
       VW,
       [
         { icon: 'back', onDown: () => this.gated(() => this.toTitle()) },
-        { icon: 'edit', onDown: () => this.gated(() => this.renameRunner()) },
         {
           icon: 'play',
           active: true, // the pink active tab — you are on the journey screen
@@ -806,6 +807,17 @@ export class AdventureScene extends Phaser.Scene {
         face.fillStyle(fill, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
       };
       paint(FG.pink, FG.pinkDeep); // open slot until a runner lands
+      // pfp layer — hidden until the runner's avatar lands from X
+      const img = this.add
+        .image(tx + tw / 2, ty + (th - 2) / 2, '__MISSING')
+        .setVisible(false);
+      const maskG = this.add
+        .graphics()
+        .fillStyle(0xffffff, 1)
+        .fillRoundedRect(tx, ty, tw, th - 2, 8)
+        .setVisible(false);
+      img.setMask(maskG.createGeometryMask());
+      const veil = this.add.graphics(); // dim layer over photos — keeps type readable
       const rank = this.add
         .text(tx + 7, ty + 6, '', { fontFamily: UI_FONT, fontSize: '10px', fontStyle: '800', color: '#0b4f10' })
         .setOrigin(0, 0);
@@ -825,8 +837,8 @@ export class AdventureScene extends Phaser.Scene {
           color: '#d8ffd0',
         })
         .setOrigin(0.5);
-      const c = this.add.container(0, 0, [face, rank, name, stat]);
-      this.boardTiles.push({ c, face, rank, name, stat });
+      const c = this.add.container(0, 0, [face, img, veil, rank, name, stat, maskG]);
+      this.boardTiles.push({ c, face, img, veil, rank, name, stat });
       // stash per-tile paint coords for renderBoard
       c.setData('px', tx).setData('py', ty).setData('pw', tw).setData('ph', th);
     }
@@ -862,59 +874,12 @@ export class AdventureScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     close.on('pointerover', () => close.setColor('#ffc93c')).on('pointerout', () => close.setColor('#f5efe0'));
 
-    // name row — tap SET to name your runner (shares the online lobby name)
-    const nameLbl = this.add
-      .text(px + 34, py + ph - 62, `NAME: ${playerName() || '—'}`, {
-        fontFamily: UI_FONT,
-        fontSize: '12px',
-        fontStyle: '700',
-        color: '#085070',
-      })
-      .setOrigin(0, 0.5);
-    const doSet = () => {
-      this.modalOpen = true;
-      void promptModal(this, {
-        title: 'NAME YOUR RUNNER',
-        sub: 'shows on the board',
-        label: 'RUNNER NAME',
-        placeholder: 'your name',
-        value: playerName(),
-        maxLen: 14,
-        okLabel: 'SAVE',
-        depth: 80,
-        field: { base: FG.cyan, ring: 0x1fa9e8, crown: 0x0f7fb8 },
-      }).then((n) => {
-        this.modalOpen = false;
-        if (n === null) return;
-        setPlayerName(n);
-        nameLbl.setText(`NAME: ${playerName() || '—'}`);
-        submitAdventureScore(true);
-        this.time.delayedCall(700, () => this.renderBoard()); // let the post land
-      });
-    };
-    // SET — small cyan candy pill like the lobby's join action
-    const sbw = 64, sbh = 34, scx = px + pw - 46, scy = py + ph - 62;
-    const sg = this.add.graphics();
-    sg.fillStyle(0x0b6a99, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 + 2, sbw, sbh, sbh / 2);
-    sg.fillStyle(0xffffff, 1).fillRoundedRect(scx - sbw / 2, scy - sbh / 2 - 3, sbw, sbh - 2, sbh / 2);
-    sg.fillStyle(FG.cyan, 1).fillRoundedRect(scx - sbw / 2 + 3, scy - sbh / 2, sbw - 6, sbh - 6, sbh / 2 - 2);
-    const setBtn = this.add
-      .text(scx, scy - 2, 'SET', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '14px',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setShadow(0, 2, '#0b6a99', 0, true, false)
-      .setPadding(10, 8, 10, 8)
-      .setInteractive({ useHandCursor: true });
     // screen-space tap rects — board sits in an sf0 container, children miss input
     this.boardHit = [
       { x: px + pw - 58, y: py + 4, w: 56, h: 44, fn: () => this.closeBoard() },
-      { x: scx - 36, y: scy - 22, w: 72, h: 44, fn: doSet },
     ];
 
-    layer.add([bg, dim, posts, board, banG, this.boardBanner, ...this.boardTiles.map((t) => t.c), me, hint, cdG, close, nameLbl, sg, setBtn]);
+    layer.add([bg, dim, posts, board, banG, this.boardBanner, ...this.boardTiles.map((t) => t.c), me, hint, cdG, close]);
 
     this.renderBoard();
   }
@@ -934,6 +899,8 @@ export class AdventureScene extends Phaser.Scene {
           tw = t.c.getData('pw') as number,
           th = t.c.getData('ph') as number;
         t.face.clear();
+        t.img.setVisible(false);
+        t.veil.clear();
         if (!e) {
           // open slot stays flat pink — the reference's empty squares
           t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
@@ -968,6 +935,9 @@ export class AdventureScene extends Phaser.Scene {
         }
       }
       this.boardMeLine(top, b.me);
+      // avatars stream in after the grid paints — X's CDN is fast, the
+      // reveal lands within a few frames of the tiles popping
+      void this.loadBoardPfps(top).then(() => this.revealBoardPfps(top, myRank));
     } catch {
       if (!this.boardLayer) return;
       this.boardBanner?.setText('BOARD OFFLINE');
@@ -977,10 +947,54 @@ export class AdventureScene extends Phaser.Scene {
           tw = t.c.getData('pw') as number,
           th = t.c.getData('ph') as number;
         t.face.clear();
+        t.img.setVisible(false);
+        t.veil.clear();
         t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
         t.face.fillStyle(FG.pink, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
       }
       this.boardMeLine([], null, 'the board is offline right now — it lives on our game server');
+    }
+  }
+
+  /** fetch each runner's X pfp as a texture (CORS-open CDN — WebGL-safe) */
+  private async loadBoardPfps(top: BoardRow[]) {
+    this.load.setCORS('anonymous'); // pbs.twimg.com sends ACAO:* — required for WebGL textures
+    let pending = false;
+    for (const e of top) {
+      const key = `pfp_${e.rank}`;
+      if (!e.pfp || this.textures.exists(key)) continue;
+      this.load.image(key, e.pfp);
+      pending = true;
+    }
+    if (!pending) return;
+    await new Promise<void>((done) => {
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => done());
+      this.load.start();
+    });
+  }
+
+  /** wear the loaded pfps — cover-fit under a dim veil so type stays readable */
+  private revealBoardPfps(top: BoardRow[], myRank: number) {
+    if (!this.boardLayer) return; // closed while the CDN fetched
+    for (let i = 0; i < this.boardTiles.length; i++) {
+      const e = top[i];
+      const key = `pfp_${e?.rank}`;
+      if (!e?.pfp || !this.textures.exists(key)) continue;
+      const t = this.boardTiles[i];
+      const tx = t.c.getData('px') as number,
+        ty = t.c.getData('py') as number,
+        tw = t.c.getData('pw') as number,
+        th = t.c.getData('ph') as number;
+      const src = this.textures.get(key).getSourceImage() as HTMLImageElement;
+      const sc = Math.max(tw / src.width, (th - 2) / src.height); // cover, not stretch
+      t.img.setTexture(key).setScale(sc).setVisible(true);
+      const mine = e.rank === myRank;
+      t.veil
+        .fillStyle(0x081420, 0.5)
+        .fillRoundedRect(tx, ty, tw, th - 2, 8);
+      if (mine)
+        t.veil.lineStyle(3, 0xffffff, 0.95).strokeRoundedRect(tx + 1.5, ty + 1.5, tw - 3, th - 5, 7);
+      t.rank.setColor('#ffffff');
     }
   }
 
@@ -1296,7 +1310,12 @@ export class AdventureScene extends Phaser.Scene {
   private playLevel(n: number) {
     sfx.ensure();
     sfx.shortWhistle();
-    wipeTo(this, 'drop', { game: { adventure: levelDef(Math.min(n, TOTAL_LEVELS)) } });
+    wipeTo(this, 'drop', {
+      game: {
+        adventure: levelDef(Math.min(n, TOTAL_LEVELS)),
+        difficulty: loadPicks().difficulty,
+      },
+    });
   }
 
   /** top-bar icons share one guard — no actions while a modal owns input or
@@ -1316,27 +1335,6 @@ export class AdventureScene extends Phaser.Scene {
       this.offX;
     this.tweens.add({ targets: cam, scrollX: targetX, duration: REDUCED_MOTION ? 0 : 500, ease: 'Cubic.easeOut' });
     this.selectLevel(frontierN, false);
-  }
-
-  /** pencil tab — name your runner without opening the board first */
-  private renameRunner() {
-    this.modalOpen = true;
-    void promptModal(this, {
-      title: 'NAME YOUR RUNNER',
-      sub: 'shows on the board',
-      label: 'RUNNER NAME',
-      placeholder: 'your name',
-      value: playerName(),
-      maxLen: 10,
-      okLabel: 'SAVE',
-      depth: 80,
-      field: { base: FG.cyan, ring: 0x1fa9e8, crown: 0x0f7fb8 },
-    }).then((n) => {
-      this.modalOpen = false;
-      if (n === null) return;
-      setPlayerName(n);
-      submitAdventureScore(true);
-    });
   }
 
   private toLobby() {

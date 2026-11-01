@@ -118,28 +118,92 @@
           opacity: 0.6;
         }
       }
-      /* boot splash — yellow crown splash, matches the in-game intro */
+      /* boot splash — two-frame key-art sequence: the chase art (CSS bg)
+         plays first, then the frozen-bean beat fades over it; the OS splash
+         is manifest-background yellow so the whole chain reads continuous */
       #boot {
         position: fixed;
         inset: 0;
         z-index: 50;
-        background: #f7bd14
-          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cg fill='none' stroke='%23c98f00' stroke-opacity='.25' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M44 70 44 56 52 62 56 50 60 60 64 50 68 62 76 56 76 70Z'/%3E%3Cpath d='M164 60 164 46 172 52 176 40 180 50 184 40 188 52 196 46 196 60Z'/%3E%3Cpath d='M104 150 104 136 112 142 116 130 120 140 124 130 128 142 136 136 150Z'/%3E%3Cpath d='M24 210 24 196 32 202 36 190 40 200 44 190 48 202 56 196 56 210Z'/%3E%3Cpath d='M184 200 184 186 192 192 196 180 200 190 204 180 208 192 216 186 216 200Z'/%3E%3C/g%3E%3C/svg%3E");
+        background: #f7bd14 url('/keyart.jpg') center / cover no-repeat;
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        gap: 20px;
+        justify-content: flex-end;
+        gap: 14px;
+        padding-bottom: max(7vh, env(safe-area-inset-bottom));
         font-family: 'Fredoka', sans-serif;
       }
-      #boot .mark,
+      #boot .art2 {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background: url('/keyart2.jpg') center / cover no-repeat;
+        opacity: 0;
+        animation: bootart2 0.9s ease 1.5s forwards;
+      }
+      @keyframes bootart2 {
+        to {
+          opacity: 1;
+        }
+      }
+      /* scrim sits over BOTH frames — text/gate ride above it */
+      #boot::after,
+      .gate::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 40vh;
+        background: linear-gradient(transparent, rgba(10, 20, 35, 0.55));
+        z-index: 1;
+        pointer-events: none;
+      }
+      #boot > :not(.art2):not(.pct),
+      .gate > :not(.art2) {
+        position: relative;
+        z-index: 2;
+      }
+      /* boot progress — real milestones drive the number (main.ts calls
+         __bootPct); it never lies past the current stage's cap */
+      #boot .pct {
+        position: absolute;
+        right: max(4vw, calc(env(safe-area-inset-right) + 20px));
+        bottom: max(5vh, calc(env(safe-area-inset-bottom) + 16px));
+        z-index: 2;
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: clamp(40px, 8vh, 64px);
+        color: #ffffff;
+        text-shadow:
+          0 4px 0 #0d3550,
+          0 10px 18px rgba(10, 20, 35, 0.5);
+      }
+      .gate .art2 {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background: url('/keyart2.jpg') center / cover no-repeat;
+        opacity: 0;
+        animation: bootart2 0.9s ease 1.5s forwards;
+      }
+      /* the art carries the brand — the icon block stays hidden */
+      #boot .mark {
+        display: none;
+      }
       .gate .mark {
         width: 104px;
         border-radius: 22px;
         box-shadow: 0 10px 24px rgba(60, 40, 0, 0.3);
       }
-      /* x sign-in gate — the overlay writes into #boot's innerHTML */
-      #boot .gate-msg,
+      /* x sign-in gate — the overlay writes into #boot's innerHTML, so its
+         text must read over the key art (white) not the old yellow field */
+      #boot .gate-msg {
+        color: #ffffff;
+        font-weight: 600;
+        font-size: 17px;
+        text-shadow: 0 2px 8px rgba(10, 20, 35, 0.55);
+      }
       .gate .gate-msg {
         color: #0d3550;
         font-weight: 600;
@@ -163,13 +227,22 @@
         transform: translateY(3px);
         box-shadow: 0 2px 0 #082338;
       }
-      #boot .gate-alt,
+      #boot .gate-alt {
+        color: #ffd94d;
+        font-size: 12px;
+        text-decoration: underline;
+      }
       .gate .gate-alt {
         color: #8a6d00;
         font-size: 12px;
         text-decoration: underline;
       }
-      #boot .gate-err,
+      #boot .gate-err {
+        color: #ff9d6b;
+        font-size: 13px;
+        font-weight: 600;
+        min-height: 18px;
+      }
       .gate .gate-err {
         color: #a33c00;
         font-size: 13px;
@@ -192,11 +265,11 @@
       .gate .word {
         font-family: 'Titan One', 'Baloo 2', sans-serif;
         color: #ffffff;
-        font-size: 42px;
+        font-size: clamp(26px, 4.5vw, 42px);
         letter-spacing: 2px;
         text-shadow:
           0 4px 0 #0d3550,
-          0 10px 18px rgba(60, 40, 0, 0.25);
+          0 10px 18px rgba(60, 40, 0, 0.45);
       }
       #boot .bar {
         width: 14px;
@@ -252,9 +325,11 @@
   </head>
   <body>
     <div id="boot" aria-hidden="true">
+      <div class="art2"></div>
       <img class="mark" src="/icon-192.png" alt="" />
       <div class="word">ICE 'N' WATER</div>
       <div class="bar"></div>
+      <div class="pct" id="boot-pct"></div>
     </div>
     <div id="rotate-hint">
       <svg class="phone" width="54" height="76" viewBox="0 0 54 76" aria-hidden="true">
@@ -271,6 +346,26 @@
       // PWA install — capture the browser's event early so the rotate
       // screen's button can fire the native sheet (device-themed) on tap.
       window.__bip = null;
+      // boot % — main.ts raises the target at each real milestone; the
+      // shown value drifts up to it (never past) so the number stays
+      // truthful even when a stage stalls on a slow link
+      (() => {
+        let shown = 0,
+          target = 8; // parse+paint is real work already done
+        window.__bootPct = (n) => {
+          target = Math.max(target, n);
+        };
+        const tick = () => {
+          if (!document.getElementById('boot')) return; // boot's over
+          if (shown < target) {
+            shown = Math.min(target, shown + Math.max(0.4, (target - shown) * 0.09));
+            const e = document.getElementById('boot-pct');
+            if (e) e.textContent = Math.round(shown) + '%';
+          }
+          setTimeout(tick, 60);
+        };
+        setTimeout(tick, 120);
+      })();
       const bipChanged = () => dispatchEvent(new Event('bip-change'));
       addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault(); // hold it — our button decides when to ask
