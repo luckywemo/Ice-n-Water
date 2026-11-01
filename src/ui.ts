@@ -766,7 +766,7 @@ export function bakeLogoLetter(
 
 /** Shared CSS for the white pill inputs the online lobby uses. */
 export const domInputCss = (width = 160) => `width:${width}px;padding:11px 14px;border-radius:999px;
-  border:2.5px solid #0f7fb8;background:#ffffff;color:#1c2a3a;
+  border:0;background:#ffffff;color:#1c2a3a;
   font-family:${UI_FONT};font-size:16px;font-weight:700;outline:none;
   text-align:center;box-shadow:0 3px 0 #0b6a99;caret-color:#0f7fb8;`;
 
