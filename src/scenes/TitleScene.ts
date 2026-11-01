@@ -681,7 +681,7 @@ export class TitleScene extends Phaser.Scene {
         { text: 'ICE', fx: 'ice', size: 62 },
         { text: "'N'", fx: 'plain', size: 36 },
       ],
-      vh * 0.3,
+      vh * 0.37,
       extrude,
       now + 200,
       51,
@@ -690,7 +690,7 @@ export class TitleScene extends Phaser.Scene {
     row1.place(vw / 2 - row1.width / 2);
     const row2 = this.buildLetters(
       [{ text: 'WATER', fx: 'water', size: 78 }],
-      vh * 0.44,
+      vh * 0.51,
       extrude,
       now + 400,
       51,
@@ -704,7 +704,7 @@ export class TitleScene extends Phaser.Scene {
     row2.drop(350);
 
     const tag = this.add
-      .text(vw / 2, vh * 0.55, 'the playground chase game', {
+      .text(vw / 2, vh * 0.62, 'the playground chase game', {
         fontFamily: FG_BODY,
         fontSize: '22px',
         fontStyle: '800',
@@ -714,10 +714,6 @@ export class TitleScene extends Phaser.Scene {
       .setDepth(51)
       .setStroke('#8a6200', 4);
     c.add(tag);
-
-    const dots = this.add.graphics().setDepth(51);
-    for (let i = 0; i < 3; i++) dots.fillStyle(0xffffff, 0.9).fillCircle(vw / 2 - 18 + i * 18, vh * 0.62, 4);
-    c.add(dots);
 
     // timed intro — a few seconds, then the lobby reveals itself (tap skips)
     const z = this.add
