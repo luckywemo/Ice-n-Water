@@ -319,6 +319,11 @@ export class GameScene extends Phaser.Scene {
     this.st3.clearPickups();
     this.st3.clearProps();
     this.st3.resetOrbit();
+    {
+      const p = loadPicks();
+      this.st3.setView(p.camView);
+      this.st3.setRange(p.camRange);
+    }
     this.st3.nepa(false);
     this.st3.rain(false);
     this.st3.hideBus();
@@ -1913,6 +1918,10 @@ export class GameScene extends Phaser.Scene {
 
     // virtual joystick overrides when a thumb is down
     if (this.touch && this.touch.dir.lengthSq() > 0) dir.copy(this.touch.dir);
+
+    // camera-relative controls — intent rotates with the orbit yaw
+    const rot = this.st3.rotateInput(dir.x, dir.y);
+    dir.set(rot.x, rot.y);
 
     const moving = dir.lengthSq() > 0;
     st.sprinting =

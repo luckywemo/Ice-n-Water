@@ -1126,15 +1126,15 @@ export class AdventureScene extends Phaser.Scene {
     // earn-stars line — their "Earn FAME by competing in Shows!"
     const star = this.add.graphics().setScrollFactor(0).setDepth(41);
     star.fillStyle(FG.pink, 1);
-    star.fillCircle(42, 246, 12);
-    star.lineStyle(2.5, 0xffffff, 0.85).strokeCircle(42, 246, 12);
+    star.fillCircle(105, 246, 12);
+    star.lineStyle(2.5, 0xffffff, 0.85).strokeCircle(105, 246, 12);
     this.add
-      .text(42, 246, '★', { fontFamily: UI_FONT, fontSize: '15px', color: '#ffffff' })
+      .text(105, 246, '★', { fontFamily: UI_FONT, fontSize: '15px', color: '#ffffff' })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(42);
     this.add
-      .text(60, 236, `earn STARS — crown the north  ·  ★ ${totalStars(this.prog)}`, {
+      .text(123, 236, `earn STARS — crown the north  ·  ★ ${totalStars(this.prog)}`, {
         fontFamily: UI_FONT,
         fontSize: '17px',
         fontStyle: 'italic 700',
