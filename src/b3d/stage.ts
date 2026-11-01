@@ -100,7 +100,14 @@ export class PitchStage {
     this.canvas.style.cssText =
       'position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:none;';
     document.body.prepend(this.canvas); // behind the Phaser canvas
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+    // preserveDrawingBuffer: the level-intro card snapshots this canvas
+    // into its course-preview window — without the flag the buffer is
+    // cleared by the compositor and every readback comes back black
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      preserveDrawingBuffer: true,
+    });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -116,6 +123,26 @@ export class PitchStage {
 
   show() { this.canvas.style.display = 'block'; this.resize(); }
   hide() { this.canvas.style.display = 'none'; }
+
+  /** center-cropped snapshot of the stage (for the intro card preview).
+    Returns null before the first frame has drawn. */
+  snapshot(tw: number, th: number): HTMLCanvasElement | null {
+    const src = this.canvas;
+    if (!src.width || !src.height) return null;
+    const cv = document.createElement('canvas');
+    cv.width = tw;
+    cv.height = th;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return null;
+    const sa = tw / th;
+    let sw = src.width, sh = sw / sa;
+    if (sh > src.height) { sh = src.height; sw = sh * sa; }
+    ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) * 0.42, sw, sh, 0, 0, tw, th);
+    // all-black = the buffer wasn't ready — caller retries or falls back
+    const px = ctx.getImageData(tw >> 1, th >> 1, 1, 1).data;
+    if (!px[0] && !px[1] && !px[2]) return null;
+    return cv;
+  }
   resize() {
     const w = innerWidth, h = innerHeight;
     this.renderer.setSize(w, h, false);

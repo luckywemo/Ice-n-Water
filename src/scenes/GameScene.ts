@@ -20,6 +20,7 @@ import { PitchStage } from '../b3d/stage';
 import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
 import { bakeBeanSheet, sheetCanvas } from '../beanbake';
 import { viaWipe, wipeTo } from '../wipe';
+import { bakeGlyphTile } from '../fgui';
 import type { BossMove } from '../adventure';
 
 type Body = Phaser.Physics.Arcade.Body;
@@ -495,36 +496,55 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const z = this.zoom;
-    const dim = this.add
-      .rectangle(w / 2, h / 2, (w * 1.5) / z, (h * 1.5) / z, 0x081420, 0.62)
-      .setDepth(44) // above runner name tags (40) — the card owns the screen
+    const U = { W: w / z, H: h / z }; // the camera view in world units
+
+    // — field: cyan gradient + glyph watermark + rings + light streaks.
+    // Opaque takeover (no dim) — depth 44 still covers runner name tags.
+    const field = this.add.graphics().setDepth(44).setScrollFactor(0);
+    field.fillGradientStyle(0x3ec6f2, 0x2ba9e2, 0x1288c8, 0x0d5f96, 1);
+    // anchored screen-space: centered overscan, not local 0,0
+    field.fillRect(w / 2 - w * 0.75, h / 2 - h * 0.75, w * 1.5, h * 1.5);
+    const glyphs = this.add
+      .tileSprite(w / 2, h / 2, w * 1.5, h * 1.5, bakeGlyphTile(this))
+      .setDepth(44)
       .setScrollFactor(0);
+    const rings = this.add.graphics().setDepth(44).setScrollFactor(0);
+    rings.lineStyle(3, 0xffffff, 0.07);
+    rings.strokeCircle(w / 2 + w * 0.1, h / 2 - h * 0.04, Math.min(w, h) * 0.72);
+    rings.strokeCircle(w / 2 + w * 0.1, h / 2 - h * 0.04, Math.min(w, h) * 0.5);
+    const streaks = this.add.graphics().setDepth(44).setScrollFactor(0);
+    streaks.fillStyle(0xffffff, 0.045);
+    for (const [sx, sy, sw2] of [
+      [w * 0.62, h * 0.2, w * 0.55],
+      [w * 0.15, h * 0.78, w * 0.4],
+    ])
+      streaks.fillRect(sx - sw2 / 2, sy, sw2, h * 0.012);
+    this.introObjs.push(field, glyphs, rings, streaks);
 
-    // build at a fixed logical size, then scale the whole card to fit —
-    // all children (text included) shrink together at small zooms
-    const pw = 700, ph = 400;
     const kids: Phaser.GameObjects.GameObject[] = [];
-    kids.push(panel(this, -pw / 2, -ph / 2, pw, ph, { depth: 0 }));
+    const add = (...o: Phaser.GameObjects.GameObject[]) => kids.push(...o);
 
-    // — title tab, magenta chamfer sticking out top-left (SKYLINE STUMBLE)
+    // — title tab: magenta chamfer bleeding off the LEFT edge of the view
     const tabT = this.add
-      .text(0, 0, card.tab, {
+      .text(0, 0, card.name.toUpperCase(), {
         fontFamily: DISPLAY_FONT,
-        fontSize: '16px',
+        fontSize: '20px',
         color: '#ffffff',
       })
       .setOrigin(0, 0.5)
       .setDepth(2);
-    const tx = -pw / 2 + 14, ty = -ph / 2 - 12, tw = tabT.width + 40, th = 40;
-    tabT.setPosition(tx + 16, ty + th / 2);
+    const th = 48, tw = tabT.width + 60;
+    const tx = -U.W / 2 - 46, ty = -U.H / 2 + U.H * 0.028;
+    tabT.setPosition(tx + 24, ty + th / 2 - 1);
     const tabG = this.add.graphics().setDepth(2);
+    const cham = 26;
     tabG.fillStyle(0x1d2a44, 1);
     tabG.fillPoints(
       [
-        { x: tx - 3, y: ty + 3 },
-        { x: tx + tw - 21, y: ty + 3 },
-        { x: tx + tw + 3, y: ty + th + 3 },
-        { x: tx - 3, y: ty + th + 3 },
+        { x: tx - 4, y: ty + 5 },
+        { x: tx + tw - cham, y: ty + 5 },
+        { x: tx + tw + 4, y: ty + th + 5 },
+        { x: tx - 4, y: ty + th + 5 },
       ],
       true,
     );
@@ -532,22 +552,47 @@ export class GameScene extends Phaser.Scene {
     tabG.fillPoints(
       [
         { x: tx, y: ty },
-        { x: tx + tw - 24, y: ty },
+        { x: tx + tw - cham, y: ty },
         { x: tx + tw, y: ty + th },
         { x: tx, y: ty + th },
       ],
       true,
     );
-    kids.push(tabG, tabT);
+    // white inner rim following the chamfer
+    tabG.lineStyle(3.5, 0xffffff, 0.95);
+    tabG.strokePoints(
+      [
+        { x: tx + 5, y: ty + 5 },
+        { x: tx + tw - cham - 3, y: ty + 5 },
+        { x: tx + tw - 4, y: ty + th - 5 },
+        { x: tx + 5, y: ty + th - 5 },
+      ],
+      true,
+    );
+    add(tabG, tabT);
+    // breadcrumb — level number + squad readout under the tab
+    const subT = this.add
+      .text(-U.W / 2 + 26, ty + th + 12, `${card.tab}  ·  ${card.squads}`, {
+        fontFamily: UI_FONT,
+        fontSize: '12px',
+        fontStyle: '700',
+        color: '#eaf6fd',
+      })
+      .setOrigin(0, 0)
+      .setDepth(1);
+    add(subT);
 
-    // — course preview: top-down schematic of THIS map's real layout
-    const pvX = -pw / 2 + 24, pvY = -ph / 2 + 58, pvW = 296, pvH = 212;
+    // — course preview: white-framed window; a live 3D snapshot slides in
+    // once the stage buffer has a frame, the schematic is the fallback
+    const pvX = -U.W * 0.46, pvY = -U.H * 0.28;
+    const pvW = U.W * 0.5, pvH = Math.min(U.H * 0.56, pvW * 0.64);
     const pv = this.add.graphics().setDepth(1);
-    pv.fillStyle(0x1d2a44, 1).fillRoundedRect(pvX - 4, pvY - 4, pvW + 8, pvH + 8, 12);
-    pv.fillStyle(0x7ec8e8, 1).fillRoundedRect(pvX, pvY, pvW, pvH, 8); // sky band
-    const aScale = Math.min((pvW - 20) / this.arenaW, (pvH - 44) / this.arenaH);
+    pv.fillStyle(0x0d3550, 1).fillRoundedRect(pvX - 10, pvY - 4, pvW + 20, pvH + 20, 16);
+    pv.fillStyle(0xffffff, 1).fillRoundedRect(pvX - 8, pvY - 8, pvW + 16, pvH + 16, 12);
+    const aScale = Math.min((pvW - 44) / this.arenaW, (pvH - 60) / this.arenaH);
     const ptW = this.arenaW * aScale, ptH = this.arenaH * aScale;
-    const ptX = pvX + (pvW - ptW) / 2, ptY = pvY + 12 + (pvH - 34 - ptH) / 2;
+    const ptX = pvX + (pvW - ptW) / 2, ptY = pvY + 14 + (pvH - 46 - ptH) / 2;
+    pv.fillStyle(0x7ec8e8, 1).fillRoundedRect(pvX, pvY, pvW, pvH, 8); // sky band
     pv.fillStyle(0x8a5a3b, 1).fillRoundedRect(ptX, ptY, ptW, ptH, 6); // dirt pitch
     pv.lineStyle(2, 0xfdf8ec, 0.5).strokeRoundedRect(ptX, ptY, ptW, ptH, 6); // walls
     pv.fillStyle(0x1d2a44, 0.75);
@@ -590,109 +635,116 @@ export class GameScene extends Phaser.Scene {
       pv.fillStyle(0xd94f3d, 1).fillCircle(dx, ptY + ptH - 12, 4.5);
       dx += 12;
     }
-    kids.push(pv);
-    // type pill top-right of the preview (the COURSE slot)
+    add(pv);
+    // type pill — green COURSE badge, top-right over the right column
+    const rightX = U.W * 0.47;
     const tagT = this.add
-      .text(0, 0, card.tag, { fontFamily: DISPLAY_FONT, fontSize: '10px', color: '#ffffff' })
+      .text(0, 0, card.tag, { fontFamily: DISPLAY_FONT, fontSize: '12px', color: '#ffffff' })
       .setOrigin(0.5)
       .setDepth(1);
+    const tagW = tagT.width + 28;
     const tagG = this.add.graphics().setDepth(1);
-    const tagW = tagT.width + 18;
-    tagG.fillStyle(0x1d2a44, 1).fillRoundedRect(pvX + pvW - tagW - 8, pvY - 8, tagW, 22, 11);
-    tagT.setPosition(pvX + pvW - tagW / 2 - 8, pvY + 3);
-    kids.push(tagG, tagT);
-    const squadT = this.add
-      .text(pvX + pvW / 2, pvY + pvH + 14, card.squads, {
-        fontFamily: UI_FONT,
-        fontSize: '12px',
-        fontStyle: '700',
-        color: '#1d2a44',
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(1);
-    kids.push(squadT);
+    tagG.fillStyle(0x17a34a, 1).fillRoundedRect(rightX - tagW, pvY + 4, tagW, 30, 15);
+    tagG.fillStyle(0x22c55e, 1).fillRoundedRect(rightX - tagW, pvY, tagW, 30, 15);
+    tagT.setPosition(rightX - tagW / 2, pvY + 15);
+    add(tagG, tagT);
 
-    // — right column: name / how to play / medals
-    const colX = pvX + pvW + 34;
-    const nameT = this.add
-      .text(colX, -ph / 2 + 58, card.name, {
-        fontFamily: DISPLAY_FONT,
-        fontSize: card.name.length > 18 ? '15px' : '19px',
-        color: '#1d2a44',
-      })
-      .setOrigin(0, 0)
-      .setDepth(1);
+    // — right column: HOW TO PLAY / flavor / MEDALS — all right-aligned
+    let ry = pvY + U.H * 0.09;
     const howHead = this.add
-      .text(colX, -ph / 2 + 94, 'HOW TO PLAY', {
+      .text(rightX, ry, 'HOW TO PLAY', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '13px',
-        color: '#0f7fb8',
+        fontSize: '24px',
+        color: '#ffffff',
       })
-      .setOrigin(0, 0)
+      .setOrigin(1, 0)
       .setDepth(1);
+    ry += 36;
+    const colW = rightX - (pvX + pvW + U.W * 0.03);
     const howT = this.add
-      .text(colX, -ph / 2 + 114, card.how, {
+      .text(rightX, ry, card.how, {
         fontFamily: UI_FONT,
-        fontSize: '12px',
+        fontSize: '14px',
         fontStyle: '600',
-        color: '#33475e',
-        lineSpacing: 5,
-        wordWrap: { width: pw - (pvW + 88) },
+        color: '#ffffff',
+        align: 'right',
+        lineSpacing: 6,
+        wordWrap: { width: colW },
       })
-      .setOrigin(0, 0)
+      .setOrigin(1, 0)
       .setDepth(1);
-    kids.push(nameT, howHead, howT);
-    let medY = howT.y + howT.height + 10;
+    ry = howT.y + howT.height + 8;
     if (card.flavor) {
       const flav = this.add
-        .text(colX, medY, card.flavor.replace(/\n/g, ' '), {
+        .text(rightX, ry, card.flavor.replace(/\n/g, ' '), {
           fontFamily: UI_FONT,
-          fontSize: '11px',
+          fontSize: '12px',
           fontStyle: 'italic',
-          color: '#6b7c93',
-          lineSpacing: 4,
-          wordWrap: { width: pw - (pvW + 88) },
+          color: '#d9ecf7',
+          align: 'right',
+          lineSpacing: 5,
+          wordWrap: { width: colW },
         })
-        .setOrigin(0, 0)
+        .setOrigin(1, 0)
         .setDepth(1);
-      kids.push(flav);
-      medY = flav.y + flav.height + 10;
+      add(flav);
+      ry = flav.y + flav.height + 8;
     }
-    medY = Math.min(medY, ph / 2 - 118);
+    add(howHead, howT);
+    ry = Math.max(ry, pvY + U.H * 0.32);
     const medHead = this.add
-      .text(colX, medY, 'MEDALS', {
+      .text(rightX, ry, 'MEDALS', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '13px',
-        color: '#0f7fb8',
+        fontSize: '24px',
+        color: '#ffffff',
       })
-      .setOrigin(0, 0)
+      .setOrigin(1, 0)
       .setDepth(1);
-    // tiles BEFORE their labels — container children paint in push order
-    const medalG = this.add.graphics().setDepth(1);
-    kids.push(medHead, medalG);
-    const meds: [number, string, string][] = [
-      [0xf2b70d, '★★★', 'no ices'],
-      [0xb9c8d8, '★★', 'one ice'],
-      [0xc77b3b, '★', 'clear'],
+    add(medHead);
+    ry += 38;
+    // medal tiles — header tab + hexagon emblem + caption, right-aligned row
+    const medG = this.add.graphics().setDepth(1);
+    add(medG);
+    const meds: [number, string, string, string][] = [
+      [0xf2b70d, 'GOLD', '★★★', 'NO ICES'],
+      [0x9fb8cc, 'SILVER', '★★', 'ONE ICE'],
+      [0xc77b3b, 'BRONZE', '★', 'CLEAR'],
     ];
-    meds.forEach(([col, star, cap], i) => {
-      const mx = colX + i * 88;
-      medalG.fillStyle(0x1d2a44, 1).fillRoundedRect(mx, medY + 21, 78, 56, 8);
-      medalG.fillStyle(col, 1).fillRoundedRect(mx, medY + 19, 78, 56, 8);
-      kids.push(
+    const mw = 100, mh = 116, mgap = 14;
+    meds.forEach(([col, lab, star, cap], i) => {
+      const mx = rightX - (3 - i) * (mw + mgap) + mgap; // gold leftmost, row ends at rightX
+      medG.fillStyle(0x0d3550, 0.45).fillRoundedRect(mx, ry, mw, mh, 10);
+      medG.fillStyle(col, 1).fillRoundedRect(mx + 8, ry, mw - 16, 24, 8);
+      const hx = mx + mw / 2, hy = ry + 58, hr = 24;
+      const hex: { x: number; y: number }[] = [];
+      for (let k = 0; k < 6; k++) {
+        const a = -Math.PI / 2 + (k * Math.PI) / 3;
+        hex.push({ x: hx + Math.cos(a) * hr, y: hy + Math.sin(a) * hr });
+      }
+      medG.fillStyle(0xffffff, 0.92).fillPoints(hex, true);
+      medG.lineStyle(3, col, 1).strokePoints(hex, true);
+      add(
         this.add
-          .text(mx + 39, medY + 34, star, {
+          .text(hx, ry + 12, lab, {
             fontFamily: DISPLAY_FONT,
-            fontSize: '15px',
-            color: '#ffffff',
+            fontSize: '11px',
+            color: '#1d2a44',
           })
           .setOrigin(0.5)
           .setDepth(1),
         this.add
-          .text(mx + 39, medY + 56, cap, {
+          .text(hx, hy + 1, star, {
+            fontFamily: DISPLAY_FONT,
+            fontSize: '15px',
+            color: '#1d2a44',
+          })
+          .setOrigin(0.5)
+          .setDepth(1),
+        this.add
+          .text(hx, ry + mh - 16, cap, {
             fontFamily: UI_FONT,
             fontSize: '10px',
-            fontStyle: '700',
+            fontStyle: '800',
             color: '#ffffff',
           })
           .setOrigin(0.5)
@@ -700,12 +752,16 @@ export class GameScene extends Phaser.Scene {
       );
     });
 
-    // — control hint pill, cyan strip near the card's bottom
+    // — hint bar: translucent navy strip under the preview, hand + chevron
+    const hbY = pvY + pvH + U.H * 0.022, hbH = U.H * 0.075;
+    const hb = this.add.graphics().setDepth(1);
+    hb.fillStyle(0x0d3550, 0.55).fillRoundedRect(pvX, hbY, pvW, hbH, hbH / 2);
+    add(hb);
     const touchDev = TouchControls.isTouchDevice();
     const hintT = this.add
       .text(
-        0,
-        ph / 2 - 54,
+        pvX + pvW / 2 - 10,
+        hbY + hbH / 2,
         touchDev
           ? 'left side — move   right side — sprint · drag — orbit'
           : 'arrows / wasd — move   shift — sprint   drag — orbit',
@@ -717,30 +773,66 @@ export class GameScene extends Phaser.Scene {
         },
       )
       .setOrigin(0.5)
-      .setDepth(2);
-    const hintG = this.add.graphics().setDepth(1);
-    hintG.fillStyle(0x0f7fb8, 1).fillRoundedRect(-hintT.width / 2 - 18, ph / 2 - 71, hintT.width + 36, 32, 16);
-    kids.push(hintG, hintT);
-
-    const tap = this.add
-      .text(0, ph / 2 - 22, 'TAP TO PLAY', {
-        fontFamily: DISPLAY_FONT,
-        fontSize: '14px',
-        color: '#c98a00',
+      .setDepth(1);
+    const hand = this.add.graphics().setDepth(1);
+    const hxp = hintT.x - hintT.width / 2 - 28, hyp = hbY + hbH / 2;
+    hand.fillStyle(0xffffff, 1);
+    hand.fillRoundedRect(hxp - 7, hyp - 7, 13, 13, 4); // palm
+    hand.fillRoundedRect(hxp + 4, hyp - 9, 14, 6, 3); // pointing finger
+    hand.fillCircle(hxp - 5, hyp + 7, 3); // thumb bump
+    const chevT = this.add
+      .text(pvX + pvW - 18, hbY + hbH / 2, '▸', {
+        fontFamily: UI_FONT,
+        fontSize: '20px',
+        fontStyle: '800',
+        color: '#ffffff',
       })
       .setOrigin(0.5)
       .setDepth(1);
-    kids.push(tap);
+    add(hintT, hand, chevT);
+
+    // — bottom-left: bean glyph + TAP TO PLAY (the WAITING slot)
+    const bl = this.add.graphics().setDepth(1);
+    const blx = -U.W * 0.46 + 14, bly = U.H * 0.47;
+    bl.lineStyle(3, 0xffffff, 1);
+    bl.strokeEllipse(blx, bly, 16, 20);
+    bl.strokeEllipse(blx, bly - 4, 10, 10);
+    const tap = this.add
+      .text(blx + 24, bly, 'TAP TO PLAY', {
+        fontFamily: DISPLAY_FONT,
+        fontSize: '16px',
+        color: '#ffffff',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(1);
+    add(bl, tap);
 
     const wrap = this.add.container(0, 0, kids).setDepth(45);
-    // fit the fixed-size card inside the camera view — one scale factor
-    wrap.setScale(Math.min(1, ((w * 0.92) / z) / pw, ((h * 0.84) / z) / ph));
     this.pin(wrap, 0.5, 0.5);
-    this.introObjs.push(dim, wrap);
+    this.introObjs.push(wrap);
     this.relayout(); // pin() registers — layoutHud only places on relayout
 
+    // live course snapshot into the preview once the stage buffer has a
+    // frame — retries cover first-RAF; the schematic is the fallback
+    const trySnap = (attempt: number) => {
+      if (!this.scene.isActive() || !this.introActive) return;
+      const shot = this.st3.snapshot(720, 440);
+      if (!shot) {
+        if (attempt < 4) this.time.delayedCall(220, () => trySnap(attempt + 1));
+        return;
+      }
+      const key = `intro_shot_${this.level?.n ?? 0}`;
+      if (this.textures.exists(key)) this.textures.remove(key);
+      this.textures.addCanvas(key, shot);
+      const img = this.add.image(pvX + pvW / 2, pvY + pvH / 2, key).setDepth(1.2);
+      img.displayWidth = pvW - 2;
+      img.displayHeight = pvH - 2;
+      wrap.add(img);
+    };
+    this.time.delayedCall(150, () => trySnap(0));
+
     if (!REDUCED_MOTION) {
-      this.tweens.add({ targets: tap, alpha: 0.3, duration: 550, yoyo: true, repeat: -1 });
+      this.tweens.add({ targets: tap, alpha: 0.35, duration: 550, yoyo: true, repeat: -1 });
       wrap.setAlpha(0);
       this.tweens.add({ targets: wrap, alpha: 1, duration: 200 });
     }

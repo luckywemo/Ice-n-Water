@@ -108,6 +108,76 @@ export function bakeCrownTile(scene: Phaser.Scene) {
   return key;
 }
 
+// ------- intro-field glyph tile — the FG loading screen's watermark:
+// crowns, beans, trophies, horns, confetti + shapes scattered at low alpha
+export function bakeGlyphTile(scene: Phaser.Scene) {
+  const key = 'fg_glyphs';
+  if (scene.textures.exists(key)) return key;
+  const T = 480;
+  const tex = scene.textures.createCanvas(key, T, T);
+  const c = tex?.getContext();
+  if (!c) return key;
+  c.clearRect(0, 0, T, T);
+  c.strokeStyle = c.fillStyle = 'rgba(255,255,255,0.10)';
+  c.lineWidth = 4;
+  c.lineJoin = c.lineCap = 'round';
+  const at = (x: number, y: number, s: number, rot: number, draw: () => void) => {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.scale(s, s);
+    c.beginPath();
+    draw();
+    c.restore();
+  };
+  const crown = () => {
+    c.moveTo(-16, 10); c.lineTo(-16, -4); c.lineTo(-8, 2); c.lineTo(-4, -10);
+    c.lineTo(0, 0); c.lineTo(4, -10); c.lineTo(8, 2); c.lineTo(16, -4);
+    c.lineTo(16, 10); c.closePath(); c.stroke();
+  };
+  const bean = () => {
+    c.ellipse(0, 2, 13, 17, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath();
+    c.ellipse(0, -4, 8, 9, 0, 0, Math.PI * 2); c.stroke();
+  };
+  const trophy = () => {
+    c.moveTo(-9, -10); c.lineTo(9, -10); c.lineTo(8, 0);
+    c.quadraticCurveTo(6, 8, 0, 8); c.quadraticCurveTo(-6, 8, -8, 0);
+    c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(0, 8); c.lineTo(0, 13);
+    c.moveTo(-6, 15); c.lineTo(6, 15); c.stroke();
+  };
+  const horn = () => {
+    c.moveTo(-12, 8); c.lineTo(10, -8); c.lineTo(14, 6); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(10, -8); c.lineTo(16, -14);
+    c.moveTo(13, -3); c.lineTo(20, -6); c.stroke();
+  };
+  const bang = () => {
+    c.moveTo(0, -12); c.lineTo(0, 2); c.stroke();
+    c.beginPath(); c.arc(0, 9, 2.2, 0, Math.PI * 2); c.fill();
+  };
+  const squiggle = () => {
+    c.moveTo(-12, 0);
+    c.quadraticCurveTo(-6, -12, 0, 0); c.quadraticCurveTo(6, 12, 12, 0);
+    c.stroke();
+  };
+  const tri = () => {
+    c.moveTo(0, -10); c.lineTo(10, 8); c.lineTo(-10, 8); c.closePath(); c.stroke();
+  };
+  const ring = () => { c.arc(0, 0, 9, 0, Math.PI * 2); c.stroke(); };
+  const place = [
+    [70, 60, 1.1, 0.15, crown], [200, 45, 0.8, -0.2, bean], [330, 70, 1, 0.1, trophy],
+    [430, 50, 0.9, 0.25, bang], [120, 160, 0.9, -0.15, squiggle], [260, 150, 1, 0.3, horn],
+    [390, 160, 0.85, -0.3, ring], [40, 240, 0.95, 0.2, tri], [170, 250, 0.85, -0.1, crown],
+    [300, 250, 0.9, 0.15, bean], [430, 240, 0.8, -0.25, trophy], [80, 350, 0.85, 0.3, bang],
+    [210, 360, 1, -0.2, horn], [350, 350, 0.9, 0.1, squiggle], [450, 380, 0.8, 0.2, ring],
+    [120, 450, 0.9, -0.25, trophy], [270, 440, 0.8, 0.15, tri], [400, 450, 1, -0.1, crown],
+  ] as const;
+  for (const [x, y, s, r, d] of place) at(x, y, s, r, d as () => void);
+  tex!.refresh();
+  return key;
+}
+
 // ------- one crown outline stamp (same path as bakeCrownTile, for graphics) -------
 function fgCrown(
   g: Phaser.GameObjects.Graphics,
