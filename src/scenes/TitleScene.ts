@@ -201,6 +201,7 @@ export class TitleScene extends Phaser.Scene {
     this.lobbyDrop = undefined;
     this.started = fromWipe;
     this.settingsOpen = false;
+    this.promptOpen = false; // a modal mid-restart would latch this and dead the whole lobby
     this.cardZones = []; // scene instance persists — dead zones from the last card must not linger
 
     this.cameras.main.setBackgroundColor(FG.yellow);
@@ -222,7 +223,7 @@ export class TitleScene extends Phaser.Scene {
     const visB = vh / 2 + height / (2 * stageZoom);
     let lastW = width;
     let lastH = height;
-    this.scale.on('resize', (sz: Phaser.Structs.Size) => {
+    const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
@@ -231,7 +232,11 @@ export class TitleScene extends Phaser.Scene {
         lastH = sz.height;
         this.scene.restart();
       }
-    });
+    };
+    // ScaleManager is game-level — it outlives this scene, so the listener
+    // must be removed on shutdown or every lobby visit stacks another copy
+    this.scale.on('resize', onResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', onResize));
     // the hero is a texture-backed Image — a normal display-list object that
     // dies with the scene and sits UNDER modals. Only the WebGL renderer
     // needs explicit disposal; no DOM node exists to leak.
@@ -544,9 +549,11 @@ export class TitleScene extends Phaser.Scene {
           img.src = url;
         })
         .catch(() => {}); // no pfp — the crown stays
-    this.events.on('runner-renamed', () => {
-      this.refreshCharPlate?.();
-    });
+    // scene events emitter survives restarts — an unpaired .on stacks one
+    // listener per visit, so a rename would refresh the plate N times
+    const onRenamed = () => this.refreshCharPlate?.();
+    this.events.on('runner-renamed', onRenamed);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('runner-renamed', onRenamed));
 
     // --- install CTA — sits over the name plate while the browser still
     //  defers an install prompt (not installed yet). Same pink as the
