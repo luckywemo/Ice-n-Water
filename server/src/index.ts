@@ -4,6 +4,18 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import { GameRoom } from './rooms/GameRoom.js';
 import { getBoard, postScore } from './board.js';
 
+// local dev launches `npm run server` from server/ — pull the repo-root
+// .env so UPSTASH_REST_* actually arrive (deploys inject real env; a
+// missing file is fine, and loadEnvFile never overrides existing vars).
+// Without this the board silently runs in-memory while LOOKING alive.
+for (const p of ['../../.env', '../../../.env']) {
+  try {
+    process.loadEnvFile(new URL(p, import.meta.url));
+  } catch {
+    /* not this layout — try the next */
+  }
+}
+
 const port = Number(process.env.PORT || 2567);
 
 // ---------- adventure leaderboard (shared Upstash store — see board.ts) ----------

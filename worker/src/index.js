@@ -75,7 +75,7 @@ async function sessionId(req, env) {
     const s = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
     if (typeof s.id !== 'string' || typeof s.exp !== 'number') return null;
     if (s.exp * 1000 < Date.now()) return null;
-    return s.id;
+    return { id: s.id, pfp: typeof s.pfp === 'string' ? s.pfp : undefined };
   } catch {
     return null;
   }
@@ -83,8 +83,9 @@ async function sessionId(req, env) {
 
 async function handleScore(req, env) {
   const ip = req.headers.get('cf-connecting-ip') ?? 'anon';
-  const sid = await sessionId(req, env);
-  if (!sid) return json({ error: 'connect x first' }, 401);
+  const sess = await sessionId(req, env);
+  if (!sess) return json({ error: 'connect x first' }, 401);
+  const sid = sess.id;
   const id = `x_${sid}`; // verified session, never the body's claim
 
   let b;
@@ -117,6 +118,7 @@ async function handleScore(req, env) {
     ['ZADD', 'board', 'GT', score, id],
     ['HSET', 'names', id, name],
     ['ZREVRANK', 'board', id],
+    ...(sess.pfp ? [['HSET', 'avatars', id, sess.pfp]] : []),
   ]);
   return json({
     rank: rank == null ? null : Number(rank) + 1,
@@ -132,24 +134,37 @@ async function handleBoard(url, env) {
   const cmds = [
     ['ZREVRANGE', 'board', 0, 49, 'WITHSCORES'],
     ['HGETALL', 'names'],
+    ['HGETALL', 'avatars'],
   ];
   if (me) cmds.push(['ZREVRANK', 'board', me], ['ZSCORE', 'board', me]);
   const results = await up(env, cmds);
   const flat = results[0] ?? [];
-  const namePairs = results[1] ?? [];
-  const names = new Map();
-  for (let i = 0; i + 1 < namePairs.length; i += 2) names.set(namePairs[i], namePairs[i + 1]);
+  const hmap = (pairs) => {
+    const m = new Map();
+    const arr = pairs ?? [];
+    for (let i = 0; i + 1 < arr.length; i += 2) m.set(arr[i], arr[i + 1]);
+    return m;
+  };
+  const names = hmap(results[1]);
+  const avatars = hmap(results[2]);
 
   const top = [];
   for (let i = 0; i + 1 < flat.length; i += 2) {
     const { level, stars } = unpack(Number(flat[i + 1]));
-    top.push({ rank: top.length + 1, name: names.get(flat[i]) ?? 'runner', level, stars });
+    const pfp = avatars.get(flat[i]);
+    top.push({
+      rank: top.length + 1,
+      name: names.get(flat[i]) ?? 'runner',
+      level,
+      stars,
+      ...(pfp ? { pfp } : {}),
+    });
   }
 
   let meOut = null;
   if (me) {
-    const rank = results[2];
-    const score = results[3];
+    const rank = results[3];
+    const score = results[4];
     if (rank != null && score != null) {
       const { level, stars } = unpack(Number(score));
       meOut = { rank: Number(rank) + 1, name: names.get(me) ?? 'you', level, stars };

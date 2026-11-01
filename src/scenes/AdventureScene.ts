@@ -19,7 +19,7 @@ import {
   totalStars,
   AdventureProgress,
 } from '../adventure';
-import { fetchBoard, playerName, setPlayerName, submitAdventureScore } from '../leaderboard';
+import { fetchBoard, playerName, setPlayerName, submitAdventureScore, BoardRow } from '../leaderboard';
 import { pushProfile } from '../cloudsave';
 
 const sfx = Sfx.inst;
@@ -86,6 +86,8 @@ export class AdventureScene extends Phaser.Scene {
   private boardTiles: {
     c: Phaser.GameObjects.Container;
     face: Phaser.GameObjects.Graphics;
+    img: Phaser.GameObjects.Image;
+    veil: Phaser.GameObjects.Graphics;
     rank: Phaser.GameObjects.Text;
     name: Phaser.GameObjects.Text;
     stat: Phaser.GameObjects.Text;
@@ -807,6 +809,17 @@ export class AdventureScene extends Phaser.Scene {
         face.fillStyle(fill, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
       };
       paint(FG.pink, FG.pinkDeep); // open slot until a runner lands
+      // pfp layer — hidden until the runner's avatar lands from X
+      const img = this.add
+        .image(tx + tw / 2, ty + (th - 2) / 2, '__MISSING')
+        .setVisible(false);
+      const maskG = this.add
+        .graphics()
+        .fillStyle(0xffffff, 1)
+        .fillRoundedRect(tx, ty, tw, th - 2, 8)
+        .setVisible(false);
+      img.setMask(maskG.createGeometryMask());
+      const veil = this.add.graphics(); // dim layer over photos — keeps type readable
       const rank = this.add
         .text(tx + 7, ty + 6, '', { fontFamily: UI_FONT, fontSize: '10px', fontStyle: '800', color: '#0b4f10' })
         .setOrigin(0, 0);
@@ -826,8 +839,8 @@ export class AdventureScene extends Phaser.Scene {
           color: '#d8ffd0',
         })
         .setOrigin(0.5);
-      const c = this.add.container(0, 0, [face, rank, name, stat]);
-      this.boardTiles.push({ c, face, rank, name, stat });
+      const c = this.add.container(0, 0, [face, img, veil, rank, name, stat, maskG]);
+      this.boardTiles.push({ c, face, img, veil, rank, name, stat });
       // stash per-tile paint coords for renderBoard
       c.setData('px', tx).setData('py', ty).setData('pw', tw).setData('ph', th);
     }
@@ -936,6 +949,8 @@ export class AdventureScene extends Phaser.Scene {
           tw = t.c.getData('pw') as number,
           th = t.c.getData('ph') as number;
         t.face.clear();
+        t.img.setVisible(false);
+        t.veil.clear();
         if (!e) {
           // open slot stays flat pink — the reference's empty squares
           t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
@@ -970,6 +985,9 @@ export class AdventureScene extends Phaser.Scene {
         }
       }
       this.boardMeLine(top, b.me);
+      // avatars stream in after the grid paints — X's CDN is fast, the
+      // reveal lands within a few frames of the tiles popping
+      void this.loadBoardPfps(top).then(() => this.revealBoardPfps(top, myRank));
     } catch {
       if (!this.boardLayer) return;
       this.boardBanner?.setText('BOARD OFFLINE');
@@ -979,10 +997,54 @@ export class AdventureScene extends Phaser.Scene {
           tw = t.c.getData('pw') as number,
           th = t.c.getData('ph') as number;
         t.face.clear();
+        t.img.setVisible(false);
+        t.veil.clear();
         t.face.fillStyle(FG.pinkDeep, 1).fillRoundedRect(tx, ty + 3, tw, th, 8);
         t.face.fillStyle(FG.pink, 1).fillRoundedRect(tx, ty, tw, th - 2, 8);
       }
       this.boardMeLine([], null, 'the board is offline right now — it lives on our game server');
+    }
+  }
+
+  /** fetch each runner's X pfp as a texture (CORS-open CDN — WebGL-safe) */
+  private async loadBoardPfps(top: BoardRow[]) {
+    this.load.setCORS('anonymous'); // pbs.twimg.com sends ACAO:* — required for WebGL textures
+    let pending = false;
+    for (const e of top) {
+      const key = `pfp_${e.rank}`;
+      if (!e.pfp || this.textures.exists(key)) continue;
+      this.load.image(key, e.pfp);
+      pending = true;
+    }
+    if (!pending) return;
+    await new Promise<void>((done) => {
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => done());
+      this.load.start();
+    });
+  }
+
+  /** wear the loaded pfps — cover-fit under a dim veil so type stays readable */
+  private revealBoardPfps(top: BoardRow[], myRank: number) {
+    if (!this.boardLayer) return; // closed while the CDN fetched
+    for (let i = 0; i < this.boardTiles.length; i++) {
+      const e = top[i];
+      const key = `pfp_${e?.rank}`;
+      if (!e?.pfp || !this.textures.exists(key)) continue;
+      const t = this.boardTiles[i];
+      const tx = t.c.getData('px') as number,
+        ty = t.c.getData('py') as number,
+        tw = t.c.getData('pw') as number,
+        th = t.c.getData('ph') as number;
+      const src = this.textures.get(key).getSourceImage() as HTMLImageElement;
+      const sc = Math.max(tw / src.width, (th - 2) / src.height); // cover, not stretch
+      t.img.setTexture(key).setScale(sc).setVisible(true);
+      const mine = e.rank === myRank;
+      t.veil
+        .fillStyle(0x081420, 0.35)
+        .fillRoundedRect(tx, ty, tw, th - 2, 8);
+      if (mine)
+        t.veil.lineStyle(3, 0xffffff, 0.95).strokeRoundedRect(tx + 1.5, ty + 1.5, tw - 3, th - 5, 7);
+      t.rank.setColor('#ffffff');
     }
   }
 

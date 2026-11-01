@@ -118,7 +118,12 @@ export default async function handler(req, res) {
     const id = `x_${s.id}`;
 
     if (req.method === 'GET') {
-      const [raw] = (await kv([['GET', key]])) ?? [];
+      // lazy avatar backfill — every boot sync refreshes the board's pfp
+      const [raw] =
+        (await kv([
+          ['GET', key],
+          ...(s.pfp ? [['HSET', 'avatars', id, s.pfp]] : []),
+        ])) ?? [];
       const profile = raw?.result ? JSON.parse(raw.result) : {};
       return res.status(200).json({ profile, synced: !!raw?.result });
     }
@@ -138,6 +143,7 @@ export default async function handler(req, res) {
 
     const cmds = [['SET', key, JSON.stringify(merged)]];
     if (merged.name) cmds.push(['HSET', 'names', id, merged.name]); // board stays fresh
+    if (s.pfp) cmds.push(['HSET', 'avatars', id, s.pfp]);
     await kv(cmds);
     return res.status(200).json({ profile: merged });
   } catch (e) {

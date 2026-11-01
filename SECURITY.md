@@ -1,0 +1,107 @@
+# Security Audit — Ice 'N' Water
+
+Scope: `api/` (auth, progress, profile, score, board, ticket, me), `worker/`,
+`server/` (board, GameRoom, xticket), `src/` (xauth, leaderboard, cloudsave,
+DOM sinks), `ice3d/`, `public/sw.js`, secrets handling.
+Method: full source review + live attack tests against production Redis
+(forged sessions, forged ids, skip/batch/legacy-blob claims, throttle runs).
+
+## Findings & remediation status
+
+### 🔴 Session token could leak to a hostile opener — FIXED
+
+`api/auth/x/callback.js` — the handoff page posted `{token}` to
+`window.opener` with `target='*'` whenever the OAuth request carried no
+valid `next`. An attacker site could `window.open('/api/auth/x')`, let the
+victim's existing X session auto-complete the flow, and receive the
+victim's 30-day session — full impersonation incl. renaming their board
+entry (`HSET names`).
+
+**Fix shipped:** postMessage only fires when `next` resolved to an
+allowlisted origin; no `'*'` fallback exists. The `sid` poll channel
+(GETDEL, single-redemption, 122-bit id) already covers opener-less flows.
+
+### 🟠 Batch events could mint the whole road in one POST — FIXED
+
+`api/progress.js` — the contiguity bound (`level <= unlocked` as it grows)
+meant `events:[{level:1}..{level:500}]` applied sequentially in a single
+request; the derived board then published the fake road at rank #1. A
+first-pass token bucket (30s credit) slowed the forge to ~4 hours, but
+events were still unverifiable.
+
+**Fix shipped — run tickets (server attestation):**
+- `POST {start:N}` mints a signed `{id,lvl,t0,exp}` ticket only for
+  `N <= unlocked+2`; the client can't mint these (same `v1.` HMAC as
+  sessions — 48h TTL covers offline runs).
+- A frontier advance requires a ticket that verifies, matches the level,
+  and proves `now - t0 >= 35s` (every campaign level runs a ≥45s clock,
+  so no legit win is faster). A scripted fake must now burn ~a level's
+  wall-clock per advance **and** fit the daily caps.
+- Caps: `dayAdv <= 80/day` all advances, `dayTk <= 5/day` unticketed
+  (offline grace), token bucket kept underneath as a third layer.
+- Within-frontier stars stay free (bounded ≤3) — re-clears need no
+  attestation.
+- Verified live: unticketed 500-batch → 5 advances then `denied`; real
+  ticket + 36s wait → attested advance; wrong-level ticket → refused;
+  over-cap unticketed → refused; offline-aged ticket → accepted.
+
+Residual honesty: a patient script can still spend real time (tickets
+bind wall-clock, not skill) — the bound is ~7 days minimum for a fake
+500-level road, vs. one request before. Full impossibility would need
+server-simulated gameplay; this is the strongest bound without it.
+
+## Open findings (accepted / queued)
+
+| Sev | Item | Surface | Note |
+|---|---|---|---|
+| 🟡 | No rate limit | `/api/ticket`, `/api/auth/poll`, `/api/auth/x` | Cost/abuse surface on Upstash + X API calls; sids are unguessable so it's spend-abuse, not a redeem-probe |
+| 🟡 | Enumerable room codes | `GameRoom.generateCode` (4 digits) | Authed accounts can drop into strangers' rooms; griefing vector, ticket-gated so they're identified |
+| 🟡 | `?me=` rank probing | `server /api/leaderboard`, worker `/board` | Existence/rank oracle for arbitrary `x_<id>` — low (ranks are public anyway) |
+| 🟡 | `statsEvents` replay | `api/profile.js` | No event nonce; re-POSTing a journal inflates self-visible stats within the 120/hr cap — board unaffected (derives from `prog:`) |
+| ⚪ | 30d bearer, no revocation | `xsess.js` | Standard stateless tradeoff; stolen token valid till exp. Depends on keeping zero user-data→DOM sinks |
+| ⚪ | `origin()` trusts `Host` | `xsess.js` | `redirect_uri` builds from request Host; X rejects unregistered callbacks so it fails at X — pin to env anyway |
+
+## Verified good
+
+- **OAuth**: PKCE S256; single-use `state`/`verifier` cookie (HttpOnly,
+  SameSite=Lax, burned at callback entry); `safeNext` allowlist on the
+  postMessage target; token returns via URL hash (never logs/referers) +
+  `history.replaceState` strip.
+- **Sessions**: `v1.payload.sig`, HMAC-SHA256 + `timingSafeEqual` + `exp`;
+  fail-closed in production on all four verifiers (xsess, worker
+  WebCrypto, `board.ts`, `xticket.ts` — `NODE_ENV=production` without
+  `SESSION_SECRET` rejects everyone).
+- **Identity**: every writer keys rows off the verified session id —
+  body-supplied ids are ignored (tested: forged `id:'VICTIM'` → own row).
+- **Integrity**: `prog:` advances only via bounded events; score derives
+  server-side from `prog:` (`api/score`, worker, `board.ts` all);
+  `ZADD GT` is monotonic — a forged post can only undersell.
+- **Stats**: `statsEvents` journal — server recomputes games/wins/streaks
+  with server-side `updatedAt`; claimed aggregates are ignored.
+- **XSS**: zero user-data→`innerHTML` sinks (all hits interpolate
+  compile-time constants); names scrubbed by `cleanName` on every writer;
+  avatar fetched as blob → same-origin objectURL; `#iw_x` harvested and
+  stripped. Keep it that way — `iw_xtok` in localStorage is only safe
+  while this holds.
+- **Rate limits**: `rl:prog` 240/hr, `rl:profile` 120/hr, `rl:score`
+  30/hr per session; worker per-IP via `cf-connecting-ip`; game server
+  per-IP 1.5s.
+- **Multiplayer**: 90s signed tickets verified server-side; move clamp
+  (320px/s + slack); tags/freeze/round outcomes server-authoritative —
+  clients report position only.
+- **Secrets**: `.env` gitignored, never committed; Upstash creds server-
+  side only — the client deliberately has no direct-Redis tier (a `VITE_`
+  token would ship write access to the db that parks sign-in handoffs).
+- **sw.js**: same-origin GET only; network-first for non-assets — cannot
+  poison API responses or cross-origin calls.
+
+## Operational notes
+
+- `SESSION_SECRET` must exist on: Vercel api, Cloudflare worker (wrangler
+  secret), Render game server (`render.yaml` declares all).
+- Rotate the Upstash REST token — it was handled outside the repo during
+  development; treat as exposed and re-issue if the conversation log left
+  the machine.
+- Dev fallbacks are intentional: no `UPSTASH_*` → in-memory board + dev
+  secret; no `SESSION_SECRET` && `NODE_ENV!=='production'` → dev pass.
+  Production paths all fail closed.

@@ -18,6 +18,7 @@ export interface BoardRow {
   name: string;
   level: number;
   stars: number;
+  pfp?: string;
 }
 
 const MAX_LEVEL = 1000;
@@ -42,7 +43,7 @@ function secret(): string | null {
   return 'icenwater-dev-secret';
 }
 
-function verifySession(tok: unknown): { id: string } | null {
+function verifySession(tok: unknown): { id: string; pfp?: string } | null {
   if (!process.env.SESSION_SECRET && process.env.NODE_ENV !== 'production')
     return { id: 'dev' }; // dev pass — matches xticket.ts
   const s = secret();
@@ -59,7 +60,7 @@ function verifySession(tok: unknown): { id: string } | null {
     const p = JSON.parse(Buffer.from(payload, 'base64url').toString());
     if (typeof p.id !== 'string' || typeof p.exp !== 'number') return null;
     if (p.exp * 1000 < Date.now()) return null;
-    return { id: p.id };
+    return { id: p.id, pfp: typeof p.pfp === 'string' ? p.pfp : undefined };
   } catch {
     return null;
   }
@@ -72,7 +73,7 @@ const bearer = (auth: string | undefined) =>
 
 interface Store {
   readTop(meId?: string): Promise<{ top: BoardRow[]; me: BoardRow | null }>;
-  writeScore(id: string, name: string, level: number, stars: number): Promise<BoardRow>;
+  writeScore(id: string, name: string, level: number, stars: number, pfp?: string): Promise<BoardRow>;
 }
 
 async function up(cmds: unknown[][]): Promise<unknown[]> {
@@ -93,21 +94,27 @@ const redisStore: Store = {
     const cmds: unknown[][] = [
       ['ZREVRANGE', 'board', 0, 49, 'WITHSCORES'],
       ['HGETALL', 'names'],
+      ['HGETALL', 'avatars'],
     ];
     if (meId) cmds.push(['ZREVRANK', 'board', meId], ['ZSCORE', 'board', meId]);
-    const [flat, pairs, rank, score] = await up(cmds);
+    const [flat, pairs, apairs, rank, score] = await up(cmds);
     const names = new Map<string, string>();
     const arr = (pairs as string[]) ?? [];
     for (let i = 0; i + 1 < arr.length; i += 2) names.set(arr[i], arr[i + 1]);
+    const avatars = new Map<string, string>();
+    const aarr = (apairs as string[]) ?? [];
+    for (let i = 0; i + 1 < aarr.length; i += 2) avatars.set(aarr[i], aarr[i + 1]);
     const rows = (flat as string[]) ?? [];
     const top: BoardRow[] = [];
     for (let i = 0; i + 1 < rows.length; i += 2) {
       const { level, stars } = unpack(Number(rows[i + 1]));
+      const pfp = avatars.get(rows[i]);
       top.push({
         rank: top.length + 1,
         name: names.get(rows[i]) ?? 'runner',
         level,
         stars,
+        ...(pfp ? { pfp } : {}),
       });
     }
     let me: BoardRow | null = null;
@@ -117,11 +124,12 @@ const redisStore: Store = {
     }
     return { top, me };
   },
-  async writeScore(id, name, level, stars) {
+  async writeScore(id, name, level, stars, pfp) {
     const [wrote, , rank] = await up([
       ['ZADD', 'board', 'GT', pack(level, stars), id],
       ['HSET', 'names', id, name],
       ['ZREVRANK', 'board', id],
+      ...(pfp ? [['HSET', 'avatars', id, pfp]] : []),
     ]);
     return {
       rank: rank == null ? undefined : Number(rank) + 1,
@@ -134,7 +142,7 @@ const redisStore: Store = {
 };
 
 // in-memory dev board — no disk, no pretense of persistence
-const mem = new Map<string, { name: string; level: number; stars: number }>();
+const mem = new Map<string, { name: string; level: number; stars: number; pfp?: string }>();
 const memRanked = () =>
   [...mem.entries()].sort(
     (a, b) => pack(b[1].level, b[1].stars) - pack(a[1].level, a[1].stars),
@@ -143,7 +151,7 @@ const memStore: Store = {
   async readTop(meId) {
     const top = memRanked()
       .slice(0, 50)
-      .map(([id, e], i) => ({ rank: i + 1, name: e.name, level: e.level, stars: e.stars }));
+      .map(([id, e], i) => ({ rank: i + 1, name: e.name, level: e.level, stars: e.stars, ...(e.pfp ? { pfp: e.pfp } : {}) }));
     let me: BoardRow | null = null;
     if (meId && mem.has(meId)) {
       const idx = memRanked().findIndex(([id]) => id === meId);
@@ -152,13 +160,13 @@ const memStore: Store = {
     }
     return { top, me };
   },
-  async writeScore(id, name, level, stars) {
+  async writeScore(id, name, level, stars, pfp) {
     const prev = mem.get(id);
     if (prev && pack(prev.level, prev.stars) >= pack(level, stars)) {
       const idx = memRanked().findIndex(([i]) => i === id);
       return { rank: idx + 1, name: prev.name, level: prev.level, stars: prev.stars };
     }
-    mem.set(id, { name, level, stars });
+    mem.set(id, { name, level, stars, ...(pfp ? { pfp } : {}) });
     const idx = memRanked().findIndex(([i]) => i === id);
     return { rank: idx + 1, name, level, stars };
   },
@@ -205,6 +213,6 @@ export async function postScore(
       return { code: 400, out: { error: 'bad score' } };
   }
 
-  const row = await store.writeScore(id, name, level, stars);
+  const row = await store.writeScore(id, name, level, stars, sess.pfp);
   return { code: 200, out: { rank: row.rank ?? null, updated: true, ...row } };
 }

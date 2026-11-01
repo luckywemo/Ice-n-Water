@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       ['ZADD', 'board', 'GT', score, id],
       ['HSET', 'names', id, name],
       ['ZREVRANK', 'board', id],
+      ...(s.pfp ? [['HSET', 'avatars', id, s.pfp]] : []),
     ]);
     return res.status(200).json({
       rank: rank == null ? null : Number(rank) + 1,

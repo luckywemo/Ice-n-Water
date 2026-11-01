@@ -48,6 +48,7 @@ export interface BoardRow {
   name: string;
   level: number;
   stars: number;
+  pfp?: string; // verified X avatar — board tiles wear it as their face
 }
 
 export interface Board {
