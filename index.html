@@ -118,8 +118,9 @@
           opacity: 0.6;
         }
       }
-      /* boot splash — the champions key art full-bleed; the OS splash is
-         manifest-background yellow, so the chain reads as one image */
+      /* boot splash — two-frame key-art sequence: the chase art (CSS bg)
+         plays first, then the frozen-bean beat fades over it; the OS splash
+         is manifest-background yellow so the whole chain reads continuous */
       #boot {
         position: fixed;
         inset: 0;
@@ -131,8 +132,46 @@
         justify-content: flex-end;
         gap: 14px;
         padding-bottom: max(7vh, env(safe-area-inset-bottom));
-        box-shadow: inset 0 -32vh 22vh -10vh rgba(10, 20, 35, 0.55);
         font-family: 'Fredoka', sans-serif;
+      }
+      #boot .art2 {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background: url('/keyart2.jpg') center / cover no-repeat;
+        opacity: 0;
+        animation: bootart2 0.9s ease 1.5s forwards;
+      }
+      @keyframes bootart2 {
+        to {
+          opacity: 1;
+        }
+      }
+      /* scrim sits over BOTH frames — text/gate ride above it */
+      #boot::after,
+      .gate::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 40vh;
+        background: linear-gradient(transparent, rgba(10, 20, 35, 0.55));
+        z-index: 1;
+        pointer-events: none;
+      }
+      #boot > :not(.art2),
+      .gate > :not(.art2) {
+        position: relative;
+        z-index: 2;
+      }
+      .gate .art2 {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background: url('/keyart2.jpg') center / cover no-repeat;
+        opacity: 0;
+        animation: bootart2 0.9s ease 1.5s forwards;
       }
       /* the art carries the brand — the icon block stays hidden */
       #boot .mark {
@@ -272,6 +311,7 @@
   </head>
   <body>
     <div id="boot" aria-hidden="true">
+      <div class="art2"></div>
       <img class="mark" src="/icon-192.png" alt="" />
       <div class="word">ICE 'N' WATER</div>
       <div class="bar"></div>

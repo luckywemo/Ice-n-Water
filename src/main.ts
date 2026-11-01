@@ -54,6 +54,10 @@ const boot = () =>
     scene: [TitleScene, GameScene, LobbyScene, NetScene, AdventureScene, DropScene, OutfitScene],
   });
 
+// page-load timestamp — the READY handler below holds #boot until the
+// two-frame art sequence has had its >= 3s on screen
+const bootShownAt = performance.now();
+
 const go = () => {
   const game = boot();
   // debug/tests handle — lets tooling inspect scenes + input state
@@ -86,9 +90,11 @@ const go = () => {
     vv.addEventListener('scroll', sync);
   }
   // drop the boot splash once Phaser is live — covers every scene entry,
-  // including the dev hash jumps below that skip the title screen
+  // including the dev hash jumps below that skip the title screen — but
+  // hold it >= 3s from page start so the two-frame art sequence plays out
   game.events.once(Phaser.Core.Events.READY, () => {
-    document.getElementById('boot')?.remove();
+    const hold = Math.max(0, 3000 - (performance.now() - bootShownAt));
+    setTimeout(() => document.getElementById('boot')?.remove(), hold);
     // dev shortcut — #adventure / #advance:5 / #gamelevel:3 / #lobby.
     // Route through the title scene's own plugin so `start` stops it — a bare
     // game.scene.start leaves the title running behind (its DOM hero leaks).

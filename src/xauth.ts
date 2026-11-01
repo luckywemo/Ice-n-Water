@@ -130,6 +130,7 @@ function gateOverlay(hashErr: string | null): Promise<XSession | null> {
       location.href.split('#')[0],
     )}&sid=${sid}`;
     el.innerHTML = `
+      <div class="art2"></div>
       <img class="mark" src="./icon-192.png" alt="Ice 'N' Water" />
       <div class="word">ICE 'N' WATER</div>
       <div class="gate-msg">sign in with X to play</div>
