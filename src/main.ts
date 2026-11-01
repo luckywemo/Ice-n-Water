@@ -58,6 +58,11 @@ const boot = () =>
 // two-frame art sequence has had its >= 3s on screen
 const bootShownAt = performance.now();
 
+// honest loading % — raises the counter's cap at each real milestone;
+// the page-side ticker drifts toward it, never past it
+const bootPct = (n: number) =>
+  (window as unknown as { __bootPct?: (n: number) => void }).__bootPct?.(n);
+
 const go = () => {
   const game = boot();
   // debug/tests handle — lets tooling inspect scenes + input state
@@ -93,6 +98,7 @@ const go = () => {
   // including the dev hash jumps below that skip the title screen — but
   // hold it >= 3s from page start so the two-frame art sequence plays out
   game.events.once(Phaser.Core.Events.READY, () => {
+    bootPct(100); // engine live — the art hands off
     const hold = Math.max(0, 3000 - (performance.now() - bootShownAt));
     setTimeout(() => document.getElementById('boot')?.remove(), hold);
     // dev shortcut — #adventure / #advance:5 / #gamelevel:3 / #lobby.
@@ -121,21 +127,25 @@ const go = () => {
 // boots silently; a missing one swaps the boot splash for the connect
 // overlay and the promise simply never resolves until sign-in lands.
 // (dev with no api configured passes through — see xauth.ts)
-const start = () =>
+const start = () => {
+  bootPct(15); // fonts landed — past the parse phase
   requireAuth().then((s) => {
     if (s === undefined) return; // unreachable, keeps the type honest
+    bootPct(40); // session resolved (gate path stalls here on purpose)
     // cloud save: pull before scenes read progress, but never let a slow
     // api stall boot — late merges still land in storage for the map
     Promise.race([
       Promise.allSettled([pullProgress(2500), pullProfile(2500)]),
       new Promise((r) => setTimeout(r, 2500)),
     ]).then(() => {
+      bootPct(75); // progression + profile merged (or capped)
       // upload whatever local-only fields remote lacked — converges both
       // directions; fire-and-forget, never gates the menu
       if (s) pushProfile();
       go();
     });
   });
+};
 
 if (document.fonts?.ready) {
   document.fonts.ready.then(start);

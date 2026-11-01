@@ -160,10 +160,24 @@
         z-index: 1;
         pointer-events: none;
       }
-      #boot > :not(.art2),
+      #boot > :not(.art2):not(.pct),
       .gate > :not(.art2) {
         position: relative;
         z-index: 2;
+      }
+      /* boot progress — real milestones drive the number (main.ts calls
+         __bootPct); it never lies past the current stage's cap */
+      #boot .pct {
+        position: absolute;
+        right: max(4vw, calc(env(safe-area-inset-right) + 20px));
+        bottom: max(5vh, calc(env(safe-area-inset-bottom) + 16px));
+        z-index: 2;
+        font-family: 'Titan One', 'Baloo 2', sans-serif;
+        font-size: clamp(40px, 8vh, 64px);
+        color: #ffffff;
+        text-shadow:
+          0 4px 0 #0d3550,
+          0 10px 18px rgba(10, 20, 35, 0.5);
       }
       .gate .art2 {
         position: absolute;
@@ -315,6 +329,7 @@
       <img class="mark" src="/icon-192.png" alt="" />
       <div class="word">ICE 'N' WATER</div>
       <div class="bar"></div>
+      <div class="pct" id="boot-pct"></div>
     </div>
     <div id="rotate-hint">
       <svg class="phone" width="54" height="76" viewBox="0 0 54 76" aria-hidden="true">
@@ -331,6 +346,26 @@
       // PWA install — capture the browser's event early so the rotate
       // screen's button can fire the native sheet (device-themed) on tap.
       window.__bip = null;
+      // boot % — main.ts raises the target at each real milestone; the
+      // shown value drifts up to it (never past) so the number stays
+      // truthful even when a stage stalls on a slow link
+      (() => {
+        let shown = 0,
+          target = 8; // parse+paint is real work already done
+        window.__bootPct = (n) => {
+          target = Math.max(target, n);
+        };
+        const tick = () => {
+          if (!document.getElementById('boot')) return; // boot's over
+          if (shown < target) {
+            shown = Math.min(target, shown + Math.max(0.4, (target - shown) * 0.09));
+            const e = document.getElementById('boot-pct');
+            if (e) e.textContent = Math.round(shown) + '%';
+          }
+          setTimeout(tick, 60);
+        };
+        setTimeout(tick, 120);
+      })();
       const bipChanged = () => dispatchEvent(new Event('bip-change'));
       addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault(); // hold it — our button decides when to ask
