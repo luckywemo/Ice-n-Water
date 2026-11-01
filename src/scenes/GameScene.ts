@@ -487,7 +487,8 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- mechanic intro card ----------
 
-  private introDismiss: (() => void) | null = null;
+  private introDismiss: ((p: Phaser.Input.Pointer) => void) | null = null;
+  private introTapRect = { x: 0, y: 0, w: 0, h: 0 };
 
   private showIntro(card: ReturnType<typeof levelCard>) {
     this.introActive = true;
@@ -812,6 +813,10 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setDepth(1);
+    // the button is the ONLY dismiss — a stray tap or keypress elsewhere
+    // mustn't skip the briefing. Manual screen-space hit test (the HUD
+    // convention here): container-child Zones mis-hit under camera zoom.
+    this.introTapRect = { x: blx - 22, y: bly - 26, w: tap.width + 70, h: 52 };
     add(bl, tap);
 
     const wrap = this.add.container(0, 0, kids).setDepth(45);
@@ -844,9 +849,20 @@ export class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: wrap, alpha: 1, duration: 200 });
     }
 
-    this.introDismiss = () => this.dismissIntro();
+    const zr = this.introTapRect;
+    this.introDismiss = (p: Phaser.Input.Pointer) => {
+      // wrap sits at screen centre with scale hf — local coords → screen px
+      const hf = this.hf;
+      const cx = w / 2 + (zr.x + zr.w / 2) * hf;
+      const cy = h / 2 + (zr.y + zr.h / 2) * hf;
+      if (
+        Math.abs(p.x - cx) <= (zr.w * hf) / 2 + 8 &&
+        Math.abs(p.y - cy) <= (zr.h * hf) / 2 + 8
+      ) {
+        this.dismissIntro();
+      }
+    };
     this.input.on('pointerdown', this.introDismiss);
-    this.input.keyboard?.on('keydown', this.introDismiss);
     this.events.once('shutdown', () => this.dropIntroListeners());
   }
 
