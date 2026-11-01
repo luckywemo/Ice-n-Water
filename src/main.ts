@@ -124,6 +124,33 @@ const go = () => {
   });
   (window as unknown as { __game: Phaser.Game }).__game = game; // e2e/CDP hook
   (window as unknown as { __ui: { promptModal: typeof promptModal } }).__ui = { promptModal }; // e2e modal probe
+
+  // RAF-death watchdog — Phaser's RequestAnimationFrame.step invokes the
+  // frame callback unguarded: one exception anywhere in a frame (scene
+  // update, queue op, render) and the next RAF is never scheduled, yet
+  // `loop.running` still reads true. The game freezes on whatever frame was
+  // last drawn — a dead scene that looks alive. `loop.frame` is the honest
+  // heartbeat: if it stalls while the tab is visible, re-arm the step chain.
+  let lastFrame = 0;
+  window.setInterval(() => {
+    if (document.visibilityState !== 'visible' || !game.isRunning) return;
+    if (game.loop.frame === lastFrame) {
+      const raf = game.loop.raf as unknown as {
+        isRunning: boolean;
+        callback: FrameRequestCallback;
+        isSetTimeOut: boolean;
+        delay: number;
+        start: (cb: FrameRequestCallback, forceTimeout: boolean, delay: number) => void;
+      };
+      // isRunning stays true when the chain died — clear it so start()
+      // doesn't early-return, then re-arm with the params it was born with
+      if (raf.isRunning) {
+        raf.isRunning = false;
+        raf.start(raf.callback, raf.isSetTimeOut, raf.delay);
+      }
+    }
+    lastFrame = game.loop.frame;
+  }, 1500);
 };
 
 // the gate is the point: no verified X session, no game. A stored token

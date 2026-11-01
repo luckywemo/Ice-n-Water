@@ -267,7 +267,6 @@ export class TitleScene extends Phaser.Scene {
 
     const toAdventure = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'adventure');
     };
     const startClassic = () => {
@@ -279,12 +278,10 @@ export class TitleScene extends Phaser.Scene {
     };
     const toOnline = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'lobby');
     };
     const openBoard = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'adventure', { board: true });
     };
 
@@ -671,14 +668,16 @@ export class TitleScene extends Phaser.Scene {
       }
     }
     this.hero3d?.poke(); // little bounce so the swap feels alive
-    sfx.pickup();
   }
 
   private gate(fn: () => void) {
     // modals own the input while open — no nav keys firing behind them
     if (this.promptOpen || this.settingsOpen) return;
     if (!this.started) this.dismissSplash();
-    else fn();
+    else {
+      sfx.uiTap(); // every gated control pops — icons, keys, podium taps
+      fn();
+    }
   }
 
   private buildSplash(
@@ -752,7 +751,10 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private dismissSplash() {
-    if (this.started) return;
+    // isActive: the wall-clock timer can land after this scene was swapped
+    // out (hash jump / fast exit) — revealing the lobby on a dead scene
+    // reaches promptModal with no camera and crashes
+    if (this.started || !this.scene.isActive()) return;
     this.started = true;
     sfx.ensure();
     sfx.pickup();
@@ -1360,10 +1362,12 @@ export class TitleScene extends Phaser.Scene {
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
     this.tweens.killTweensOf(card);
     if (this.settingsOpen) {
+      sfx.uiOpen(); // card pops in
       card.setVisible(true);
       this.cardZones.forEach((z) => (z.input!.enabled = true));
       this.tweens.add({ targets: card, alpha: 1, duration: 160 });
     } else {
+      sfx.uiClose(); // and settles out
       this.cardZones.forEach((z) => (z.input!.enabled = false));
       this.tweens.add({
         targets: card,

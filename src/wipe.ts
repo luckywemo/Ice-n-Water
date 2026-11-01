@@ -16,10 +16,22 @@ export function viaWipe(data: unknown): boolean {
  *  (target restart on mobile viewport churn) can't leave the camera
  *  masked = blank screen. */
 export function clearWipe(scene: Phaser.Scene) {
+  // shutdown-time callers run inside the scene's SHUTDOWN emit — cameras.main
+  // is already gone by then, and a throw here propagates straight into
+  // Phaser's processQueue and wedges the whole scene queue. All of this is
+  // best-effort cleanup; nothing in it is allowed to throw.
+  try {
+    scene.cameras.main?.clearMask();
+  } catch {
+    /* camera manager already torn down */
+  }
   const g = wipes.get(scene);
-  scene.cameras.main.clearMask();
   if (g) {
-    g.destroy();
+    try {
+      g.destroy();
+    } catch {
+      /* display list already dead */
+    }
     wipes.delete(scene);
   }
 }
@@ -48,9 +60,38 @@ export function wipeTo(
     // moveAbove is named from the CALLER's side: it moves the TARGET above
     // this scene — the blade reveals it over the frozen outgoing screen
     moveAbove: true,
-    onUpdate: (p: number) => drawWedge(tgt, p),
+    // drawWedge throws land inside Phaser's unguarded RAF step — one throw
+    // kills the frame loop permanently, so keep the draw itself contained
+    onUpdate: (p: number) => {
+      try {
+        drawWedge(tgt, p);
+      } catch {
+        /* the watchdog revives a stalled loop; a skipped blade frame is cheap */
+      }
+    },
   });
-  if (!started) return false;
+  if (!started) {
+    // refused (target already RUNNING, either side mid-transition, same key)
+    // — a bare start still delivers the scene change. Without this the
+    // caller's screen just sits there forever: the DropScene hang.
+    //
+    // First unlatch two states Phaser can't recover from on its own:
+    // - caller's dead _target: a transition that never completed leaves
+    //   isTransitioning() true → manager.stop refuses this scene forever
+    // - target parked at START..CREATING (2–4): an earlier boot threw
+    //   mid-way; manager.start early-returns on that band and the latched
+    //   isTransition flag makes manager.stop refuse it too
+    const plug = scene.sys.scenePlugin as unknown as { _target: Phaser.Scene | null };
+    if (plug._target) plug._target = null;
+    const st = tgt.sys.settings.status;
+    if (st >= 2 && st <= 4) {
+      tgt.sys.settings.isTransition = false;
+      scene.scene.stop(key);
+    }
+    if (key === scene.scene.key) scene.scene.restart(data);
+    else scene.scene.start(key, data);
+    return true;
+  }
   sfx.swoosh();
   // caller shutdown frees the mask too — normal completion already cleaned it,
   // but a mid-wipe restart (resize, rotation) would leave it stuck half-drawn

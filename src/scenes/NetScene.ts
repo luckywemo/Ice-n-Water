@@ -787,6 +787,7 @@ export class NetScene extends Phaser.Scene {
   }
 
   private leave() {
+    sfx.uiBack();
     this.leaving = true;
     this.st3.hide();
     void this.room?.leave();
