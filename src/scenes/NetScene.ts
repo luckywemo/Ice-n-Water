@@ -158,6 +158,7 @@ export class NetScene extends Phaser.Scene {
       const p = loadPicks();
       this.st3.setView(p.camView);
       this.st3.setRange(p.camRange);
+      this.st3.setFacing(p.camFacing);
     }
     // the server simulates in the classic landscape arena — keep that pixel
     // space so positions line up, and stretch-map it onto the 3D pitch
@@ -464,6 +465,8 @@ export class NetScene extends Phaser.Scene {
     }
 
     // remotes — lerp toward server position + frozen overlays
+    const myTeam = s.players?.get(this.room.sessionId)?.team;
+    let dangerNear = 0;
     for (const [id, r] of this.remotes) {
       const p = s.players?.get(id);
       if (!p) continue;
@@ -473,6 +476,14 @@ export class NetScene extends Phaser.Scene {
       r.sprite.x += (r.targetX - r.sprite.x) * Math.min(1, 12 * dt);
       r.sprite.y += (r.targetY - r.sprite.y) * Math.min(1, 12 * dt);
       r.sprite.rotation = Phaser.Math.Angle.RotateTo(r.sprite.rotation, r.targetAngle, 10 * dt);
+      // nearest live hunter → camera danger pull-back (skipped when I hunt)
+      if (myTeam !== 'ice' && p.team === 'ice' && !p.out) {
+        const d = Phaser.Math.Distance.Between(this.me.x, this.me.y, r.sprite.x, r.sprite.y);
+        dangerNear = Math.max(
+          dangerNear,
+          Phaser.Math.Clamp(1 - (d - 60) / (CONFIG.heartbeat.radius - 60), 0, 1),
+        );
+      }
       const lp = this.st3.project(r.sprite.x, r.sprite.y, 2.1);
       r.label.setScrollFactor(0).setDepth(40).setPosition(lp.x, lp.y);
       // team flip live (infection conversion) — swap the bean's coat
@@ -494,7 +505,11 @@ export class NetScene extends Phaser.Scene {
         (r.targetX - r.sprite.x) * 12, (r.targetY - r.sprite.y) * 12, p.out,
       );
     }
-    this.st3.render(dt, this.me.x, this.me.y);
+    this.st3.render(dt, {
+      fx: this.me.x, fy: this.me.y, vx: v.x, vy: v.y,
+      spectate: frozen,
+      danger: frozen ? 0 : dangerNear,
+    });
     this.drawMinimap();
 
     // ── HUD ──────────────────────────────────────────────────

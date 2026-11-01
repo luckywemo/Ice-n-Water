@@ -299,7 +299,7 @@ export function buildWorld(scene: THREE.Scene): World {
 
   // ---- perimeter walls (segments with corner gaps like the refs)
   const wallMat = concrete();
-  const wallH = 1.15, wallT = .5;
+  const wallH = 2.1, wallT = .5; // >1.9u sprite — beans can't peek over at low cam angles
   const mkWall = (x: number, z: number, w: number, d: number) => {
     const m = box(w, wallH, d, wallMat, x, wallH / 2, z);
     m.receiveShadow = true;
@@ -531,8 +531,8 @@ export function buildSchool(scene: THREE.Scene): World {
   const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8dcbd, roughness: .95 });
   const stripMat = new THREE.MeshStandardMaterial({ color: 0x6fa8c8, roughness: .85 });
   const mkWall = (x: number, z: number, w: number, d: number) => {
-    add(box(w, 1.3, d, wallMat, x, .65, z));
-    add(box(w === .5 ? .56 : w, .16, d === .5 ? .56 : d, stripMat, x, 1.34, z, false));
+    add(box(w, 2.0, d, wallMat, x, 1.0, z));
+    add(box(w === .5 ? .56 : w, .16, d === .5 ? .56 : d, stripMat, x, 2.04, z, false));
   };
   mkWall(0, -gz, PITCH_W + 2.4, .5);
   mkWall(0, gz, PITCH_W + 2.4, .5);

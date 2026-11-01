@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL, CamFacing, CAM_FACE_ORDER, CAM_FACE_LABEL } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { session } from '../xauth';
@@ -41,8 +41,10 @@ export class TitleScene extends Phaser.Scene {
   private hints = true; // key-hint chrome — Settings › GAME › Key hints
   private camView: CamView = 'classic'; // 3D cam preset — Settings › GAME › View
   private camRange = 100;               // distance stepper % — Settings › GAME › Range
+  private camFacing: CamFacing = 'view';// heading-chase toggle — Settings › GAME › Facing
   private camViewVal?: Phaser.GameObjects.Text;
   private camRangeVal?: Phaser.GameObjects.Text;
+  private camFaceVal?: Phaser.GameObjects.Text;
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
@@ -194,6 +196,7 @@ export class TitleScene extends Phaser.Scene {
     this.hints = picks.hints;
     this.camView = picks.camView;
     this.camRange = picks.camRange;
+    this.camFacing = picks.camFacing;
     this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
@@ -254,7 +257,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
+      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange, this.camFacing);
       wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
     const toOnline = () => {
@@ -766,7 +769,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 568 : 692; // View + Range rows added two slots; desktop also fits Key hints
+    const H = isTouch ? 614 : 738; // View + Range + Facing rows; desktop also fits Key hints
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -1025,6 +1028,12 @@ export class TitleScene extends Phaser.Scene {
       this.camRange = Math.min(160, Math.max(70, this.camRange + dir * 10));
       this.refreshPicks();
     });
+    y += 46;
+    this.camFaceVal = selector(y, 'Facing', () => CAM_FACE_LABEL[this.camFacing], (dir) => {
+      const i = CAM_FACE_ORDER.indexOf(this.camFacing);
+      this.camFacing = CAM_FACE_ORDER[(i + dir + CAM_FACE_ORDER.length) % CAM_FACE_ORDER.length];
+      this.refreshPicks();
+    });
     if (!isTouch) {
       // desktop-only row — there are no keys to hint on touch
       y += 46;
@@ -1173,7 +1182,8 @@ export class TitleScene extends Phaser.Scene {
     this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
     this.camViewVal?.setText(CAM_LABEL[this.camView]);
     this.camRangeVal?.setText(`${this.camRange}%`);
-    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
+    this.camFaceVal?.setText(CAM_FACE_LABEL[this.camFacing]);
+    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange, this.camFacing);
     this.settingsFoot?.setVisible(keyHintsOn());
   }
 }

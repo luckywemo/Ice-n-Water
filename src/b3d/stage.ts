@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { makeBean, animBean, setFrozen, ensureEnv, emoteTexture, type Bean, type Bean3DModel } from './bean';
 import { buildWorld, buildSchool, updateWorld, disposeWorld, type World, type MapId } from './world';
 import { clamp, lerp, pick } from './util';
-import type { CamView } from '../meta';
+import type { CamView, CamFacing } from '../meta';
 
 const SCALE = 44;          // px per world unit — arena ~1619x2411 on street
 const PROP_COLS = [0x8a5a2a, 0x5d6b73, 0x1c1c1e, 0x74563c];
@@ -19,6 +19,14 @@ const CAM_PRESETS: Record<CamView, { dist: number; height: number; fov: number }
   classic: { dist: 13, height: 9.5, fov: 50 },  // the chase cam
   wide: { dist: 20, height: 17.5, fov: 48 },    // near top-down — the old 2D read
 };
+
+/** follow target + feel modifiers the scene feeds the camera each frame */
+interface CamFollow {
+  fx: number; fy: number;      // phaser px — the followed entity
+  vx?: number; vy?: number;    // px/s — drives lead, FOV kick, heading-chase
+  spectate?: boolean;          // frozen → high & wide rescue view
+  danger?: number;             // 0–1 hunter proximity → pull-back
+}
 
 interface Ent3D {
   root: THREE.Group;
@@ -83,6 +91,8 @@ export class PitchStage {
   private camDist = 1;
   private camView: CamView = 'classic'; // Settings › GAME › View preset
   private camRange = 1;                 // Settings › GAME › Range (0.7–1.6)
+  private camFacing: CamFacing = 'view';// Settings › GAME › Facing
+  private orbitHold = 0;                // free-look seconds left after a drag
   private camX = 0; private camZ = 0;
   private shakeT = 0; private shakeAmp = 0;
   // NEPA / rain
@@ -448,13 +458,27 @@ export class PitchStage {
 
   // ---------- camera ----------
   orbit(dx: number, dy: number) {
-    this.camYaw = clamp(this.camYaw - dx * .005, -1.2, 1.2);
+    this.camYaw -= dx * .005;
+    if (this.autoFace) {
+      // GTA-style free-look — yaw wraps around; the chase re-captures it
+      // once the hold runs out
+      this.orbitHold = 1.4;
+      while (this.camYaw > Math.PI) this.camYaw -= Math.PI * 2;
+      while (this.camYaw < -Math.PI) this.camYaw += Math.PI * 2;
+    } else {
+      this.camYaw = clamp(this.camYaw, -1.2, 1.2);
+    }
     this.camPitch = clamp(this.camPitch + dy * .004, .6, 1.5);
   }
   zoomBy(d: number) { this.camDist = clamp(this.camDist + d * .002, .7, 1.6); }
-  resetOrbit() { this.camYaw = 0; this.camPitch = 1; this.camDist = 1; }
+  resetOrbit() { this.camYaw = 0; this.camPitch = 1; this.camDist = 1; this.orbitHold = 0; }
   setView(v: CamView) { this.camView = v; }          // preset swap — fov eases over in updateCam
   setRange(pct: number) { this.camRange = clamp(pct / 100, .7, 1.6); }
+  setFacing(f: CamFacing) { this.camFacing = f; }
+  /** heading-chase active? 'view' = only on the shoulder preset */
+  private get autoFace() {
+    return this.camFacing === 'auto' || (this.camFacing === 'view' && this.camView === 'third');
+  }
 
   /** screen-space intent (px) → camera-relative: "up" is always up-screen
    *  even after orbiting. Same formula in phaser-px space since +px→+X, +py→+Z */
@@ -466,18 +490,39 @@ export class PitchStage {
 
   private camTarget = new THREE.Vector3();
   private camPos = new THREE.Vector3();
-  private updateCam(dt: number, fx: number, fy: number) {
-    const tx = this.toWX(fx), tz = this.toWZ(fy);
+  private updateCam(dt: number, o: CamFollow) {
+    const speed = Math.hypot(o.vx ?? 0, o.vy ?? 0);
+    // heading-chase — the cam lazily trails behind the travel direction, so
+    // up-screen ≈ where you're running. Pauses while you free-look (orbitHold)
+    // and while you're too slow to have a heading.
+    if (this.autoFace) {
+      if (this.orbitHold > 0) this.orbitHold -= dt;
+      else if (speed > 40) {
+        let d = Math.atan2(-(o.vx ?? 0), -(o.vy ?? 0)) - this.camYaw; // seat the cam behind travel
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        this.camYaw += d * Math.min(1, dt * 2.6);
+        while (this.camYaw > Math.PI) this.camYaw -= Math.PI * 2;
+        while (this.camYaw < -Math.PI) this.camYaw += Math.PI * 2;
+      }
+    }
+    const tx = this.toWX(o.fx), tz = this.toWZ(o.fy);
     const yaw = this.camYaw, pitch = this.camPitch;
     const p = CAM_PRESETS[this.camView];
-    const dist = p.dist * this.camDist * this.camRange, h = p.height * pitch;
+    let dist = p.dist * this.camDist * this.camRange;
+    let h = p.height * pitch;
+    // danger pull-back — a closing hunter leans the frame out, zero HUD needed
+    dist *= 1 + (o.danger ?? 0) * 0.3;
+    // spectate — iced players watch the rescue from higher & wider
+    if (o.spectate) { dist *= 1.5; h *= 1.3; }
     this.camPos.set(
       tx + Math.sin(yaw) * dist,
       h,
       tz + Math.cos(yaw) * dist);
-    // ease the fov toward the active preset — a hard jump on swap reads as a pop
-    if (Math.abs(this.camera.fov - p.fov) > 0.05) {
-      this.camera.fov += (p.fov - this.camera.fov) * Math.min(1, dt * 6);
+    // fov = preset + sprint kick (full +6° at sprint speed), eased
+    const fovT = p.fov + clamp((speed - 210) / 80, 0, 1) * 6;
+    if (Math.abs(this.camera.fov - fovT) > 0.05) {
+      this.camera.fov += (fovT - this.camera.fov) * Math.min(1, dt * 6);
       this.camera.updateProjectionMatrix();
     }
     if (this.shakeT > 0) {
@@ -487,7 +532,12 @@ export class PitchStage {
       this.camPos.y += (Math.random() - .5) * s * .6;
     }
     this.camera.position.lerp(this.camPos, Math.min(1, dt * 8));
-    this.camTarget.set(tx, 1, tz);
+    // look-ahead — the gaze leads velocity (≤4u) so you see ahead, not behind;
+    // scales to zero at rest or it'd stare at empty pitch
+    const lead = Math.min(4, (speed / SCALE) * 0.6);
+    const lx = speed > 40 ? ((o.vx ?? 0) / speed) * lead : 0;
+    const lz = speed > 40 ? ((o.vy ?? 0) / speed) * lead : 0;
+    this.camTarget.set(tx + lx, 1, tz + lz);
     this.camera.lookAt(this.camTarget);
   }
 
@@ -502,7 +552,7 @@ export class PitchStage {
   }
 
   // ---------- per-frame ----------
-  render(dt: number, followX?: number, followY?: number) {
+  render(dt: number, follow?: CamFollow) {
     if (this.world) updateWorld(this.world, dt);
     const t = performance.now() / 1000;
     for (const e of this.ents.values()) {
@@ -562,7 +612,7 @@ export class PitchStage {
       }
       pos.needsUpdate = true;
     }
-    if (followX !== undefined && followY !== undefined) this.updateCam(dt, followX, followY);
+    if (follow) this.updateCam(dt, follow);
     this.renderer.render(this.scene, this.camera);
   }
 }

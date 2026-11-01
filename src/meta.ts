@@ -18,6 +18,16 @@ export const CAM_LABEL: Record<CamView, string> = {
   classic: 'CLASSIC',
   wide: 'WIDE',
 };
+// heading-chase toggle — 'view' lets the preset decide (3RD PERSON chases
+// your travel dir, CLASSIC/WIDE keep north locked); AUTO forces the chase
+// on, LOCKED kills it everywhere
+export type CamFacing = 'view' | 'auto' | 'locked';
+export const CAM_FACE_ORDER: CamFacing[] = ['view', 'auto', 'locked'];
+export const CAM_FACE_LABEL: Record<CamFacing, string> = {
+  view: 'PER VIEW',
+  auto: 'AUTO',
+  locked: 'LOCKED',
+};
 // the FPS pick also carries the coat preset — low is trimmed+thin+cheap,
 // high is shaggy+plush+pricier. Balanced values are the reference look.
 export interface FurQuality {
@@ -92,6 +102,7 @@ export function loadPicks(): {
   hints: boolean;
   camView: CamView;
   camRange: number;
+  camFacing: CamFacing;
 } {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
@@ -107,12 +118,13 @@ export function loadPicks(): {
           typeof p.camRange === 'number'
             ? Math.min(160, Math.max(70, Math.round(p.camRange)))
             : 100,
+        camFacing: CAM_FACE_ORDER.includes(p.camFacing) ? p.camFacing : 'view',
       };
     }
   } catch {
     /* fall through */
   }
-  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true, camView: 'classic', camRange: 100 };
+  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true, camView: 'classic', camRange: 100, camFacing: 'view' };
 }
 
 export function savePicks(
@@ -122,9 +134,10 @@ export function savePicks(
   hints = true,
   camView: CamView = 'classic',
   camRange = 100,
+  camFacing: CamFacing = 'view',
 ) {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints, camView, camRange }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints, camView, camRange, camFacing }));
   } catch {
     /* fine */
   }

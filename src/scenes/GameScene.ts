@@ -189,6 +189,7 @@ export class GameScene extends Phaser.Scene {
   // the 3D stage — playground renders in Three.js behind the UI canvas;
   // everything below stays authoritative Phaser pixels
   private st3 = PitchStage.get();
+  private camDanger = 0; // nearest-hunter proximity 0–1 → camera pull-back
   private stEnt = new Map<Sprite, number>();
   private stPickup = new Map<Sprite, number>();
   private stObstacles: { x: number; y: number; r: number }[] = [];
@@ -316,6 +317,7 @@ export class GameScene extends Phaser.Scene {
       const p = loadPicks();
       this.st3.setView(p.camView);
       this.st3.setRange(p.camRange);
+      this.st3.setFacing(p.camFacing);
     }
     this.st3.nepa(false);
     this.st3.rain(false);
@@ -677,7 +679,20 @@ export class GameScene extends Phaser.Scene {
       const v = (this.bus.body as Body).velocity;
       st.setBus(this.bus.x, this.bus.y, Math.atan2(v.y, v.x) - Math.PI / 2);
     }
-    st.render(delta / 1000, this.player?.x, this.player?.y);
+    const pv = (this.player?.body as Body | undefined)?.velocity;
+    st.render(
+      delta / 1000,
+      this.player
+        ? {
+            fx: this.player.x,
+            fy: this.player.y,
+            vx: pv?.x ?? 0,
+            vy: pv?.y ?? 0,
+            spectate: !!this.rState.get(this.player)?.frozen,
+            danger: this.camDanger,
+          }
+        : undefined,
+    );
   }
 
   private lit<T extends Phaser.GameObjects.GameObject>(obj: T): T {
@@ -2262,6 +2277,7 @@ export class GameScene extends Phaser.Scene {
 
     const { radius, minMs, maxMs } = CONFIG.heartbeat;
     const danger = st.frozen ? 1 : Phaser.Math.Clamp(1 - (dist - 60) / (radius - 60), 0, 1);
+    this.camDanger = st.frozen ? 0 : danger; // camera pull-back — spectate owns the iced view
     this.vignette.setAlpha(danger * 0.75);
 
     if (danger > 0.25 && this.time.now >= this.nextThumpAt) {
