@@ -293,6 +293,11 @@ export class NetScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.scale.off('resize', this.relayout, this));
     // any exit drops the 3D layer — re-shown on the next match's create()
     this.events.once('shutdown', () => this.st3.hide());
+    // kill the reconnect loop too — it awaits up to ~24s of setTimeouts and
+    // would keep re-registering rooms + writing banners into a stopped scene
+    this.events.once('shutdown', () => {
+      this.leaving = true;
+    });
     this.input.on('pointerdown', this.onEndTap, this);
     this.events.once('shutdown', () => this.input.off('pointerdown', this.onEndTap, this));
 

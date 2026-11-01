@@ -4,7 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { fitZoom } from '../mobile';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality, loadPicks } from '../meta';
@@ -124,6 +124,7 @@ export class AdventureScene extends Phaser.Scene {
 
   create(data?: { board?: boolean; advance?: number }) {
     const { width, height } = this.scale;
+    clearWipe(this); // a stale blade mask from an interrupted wipe = blank screen
     makeTextures(this);
     this.prog = adventureProgress();
     this.boardLayer = null; // scene instance persists across restarts
@@ -157,15 +158,22 @@ export class AdventureScene extends Phaser.Scene {
     // center-crops. Same approach as the lobby: restart on real resizes.
     let lastW = width;
     let lastH = height;
+    const createdAt = this.time.now;
     const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
-      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
-        lastW = sz.width;
-        lastH = sz.height;
+      // fresh scene: mobile URL-bar churn during the blade reveal would
+      // restart mid-wipe and strand the camera mask — absorb it instead
+      const fresh = this.time.now - createdAt < 450;
+      if (
+        !fresh &&
+        (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24)
+      ) {
         this.scene.restart();
       }
+      lastW = sz.width;
+      lastH = sz.height;
     };
     this.scale.on('resize', onResize);
     // scale listeners are global — they survive restarts; detach on shutdown

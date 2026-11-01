@@ -11,6 +11,19 @@ export function viaWipe(data: unknown): boolean {
   return !!(data as { iwWipe?: boolean } | undefined)?.iwWipe;
 }
 
+/** clear a blade mask off a scene's camera + free the mask graphics —
+ *  safe anytime. Scene entry calls this so a wipe interrupted mid-draw
+ *  (target restart on mobile viewport churn) can't leave the camera
+ *  masked = blank screen. */
+export function clearWipe(scene: Phaser.Scene) {
+  const g = wipes.get(scene);
+  scene.cameras.main.clearMask();
+  if (g) {
+    g.destroy();
+    wipes.delete(scene);
+  }
+}
+
 /**
  * The house scene change — a Fall Guys-style diagonal blade reveal. The
  * target scene boots on top of this one under a geometry mask and a hard "/"
@@ -41,25 +54,27 @@ export function wipeTo(
   sfx.swoosh();
   // caller shutdown frees the mask too — normal completion already cleaned it,
   // but a mid-wipe restart (resize, rotation) would leave it stuck half-drawn
-  scene.events.once('shutdown', () => cleanupWipe(tgt));
+  scene.events.once('shutdown', () => clearWipe(tgt));
+  // same on the TARGET side: a restart (mobile resize/orientation churn)
+  // destroys its display list — without this the fresh create inherits a
+  // half-drawn blade mask and the screen reads blank
+  tgt.events.once('shutdown', () => clearWipe(tgt));
   return true;
-}
-
-function cleanupWipe(tgt: Phaser.Scene) {
-  const g = wipes.get(tgt);
-  if (!g) return;
-  tgt.cameras.main.clearMask();
-  g.destroy();
-  wipes.delete(tgt);
 }
 
 function drawWedge(tgt: Phaser.Scene, p: number) {
   if (p >= 1) {
-    cleanupWipe(tgt);
+    clearWipe(tgt);
     return;
   }
   const cam = tgt.cameras.main;
-  const g = wipes.get(tgt);
+  let g = wipes.get(tgt);
+  // a target that restarted between draws leaves its graphics orphaned —
+  // drop it and rebuild rather than keep masking against a dead object
+  if (g && !g.displayList) {
+    clearWipe(tgt);
+    g = undefined;
+  }
   // scrollFactor(0): the mask is evaluated in screen space, not through the
   // camera — drawing in worldView coords would under/over-cover whenever the
   // target is zoomed (mobile boost) or scrolled (the map's rail)

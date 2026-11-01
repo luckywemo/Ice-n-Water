@@ -9,7 +9,7 @@ import { loadPicks } from '../meta';
 import { pushProfile } from '../cloudsave';
 import { keyHintsOn } from '../mobile';
 import { authTicket } from '../xauth';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
 
 type LobbyPlayer = {
   name: string;
@@ -51,6 +51,7 @@ export class LobbyScene extends Phaser.Scene {
 
   create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
+    clearWipe(this); // same self-restart risk as the road — clear a stale blade mask
     makeTextures(this);
     this.room = null;
     this.lobbyPhase = 'menu';

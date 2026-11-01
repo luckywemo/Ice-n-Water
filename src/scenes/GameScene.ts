@@ -1874,7 +1874,12 @@ export class GameScene extends Phaser.Scene {
       );
     } else {
       this.st3.hide(); // leaving the playground — drop the 3D layer
-      wipeTo(this, key);
+      // refused transitions (bad key, in-progress move) must not strand the
+      // latch with the stage already hidden
+      if (!wipeTo(this, key)) {
+        this.transitioning = false;
+        this.st3.show();
+      }
     }
   }
 
@@ -1884,7 +1889,10 @@ export class GameScene extends Phaser.Scene {
     this.st3.hide(); // leaving the playground — drop the 3D layer
     // back to the road first — the map marches the marker to the next stop,
     // and the player taps the next node (PLAY) to actually enter the level
-    wipeTo(this, 'adventure', { advance: this.level.n });
+    if (!wipeTo(this, 'adventure', { advance: this.level.n })) {
+      this.transitioning = false;
+      this.st3.show();
+    }
   }
 
   private spawnReinforcement() {

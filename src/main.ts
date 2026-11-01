@@ -35,7 +35,9 @@ const boot = () =>
     type: Phaser.AUTO,
     width: CONFIG.view.width,
     height: CONFIG.view.height,
-    parent: document.body,
+    // game-root's client box is the safe area — RESIZE therefore fits the
+    // canvas inside notch/island insets instead of spilling under them
+    parent: document.getElementById('game-root') ?? document.body,
     transparent: true, // the 3D stage canvas shows through in match scenes
     physics: {
       default: 'arcade',
@@ -82,15 +84,16 @@ const go = () => {
   // height directly, which emits Phaser's own resize event, so scene restart
   // logic runs as usual (and the textInputFocused keyboard guard still holds).
   const vv = window.visualViewport;
+  const root = document.getElementById('game-root') ?? document.body;
+  const sync = () => {
+    // measure the safe-area box, not the raw viewport — body padding keeps
+    // the game clear of the island/home-bar zones
+    const w = root.clientWidth;
+    const h = root.clientHeight;
+    const cur = game.scale.gameSize;
+    if (cur.width !== w || cur.height !== h) game.scale.resize(w, h);
+  };
   if (vv) {
-    const sync = () => {
-      // vv dims are already CSS px of the visible area; scale ≈ pinch zoom.
-      // resize() only emits when the size actually changes — no-op on desktop.
-      const w = Math.round(vv.width * vv.scale);
-      const h = Math.round(vv.height * vv.scale);
-      const cur = game.scale.gameSize;
-      if (cur.width !== w || cur.height !== h) game.scale.resize(w, h);
-    };
     vv.addEventListener('resize', sync);
     vv.addEventListener('scroll', sync);
   }

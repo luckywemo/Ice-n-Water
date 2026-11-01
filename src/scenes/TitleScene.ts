@@ -25,7 +25,7 @@ import {
 } from '../fgui';
 import { Hero3D } from '../hero3d';
 import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
 
 const sfx = Sfx.inst;
 
@@ -189,6 +189,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
+    clearWipe(this); // a stale blade mask from an interrupted wipe = blank screen
     makeTextures(this);
     const fromWipe = viaWipe(data);
     const picks = loadPicks();
@@ -232,15 +233,22 @@ export class TitleScene extends Phaser.Scene {
     const visB = vh / 2 + height / (2 * stageZoom);
     let lastW = width;
     let lastH = height;
+    const createdAt = this.time.now;
     const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
-      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
-        lastW = sz.width;
-        lastH = sz.height;
+      // fresh scene: mobile URL-bar churn during the blade reveal would
+      // restart mid-wipe and strand the camera mask — absorb it instead
+      const fresh = this.time.now - createdAt < 450;
+      if (
+        !fresh &&
+        (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24)
+      ) {
         this.scene.restart();
       }
+      lastW = sz.width;
+      lastH = sz.height;
     };
     // ScaleManager is game-level — it outlives this scene, so the listener
     // must be removed on shutdown or every lobby visit stacks another copy
@@ -735,8 +743,12 @@ export class TitleScene extends Phaser.Scene {
     c.add(z);
     this.splash = c;
     // wall-clock dismiss — the scene timer stalls when the RAF loop panics
-    // on big deltas (background tabs), setTimeout doesn't
-    window.setTimeout(() => this.dismissSplash(), REDUCED_MOTION ? 1000 : 2400);
+    // on big deltas (background tabs), setTimeout doesn't. Guard the splash
+    // identity: a resize-restart replaces it and this zombie must not kill
+    // the fresh one early
+    window.setTimeout(() => {
+      if (this.splash === c) this.dismissSplash();
+    }, REDUCED_MOTION ? 1000 : 2400);
   }
 
   private dismissSplash() {

@@ -103,12 +103,14 @@ export class PitchStage {
   private torch: THREE.PointLight | null = null;
   private torchX = 0; private torchZ = 0;
   private rainPts: THREE.Points | null = null;
+  private viewW = innerWidth; private viewH = innerHeight; // canvas box for project()
 
   private constructor() {
     this.canvas = document.createElement('canvas');
     this.canvas.id = 'stage3d';
-    this.canvas.style.cssText =
-      'position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:none;';
+    // sized + positioned in resize() from the game-root box (canvas is a
+    // replaced element — env insets alone can't stretch it)
+    this.canvas.style.cssText = 'position:fixed;z-index:0;display:none;';
     document.body.prepend(this.canvas); // behind the Phaser canvas
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -121,13 +123,25 @@ export class PitchStage {
     this.camera = new THREE.PerspectiveCamera(50, 1, .1, 300);
     ensureEnv(this.renderer, this.scene);
     window.addEventListener('resize', () => this.resize());
+    // mobile toolbar moves only the VISUAL viewport (window.resize silent)
+    window.visualViewport?.addEventListener('resize', () => this.resize());
     this.resize();
   }
 
   show() { this.canvas.style.display = 'block'; this.resize(); }
   hide() { this.canvas.style.display = 'none'; }
   resize() {
-    const w = innerWidth, h = innerHeight;
+    // the Phaser canvas fills game-root (the safe-area box) — track that
+    // rect exactly so the 3D layer stays pixel-aligned under it
+    const box = document.getElementById('game-root')?.getBoundingClientRect();
+    const w = box?.width || innerWidth;
+    const h = box?.height || innerHeight;
+    this.canvas.style.left = `${box?.left ?? 0}px`;
+    this.canvas.style.top = `${box?.top ?? 0}px`;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.viewW = w;
+    this.viewH = h;
     this.renderer.setSize(w, h, false);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
     this.camera.aspect = w / h;
@@ -548,8 +562,8 @@ export class PitchStage {
   project(px: number, py: number, h = 1.6): { x: number; y: number } {
     this.projV.set(this.toWX(px), h, this.toWZ(py)).project(this.camera);
     return {
-      x: (this.projV.x * .5 + .5) * innerWidth,
-      y: (-this.projV.y * .5 + .5) * innerHeight,
+      x: (this.projV.x * .5 + .5) * this.viewW,
+      y: (-this.projV.y * .5 + .5) * this.viewH,
     };
   }
 
