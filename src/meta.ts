@@ -9,6 +9,15 @@ export type PerfMode = 'low' | 'balanced' | 'high';
 export const PERF_MS: Record<PerfMode, number> = { low: 66, balanced: 33, high: 16 };
 export const PERF_ORDER: PerfMode[] = ['low', 'balanced', 'high'];
 export const PERF_LABEL: Record<PerfMode, string> = { low: '15 FPS', balanced: '30 FPS', high: '60 FPS' };
+// 3D playground camera rig — the view sets the base offset/fov, Range is a
+// 70–160% distance stepper layered on top
+export type CamView = 'third' | 'classic' | 'wide';
+export const CAM_ORDER: CamView[] = ['third', 'classic', 'wide'];
+export const CAM_LABEL: Record<CamView, string> = {
+  third: '3RD PERSON',
+  classic: 'CLASSIC',
+  wide: 'WIDE',
+};
 // the FPS pick also carries the coat preset — low is trimmed+thin+cheap,
 // high is shaggy+plush+pricier. Balanced values are the reference look.
 export interface FurQuality {
@@ -88,7 +97,14 @@ export function storeStats(s: Stats): void {
   }
 }
 
-export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfMode; hints: boolean } {
+export function loadPicks(): {
+  difficulty: Difficulty;
+  joy: JoyMode;
+  perf: PerfMode;
+  hints: boolean;
+  camView: CamView;
+  camRange: number;
+} {
   try {
     const raw = localStorage.getItem(PICKS_KEY);
     if (raw) {
@@ -98,12 +114,17 @@ export function loadPicks(): { difficulty: Difficulty; joy: JoyMode; perf: PerfM
         joy: p.joy === 'sticky' ? 'sticky' : 'floating',
         perf: PERF_ORDER.includes(p.perf) ? p.perf : 'balanced',
         hints: p.hints !== false, // on by default — the settings toggle writes false
+        camView: CAM_ORDER.includes(p.camView) ? p.camView : 'classic',
+        camRange:
+          typeof p.camRange === 'number'
+            ? Math.min(160, Math.max(70, Math.round(p.camRange)))
+            : 100,
       };
     }
   } catch {
     /* fall through */
   }
-  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true };
+  return { difficulty: 'normal', joy: 'floating', perf: 'balanced', hints: true, camView: 'classic', camRange: 100 };
 }
 
 export function savePicks(
@@ -111,9 +132,11 @@ export function savePicks(
   joy: JoyMode = 'floating',
   perf: PerfMode = 'balanced',
   hints = true,
+  camView: CamView = 'classic',
+  camRange = 100,
 ) {
   try {
-    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints }));
+    localStorage.setItem(PICKS_KEY, JSON.stringify({ difficulty, joy, perf, hints, camView, camRange }));
   } catch {
     /* fine */
   }

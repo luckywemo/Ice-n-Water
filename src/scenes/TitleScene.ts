@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { pushProfile } from '../cloudsave';
@@ -40,6 +40,10 @@ export class TitleScene extends Phaser.Scene {
   private joy: JoyMode = 'floating';
   private perf: PerfMode = 'balanced';
   private hints = true; // key-hint chrome — Settings › GAME › Key hints
+  private camView: CamView = 'classic'; // 3D cam preset — Settings › GAME › View
+  private camRange = 100;               // distance stepper % — Settings › GAME › Range
+  private camViewVal?: Phaser.GameObjects.Text;
+  private camRangeVal?: Phaser.GameObjects.Text;
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
@@ -190,6 +194,8 @@ export class TitleScene extends Phaser.Scene {
     this.joy = picks.joy;
     this.perf = picks.perf;
     this.hints = picks.hints;
+    this.camView = picks.camView;
+    this.camRange = picks.camRange;
     this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
@@ -256,7 +262,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy, this.perf, this.hints);
+      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
       pushProfile();
       wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
@@ -379,8 +385,9 @@ export class TitleScene extends Phaser.Scene {
       .setStroke('#0d3550', 4);
 
     // --- ROAD PROGRESS (their season-progress block) ---
+    // label left edge pinned to the badge's right tip — the marked point
     this.add
-      .text(visL + 58, visT + 282, 'ROAD PROGRESS', {
+      .text(visL + 110, visT + 282, 'ROAD PROGRESS', {
         fontFamily: FG_BODY,
         fontSize: '15px',
         fontStyle: '800',
@@ -681,7 +688,7 @@ export class TitleScene extends Phaser.Scene {
         { text: 'ICE', fx: 'ice', size: 62 },
         { text: "'N'", fx: 'plain', size: 36 },
       ],
-      vh * 0.3,
+      vh * 0.37,
       extrude,
       now + 200,
       51,
@@ -690,7 +697,7 @@ export class TitleScene extends Phaser.Scene {
     row1.place(vw / 2 - row1.width / 2);
     const row2 = this.buildLetters(
       [{ text: 'WATER', fx: 'water', size: 78 }],
-      vh * 0.44,
+      vh * 0.51,
       extrude,
       now + 400,
       51,
@@ -704,7 +711,7 @@ export class TitleScene extends Phaser.Scene {
     row2.drop(350);
 
     const tag = this.add
-      .text(vw / 2, vh * 0.55, 'the playground chase game', {
+      .text(vw / 2, vh * 0.62, 'the playground chase game', {
         fontFamily: FG_BODY,
         fontSize: '22px',
         fontStyle: '800',
@@ -714,10 +721,6 @@ export class TitleScene extends Phaser.Scene {
       .setDepth(51)
       .setStroke('#8a6200', 4);
     c.add(tag);
-
-    const dots = this.add.graphics().setDepth(51);
-    for (let i = 0; i < 3; i++) dots.fillStyle(0xffffff, 0.9).fillCircle(vw / 2 - 18 + i * 18, vh * 0.62, 4);
-    c.add(dots);
 
     // timed intro — a few seconds, then the lobby reveals itself (tap skips)
     const z = this.add
@@ -1028,6 +1031,17 @@ export class TitleScene extends Phaser.Scene {
       this.perf = PERF_ORDER[(i + dir + PERF_ORDER.length) % PERF_ORDER.length];
       this.heroMs = PERF_MS[this.perf];
       if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
+      this.refreshPicks();
+    });
+    y += 46;
+    this.camViewVal = selector(y, 'View', () => CAM_LABEL[this.camView], (dir) => {
+      const i = CAM_ORDER.indexOf(this.camView);
+      this.camView = CAM_ORDER[(i + dir + CAM_ORDER.length) % CAM_ORDER.length];
+      this.refreshPicks();
+    });
+    y += 46;
+    this.camRangeVal = selector(y, 'Range', () => `${this.camRange}%`, (dir) => {
+      this.camRange = Math.min(160, Math.max(70, this.camRange + dir * 10));
       this.refreshPicks();
     });
     if (!isTouch) {
@@ -1383,8 +1397,10 @@ export class TitleScene extends Phaser.Scene {
     this.joyVal?.setText(JOY_LABEL[this.joy]);
     this.perfVal?.setText(PERF_LABEL[this.perf]);
     this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
-    savePicks(this.diff, this.joy, this.perf, this.hints);
-    pushProfile(); // difficulty/hints sync; joy/perf stay per-device
+    this.camViewVal?.setText(CAM_LABEL[this.camView]);
+    this.camRangeVal?.setText(`${this.camRange}%`);
+    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
+    pushProfile(); // difficulty/hints sync; joy/perf/cam stay per-device
     this.settingsFoot?.setVisible(keyHintsOn());
   }
 }
