@@ -16,6 +16,7 @@ export interface World {
   hemi: THREE.HemisphereLight;
   sunI?: number;
   hemiI?: number;
+  sky?: THREE.Object3D; // dome + clouds — hidden while NEPA kills the lights
 }
 export type MapId = 'street' | 'school';
 
@@ -23,20 +24,37 @@ const PITCH_W = 34, PITCH_H = 52; // playable interior
 
 function groundTexture() {
   const c = canvasTex(1024, 1536, (g) => {
-    // dusty base
-    g.fillStyle = '#b5693c'; g.fillRect(0, 0, 1024, 1536);
-    // mottled wear
-    for (let i = 0; i < 2600; i++) {
-      const x = Math.random() * 1024, y = Math.random() * 1536, r = 2 + Math.random() * 26;
-      g.fillStyle = `rgba(${140 + Math.random() * 60 | 0},${80 + Math.random() * 40 | 0},${45 + Math.random() * 25 | 0},${.06 + Math.random() * .12})`;
+    // meadow apron — the storybook grass field wrapping the block
+    g.fillStyle = '#74a848'; g.fillRect(0, 0, 1024, 1536);
+    for (let i = 0; i < 1900; i++) {
+      const x = Math.random() * 1024, y = Math.random() * 1536, r = 2 + Math.random() * 22;
+      g.fillStyle = `rgba(${86 + Math.random() * 50 | 0},${120 + Math.random() * 60 | 0},${46 + Math.random() * 30 | 0},${.05 + Math.random() * .11})`;
       g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
     }
-    // faint darker patches
+    // packed-earth street — the pitch sits inside the dirt
+    const dX = 176, dY = 225, dW = 848 - 176, dH = 1311 - 225;
+    g.fillStyle = '#c07a48';
+    g.beginPath(); g.roundRect(dX, dY, dW, dH, 64); g.fill();
+    for (let i = 0; i < 2400; i++) {
+      const x = dX + Math.random() * dW, y = dY + Math.random() * dH, r = 2 + Math.random() * 26;
+      g.fillStyle = `rgba(${160 + Math.random() * 60 | 0},${95 + Math.random() * 40 | 0},${55 + Math.random() * 25 | 0},${.06 + Math.random() * .12})`;
+      g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    }
+    // faint darker patches on the dirt
     for (let i = 0; i < 40; i++) {
-      g.fillStyle = `rgba(90,50,28,${.05 + Math.random() * .09})`;
+      g.fillStyle = `rgba(110,60,30,${.05 + Math.random() * .09})`;
       g.beginPath();
-      g.ellipse(Math.random() * 1024, Math.random() * 1536, 40 + Math.random() * 120, 30 + Math.random() * 90, Math.random() * 3, 0, 7);
+      g.ellipse(dX + Math.random() * dW, dY + Math.random() * dH, 40 + Math.random() * 120, 30 + Math.random() * 90, Math.random() * 3, 0, 7);
       g.fill();
+    }
+    // flower specks — grass only, never the street
+    const petals = ['#f5f0e0', '#f2d25e', '#e893b4', '#e0e8f8'];
+    for (let i = 0; i < 460; i++) {
+      const x = Math.random() * 1024, y = Math.random() * 1536;
+      if (x > dX - 8 && x < dX + dW + 8 && y > dY - 8 && y < dY + dH + 8) continue;
+      g.fillStyle = pick(petals);
+      g.beginPath(); g.arc(x, y, 1.5 + Math.random() * 2.2, 0, 7); g.fill();
+      if (Math.random() < .4) { g.beginPath(); g.arc(x + 3, y - 2, 1.4, 0, 7); g.fill(); }
     }
     // pitch lines — worn white paint
     g.strokeStyle = 'rgba(245,240,228,.85)';
@@ -91,6 +109,57 @@ function signTexture(text: string[], bg: string, fg: string, accent?: string) {
   return t;
 }
 
+// ---- storybook sky: gradient dome + drifting cumulus puffs ----
+function cloudTexture() {
+  const c = canvasTex(256, 160, (g) => {
+    const puff = (x: number, y: number, r: number) => {
+      const rg = g.createRadialGradient(x, y, r * .18, x, y, r);
+      rg.addColorStop(0, 'rgba(255,255,255,.96)');
+      rg.addColorStop(.72, 'rgba(255,255,255,.5)');
+      rg.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = rg;
+      g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+    };
+    puff(78, 102, 52); puff(132, 84, 60); puff(186, 104, 46);
+    puff(108, 122, 58); puff(162, 120, 52);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function skyDome(): THREE.Group {
+  const g = new THREE.Group();
+  const c = canvasTex(32, 256, (gr) => {
+    const grad = gr.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#3f9fd8');
+    grad.addColorStop(.55, '#8ec8e6');
+    grad.addColorStop(1, '#e8f2ec');
+    gr.fillStyle = grad; gr.fillRect(0, 0, 32, 256);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(130, 32, 16),
+    new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, fog: false, depthWrite: false }),
+  );
+  dome.renderOrder = -10;
+  g.add(dome);
+  const ct = cloudTexture();
+  const clouds: THREE.Sprite[] = [];
+  for (let i = 0; i < 7; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: ct, transparent: true, fog: false, depthWrite: false }));
+    const sc = rand(20, 40);
+    s.scale.set(sc, sc * .55, 1);
+    s.position.set(rand(-110, 110), rand(16, 30), rand(-110, 110));
+    s.userData.v = rand(.4, .9); // world units / s
+    g.add(s);
+    clouds.push(s);
+  }
+  g.userData.clouds = clouds;
+  return g;
+}
+
 const concrete = () => new THREE.MeshStandardMaterial({ color: 0xb8b0a2, roughness: .95 });
 const rust = () => new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: .9, metalness: .15 });
 
@@ -103,15 +172,27 @@ function box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0,
 
 function kiosk(x: number, z: number, ry: number): THREE.Group {
   const g = new THREE.Group();
-  const blue = new THREE.MeshStandardMaterial({ color: 0x2e6b8f, roughness: .8 });
-  g.add(box(3.2, 2.2, 2.2, blue, 0, 1.1, 0));
+  const cream = new THREE.MeshStandardMaterial({ color: 0xf0e2c8, roughness: .9 });
+  const teal = new THREE.MeshStandardMaterial({ color: 0x3f8a9a, roughness: .8 });
+  g.add(box(3.2, 2.2, 2.2, cream, 0, 1.1, 0));
+  g.add(box(3.24, .45, 2.24, teal, 0, 2.02, 0, false)); // painted band under the roof
   // corrugated slant roof
   const roof = box(3.8, .08, 2.8, rust(), 0, 2.42, .1);
   roof.rotation.x = .12;
   g.add(roof);
   for (let i = -1.5; i <= 1.5; i += .5) g.add(box(.05, .06, 2.8, new THREE.MeshStandardMaterial({ color: 0x74563c, roughness: .9 }), i, 2.46, .12));
+  // striped awning shading the counter — the corner-shop look
+  const aw = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.3),
+    new THREE.MeshStandardMaterial({ map: awningTex('#3f8a9a', '#f5efe0'), roughness: .9, side: THREE.DoubleSide }));
+  aw.position.set(0, 2.1, 1.72); aw.rotation.x = -Math.PI / 2.7;
+  g.add(aw);
+  // hand-painted board
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.7, .5),
+    new THREE.MeshStandardMaterial({ map: signTexture(['KIOSK'], '#3f8a9a', '#ffffff'), roughness: .85 }));
+  sign.position.set(0, 1.62, 1.14);
+  g.add(sign);
   // counter + cooler + crates
-  g.add(box(3.4, .5, .6, new THREE.MeshStandardMaterial({ color: 0x5a7f96 }), 0, .95, 1.3));
+  g.add(box(3.4, .5, .6, teal, 0, .95, 1.3));
   const cooler = box(.9, .7, .6, new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: .6 }), 1.6, .35, 1.5);
   g.add(cooler);
   g.add(box(.6, .6, .6, new THREE.MeshStandardMaterial({ color: 0x8a5a2a, roughness: .9 }), -1.9, .3, 1.4));
@@ -163,18 +244,62 @@ function danfo(x: number, z: number, ry: number): THREE.Group {
 function mangoTree(x: number, z: number, s = 1): THREE.Group {
   const g = new THREE.Group();
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.28 * s, .45 * s, 3.4 * s, 8),
-    new THREE.MeshStandardMaterial({ color: 0x5d4326, roughness: 1 }));
+    new THREE.MeshStandardMaterial({ color: 0x6b4c2c, roughness: 1 }));
   trunk.position.y = 1.7 * s; trunk.castShadow = true;
   g.add(trunk);
-  const leaf = new THREE.MeshStandardMaterial({ color: 0x4a7d35, roughness: .9 });
-  for (const [lx, ly, lz, lr] of [[0, 4, 0, 2.2], [1.4, 3.4, .6, 1.5], [-1.3, 3.5, -.5, 1.6], [.3, 3.6, -1.2, 1.4]]) {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(lr * s, 10, 8), leaf);
+  // two-tone storybook canopy — bright apple green over a deeper shade
+  const leafA = new THREE.MeshStandardMaterial({ color: 0x6da34a, roughness: .9 });
+  const leafB = new THREE.MeshStandardMaterial({ color: 0x8ab85c, roughness: .9 });
+  const blobs: [number, number, number, number][] = [[0, 4, 0, 2.2], [1.4, 3.4, .6, 1.5], [-1.3, 3.5, -.5, 1.6], [.3, 3.6, -1.2, 1.4]];
+  blobs.forEach(([lx, ly, lz, lr], i) => {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(lr * s, 10, 8), i % 2 ? leafB : leafA);
     b.position.set(lx * s, ly * s, lz * s);
-    b.scale.y = .75;
+    b.scale.y = .82;
     b.castShadow = true;
     g.add(b);
-  }
+  });
   g.position.set(x, 0, z);
+  return g;
+}
+
+// little round shrub — the hedges hugging storybook walls
+function bush(x: number, z: number, r = .7): THREE.Group {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 7),
+    new THREE.MeshStandardMaterial({ color: 0x5e9a44, roughness: .95 }));
+  b.position.y = r * .55; b.scale.y = .72; b.castShadow = true;
+  g.add(b);
+  g.position.set(x, 0, z);
+  return g;
+}
+
+// wooden direction post — the hand-painted village marker
+function signpost(x: number, z: number, ry: number): THREE.Group {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a2e, roughness: .9 });
+  const p = new THREE.Mesh(new THREE.CylinderGeometry(.07, .1, 2.7, 6), wood);
+  p.position.y = 1.35; p.castShadow = true;
+  g.add(p);
+  const board = (y: number, rot: number, text: string, pointRight: boolean) => {
+    const c = canvasTex(256, 64, (cv) => {
+      cv.fillStyle = '#8a5a2e';
+      cv.beginPath();
+      if (pointRight) { cv.moveTo(8, 10); cv.lineTo(196, 10); cv.lineTo(244, 32); cv.lineTo(196, 54); cv.lineTo(8, 54); }
+      else { cv.moveTo(248, 10); cv.lineTo(60, 10); cv.lineTo(12, 32); cv.lineTo(60, 54); cv.lineTo(248, 54); }
+      cv.closePath(); cv.fill();
+      cv.fillStyle = '#f5efe0'; cv.font = '800 30px Arial';
+      cv.textAlign = 'center'; cv.textBaseline = 'middle';
+      cv.fillText(text, 128, 34);
+    });
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, .42),
+      new THREE.MeshStandardMaterial({ map: t, transparent: true, roughness: .85, side: THREE.DoubleSide }));
+    m.position.set(0, y, 0); m.rotation.y = rot;
+    g.add(m);
+  };
+  board(2.35, 0, 'MARKET', true);
+  board(1.9, Math.PI / 5, 'SCHOOL', false);
+  g.position.set(x, 0, z); g.rotation.y = ry;
   return g;
 }
 
@@ -246,17 +371,92 @@ function slippers(x: number, z: number): THREE.Group {
   return g;
 }
 
-function building(x: number, z: number, w: number, h: number, d: number, color: number): THREE.Group {
+// striped shop awning — painterly canvas over a doorway
+function awningTex(c1: string, c2: string) {
+  const c = canvasTex(128, 64, (g) => {
+    for (let i = 0; i < 8; i++) {
+      g.fillStyle = i % 2 ? c1 : c2;
+      g.fillRect(i * 16, 0, 16, 64);
+    }
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// storybook house — plaster walls, pitched gable roof, trimmed openings
+function house(x: number, z: number, w: number, h: number, d: number, wallC: number, roofC: number): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(w, h, d, new THREE.MeshStandardMaterial({ color, roughness: .9 }), 0, h / 2, 0));
-  // window rows
-  const winMat = new THREE.MeshStandardMaterial({ color: 0x27333f, roughness: .4 });
-  const cols = Math.floor(w / 2.2);
-  for (let i = 0; i < cols; i++)
-    for (let j = 0; j < Math.floor(h / 2.4); j++)
-      g.add(box(1, .9, .06, winMat, -w / 2 + 1.4 + i * 2.2, 1.8 + j * 2.4, d / 2 + .02, false));
-  // roof edge
-  g.add(box(w + .4, .18, d + .4, concrete(), 0, h + .09, 0));
+  const wall = new THREE.MeshStandardMaterial({ color: wallC, roughness: .95 });
+  const roof = new THREE.MeshStandardMaterial({ color: roofC, roughness: .85 });
+  const trim = new THREE.MeshStandardMaterial({ color: 0xf5efe0, roughness: .9 });
+  const pane = new THREE.MeshStandardMaterial({ color: 0x3a5a68, roughness: .35 });
+  const door = new THREE.MeshStandardMaterial({ color: 0x7a4e2a, roughness: .85 });
+  g.add(box(w, h, d, wall, 0, h / 2, 0));
+  // plinth + eave line — the painted bands storybook houses wear
+  g.add(box(w + .12, .34, d + .12, new THREE.MeshStandardMaterial({ color: 0x9a6a48, roughness: .95 }), 0, .17, 0, false));
+  // gabled roof — ridge along the long axis, slabs + wall-colored ends
+  const shortAxis = Math.min(w, d);
+  const span = shortAxis / 2 + .55;
+  const len = Math.max(w, d) + .9;
+  const rh = Math.min(2.4, Math.max(1.3, span * .6));
+  const ang = Math.atan2(rh, span);
+  const slabLen = Math.hypot(span, rh);
+  const roofG = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const sl = box(len, .14, slabLen, roof, 0, h + rh / 2, s * span / 2);
+    sl.rotation.x = s * ang;
+    roofG.add(sl);
+  }
+  const tri = new THREE.Shape();
+  tri.moveTo(-shortAxis / 2, 0); tri.lineTo(shortAxis / 2, 0); tri.lineTo(0, rh); tri.closePath();
+  const triGeo = new THREE.ExtrudeGeometry(tri, { depth: .12, bevelEnabled: false });
+  for (const s of [-1, 1]) {
+    const gm = new THREE.Mesh(triGeo, wall);
+    gm.rotation.y = Math.PI / 2;
+    gm.position.set(s * len / 2 - s * .19, h, 0);
+    roofG.add(gm);
+  }
+  if (d > w) roofG.rotation.y = Math.PI / 2; // ridge along z for tall plans
+  g.add(roofG);
+  // a little brick chimney on the taller blocks
+  if (h >= 8) {
+    const ch = box(.55, 1.2, .55, new THREE.MeshStandardMaterial({ color: 0xa85840, roughness: .9 }),
+      len * .28, h + rh * .8, 0);
+    roofG.add(ch);
+  }
+  // face toward the pitch centre — door + trimmed windows on that side
+  const fx = Math.abs(x) > Math.abs(z) ? -Math.sign(x) : 0; // face ±x
+  const fz = fx === 0 ? -Math.sign(z) : 0;                  // else face ±z
+  const fw = fx !== 0 ? d : w;                            // width of the facing wall
+  const winCols = Math.max(1, Math.floor(fw / 3));
+  for (let i = 0; i < winCols; i++) {
+    const wx = -fw / 2 + (i + .5) * (fw / winCols);
+    for (let j = 0; j < Math.floor(h / 3.2); j++) {
+      const wy = 2 + j * 3;
+      if (j === 0 && i === Math.floor(winCols / 2)) continue; // door slot
+      const px2 = fx !== 0 ? fx * (w / 2 + .04) : wx;
+      const pz2 = fz !== 0 ? fz * (d / 2 + .04) : wx;
+      g.add(box(1.15, 1.35, .1, trim, px2, wy + .68, pz2, false));
+      g.add(box(.9, 1.1, .12, pane, px2 * (fx ? 1.02 : 1), wy + .68, pz2 * (fz ? 1.02 : 1), false));
+    }
+  }
+  // door centre-bottom of the facing wall
+  const dx = fx !== 0 ? fx * (w / 2 + .04) : 0;
+  const dz = fz !== 0 ? fz * (d / 2 + .04) : 0;
+  g.add(box(1.3, 2.2, .12, trim, dx, 1.1, dz, false));
+  g.add(box(1.05, 2, .14, door, dx * (fx ? 1.02 : 1), 1, dz * (fz ? 1.02 : 1), false));
+  // striped awning over the door on some houses — the corner-shop look
+  if (Math.min(w, d) >= 8) {
+    const aw = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.1),
+      new THREE.MeshStandardMaterial({ map: awningTex('#e8544a', '#f5efe0'), roughness: .9, side: THREE.DoubleSide }));
+    const ax = fx !== 0 ? fx * (w / 2 + .6) : 0;
+    const az = fz !== 0 ? fz * (d / 2 + .6) : 0;
+    aw.position.set(ax, 2.7, az);
+    aw.rotation.x = -Math.PI / 2.6;
+    aw.rotation.y = fx !== 0 ? (fx > 0 ? Math.PI / 2 : -Math.PI / 2) : (fz > 0 ? 0 : Math.PI);
+    g.add(aw);
+  }
   g.position.set(x, 0, z);
   return g;
 }
@@ -297,13 +497,15 @@ export function buildWorld(scene: THREE.Scene): World {
   ground.receiveShadow = true;
   add(ground);
 
-  // ---- perimeter walls (segments with corner gaps like the refs)
-  const wallMat = concrete();
+  // ---- perimeter walls — warm plaster with a terracotta cap
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xe8d4ae, roughness: .95 });
+  const capMat = new THREE.MeshStandardMaterial({ color: 0xb86a48, roughness: .9 });
   const wallH = 1.15, wallT = .5;
   const mkWall = (x: number, z: number, w: number, d: number) => {
     const m = box(w, wallH, d, wallMat, x, wallH / 2, z);
     m.receiveShadow = true;
     add(m);
+    add(box(w + .08, .14, d + .08, capMat, x, wallH + .05, z, false));
   };
   const gx = PITCH_W / 2 + .9, gz = PITCH_H / 2 + .9;
   mkWall(0, -gz, PITCH_W + 2.4, wallT);          // north
@@ -350,19 +552,23 @@ export function buildWorld(scene: THREE.Scene): World {
   add(wire(p1, p2));
   add(wire(p1, p3, 1.6));
 
-  // ---- tree over the west wall
+  // ---- trees + hedges around the block, and a wayfinding post
   add(mangoTree(-gx - 4.5, -2, 1.15));
+  add(mangoTree(gx + 5.5, gz + 7, .95));
+  for (const [bx, bz] of [[-gx - 2, -10], [gx + 2, 2], [gx + 2.4, 20], [-8, -gz - 2.2], [4, gz + 2.4]] as const)
+    add(bush(bx, bz, rand(.55, .9)));
+  add(signpost(gx + 2.6, -gz - 5, Math.PI / 6));
 
-  // ---- buildings around the block
-  const builds: [number, number, number, number, number, number][] = [
-    [-8, -gz - 12, 14, 8, 8, 0xe8c46a],
-    [10, -gz - 13, 10, 11, 8, 0x7fa8b8],
-    [-14, gz + 13, 12, 7, 9, 0xd88a5a],
-    [12, gz + 12, 9, 9, 8, 0xc9b8d8],
-    [-gx - 12, -14, 8, 10, 10, 0xe0d8b8],
-    [gx + 12, 16, 8, 8, 9, 0x8fb88f],
+  // ---- storybook houses around the block — plaster walls, pitched roofs
+  const builds: [number, number, number, number, number, number, number][] = [
+    [-8, -gz - 12, 14, 8, 8, 0xf2dfb8, 0xb85c40],   // cream + clay
+    [10, -gz - 13, 10, 11, 8, 0xe8b89a, 0x5a7078],  // blush + slate
+    [-14, gz + 13, 12, 7, 9, 0xd8a86a, 0x8a5c3a],   // ochre + rust
+    [12, gz + 12, 9, 9, 8, 0xa8c8b0, 0x6a8a5a],     // sage + moss
+    [-gx - 12, -14, 8, 10, 10, 0xe8cfae, 0xb85c40],
+    [gx + 12, 16, 8, 8, 9, 0xc8d4d8, 0x5a7078],
   ];
-  for (const [x, z, w, h, d, c] of builds) add(building(x, z, w, h, d, c));
+  for (const [x, z, w, h, d, c, r] of builds) add(house(x, z, w, h, d, c, r));
 
   // ---- on-pitch obstacles
   const t1 = tyreStack(-8, -14, 2); add(t1.g); obstacles.push(t1.ob);
@@ -402,8 +608,8 @@ export function buildWorld(scene: THREE.Scene): World {
     spectators.push(b);
   }
 
-  // ---- lighting: warm Nigerian afternoon
-  const sun = new THREE.DirectionalLight(0xffe2b0, 2.6);
+  // ---- lighting: bright painterly midday — high ambient, soft warm sun
+  const sun = new THREE.DirectionalLight(0xffeecc, 2.8);
   sun.position.set(-22, 30, -14);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -412,13 +618,16 @@ export function buildWorld(scene: THREE.Scene): World {
   sun.shadow.camera.far = 90;
   sun.shadow.bias = -0.0004;
   add(sun);
-  const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x8a5a34, .85);
+  const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x9a7a52, 1.05);
   add(hemi);
-  const bounce = new THREE.DirectionalLight(0xffc890, .35);
+  const bounce = new THREE.DirectionalLight(0xffd0a0, .42);
   bounce.position.set(18, 12, 20);
   add(bounce);
 
-  scene.fog = new THREE.Fog(0xe8c9a0, 70, 160);
+  scene.fog = new THREE.Fog(0xd8e8ea, 78, 175);
+  scene.background = new THREE.Color(0xcfe4ec);
+  const sky = skyDome();
+  add(sky);
 
   // ---- police post in the south-west corner — the refuge
   const px = B.minX + 3.6, pz = B.maxZ - 6.4;
@@ -426,7 +635,7 @@ export function buildWorld(scene: THREE.Scene): World {
   obstacles.push({ x: px, z: pz, r: 1.9 });
   const safeZone: SafeZone = { x: px, z: pz + 2.6, r: 3.0 };
 
-  return { root, bounds: B, obstacles, spectators, safeZone, sun, hemi };
+  return { root, bounds: B, obstacles, spectators, safeZone, sun, hemi, sky };
 }
 
 // ================= MAP 2 — PRIMARY SCHOOL COMPOUND =================
@@ -564,9 +773,9 @@ export function buildSchool(scene: THREE.Scene): World {
   add(drum); obstacles.push({ x: 8, z: 13, r: 1.1 });
 
   // ---- staffroom block + neighbour flats outside
-  add(building(-gx - 10, -18, 10, 7, 9, 0xd8b06a));
-  add(building(gx + 11, 10, 9, 9, 8, 0x9fb8a8));
-  add(building(-8, gz + 12, 12, 8, 9, 0xc88a6a));
+  add(house(-gx - 10, -18, 10, 7, 9, 0xd8b06a, 0xb85c40));
+  add(house(gx + 11, 10, 9, 9, 8, 0x9fb8a8, 0x5a7078));
+  add(house(-8, gz + 12, 12, 8, 9, 0xc88a6a, 0x8a5c3a));
 
   // ---- pupils: assembly rows up north + strays along the walls
   const kids: [number, number, number][] = [];
@@ -614,4 +823,10 @@ export function disposeWorld(scene: THREE.Scene, w: World) {
 
 export function updateWorld(w: World, dt: number) {
   for (const b of w.spectators) idleBean(b, dt);
+  const clouds = w.sky?.userData.clouds as THREE.Sprite[] | undefined;
+  if (clouds)
+    for (const s of clouds) {
+      s.position.x += s.userData.v * dt;
+      if (s.position.x > 120) s.position.x = -120;
+    }
 }

@@ -775,6 +775,7 @@ export class Match {
   private nepaOn() {
     // a real blackout takes EVERYTHING — sun, hemisphere, bounce fill AND the
     // sky IBL (scene.environment lights the standard materials more than sun does)
+    if (this.world.sky) this.world.sky.visible = false; // dome + clouds too
     if (!this.dimmed) {
       this.dimmed = new Map();
       this.scene.traverse((o) => {
@@ -809,6 +810,7 @@ export class Match {
       this.scene.background.setHex(this.bgHex);
   }
   private nepaOff() {
+    if (this.world.sky) this.world.sky.visible = true;
     this.restoreLights();
     if (this.torch) { this.scene.remove(this.torch); this.torch = null; }
     AU.vUpNepa();

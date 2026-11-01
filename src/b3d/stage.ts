@@ -379,6 +379,8 @@ export class PitchStage {
 
   // ---------- weather / light ----------
   nepa(on: boolean, px = 0, py = 0) {
+    // power cut kills the sky too — the dark fog + background take over
+    if (this.world?.sky) this.world.sky.visible = !on;
     if (on) {
       if (!this.dimmed) {
         this.dimmed = new Map();
