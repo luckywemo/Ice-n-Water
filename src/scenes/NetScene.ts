@@ -141,6 +141,13 @@ export class NetScene extends Phaser.Scene {
     this.leaving = false;
     this.endedShown = false;
     this.myIce = null;
+    // fields outlive the scene's objects — a restart while the end screen
+    // was up would leave dead containers + tap zones that still fire
+    this.endLayer = null;
+    this.endHit = [];
+    this.hudItems = [];
+    this.lastMessage = '';
+    this.lastRound = 0;
     this.reconnToken = this.room.reconnectionToken ?? '';
     this.room.onLeave((code) => {
       if (!this.leaving) void this.tryReconnect(code);

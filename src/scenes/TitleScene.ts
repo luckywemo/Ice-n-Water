@@ -63,6 +63,7 @@ export class TitleScene extends Phaser.Scene {
   private settingsCard?: Phaser.GameObjects.Container;
   private settingsOpen = false;
   private topBar?: ReturnType<typeof fgTopBar>;
+  private settingsTabIdx = -1;
   private promptOpen = false;
   private cardZones: Phaser.GameObjects.Zone[] = [];
   private lobbyArm?: (t0: number) => void;
@@ -200,6 +201,8 @@ export class TitleScene extends Phaser.Scene {
     this.lobbyDrop = undefined;
     this.started = fromWipe;
     this.settingsOpen = false;
+    this.promptOpen = false; // a modal mid-restart would latch this and dead the whole lobby
+    this.cardZones = []; // scene instance persists — dead zones from the last card must not linger
 
     this.cameras.main.setBackgroundColor(FG.yellow);
     // fade from the boot screen's yellow — seamless handoff into the splash.
@@ -220,7 +223,7 @@ export class TitleScene extends Phaser.Scene {
     const visB = vh / 2 + height / (2 * stageZoom);
     let lastW = width;
     let lastH = height;
-    this.scale.on('resize', (sz: Phaser.Structs.Size) => {
+    const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
@@ -229,7 +232,11 @@ export class TitleScene extends Phaser.Scene {
         lastH = sz.height;
         this.scene.restart();
       }
-    });
+    };
+    // ScaleManager is game-level — it outlives this scene, so the listener
+    // must be removed on shutdown or every lobby visit stacks another copy
+    this.scale.on('resize', onResize);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', onResize));
     // the hero is a texture-backed Image — a normal display-list object that
     // dies with the scene and sits UNDER modals. Only the WebGL renderer
     // needs explicit disposal; no DOM node exists to leak.
@@ -293,29 +300,32 @@ export class TitleScene extends Phaser.Scene {
     };
     this.askName = () => renameRunner(true);
 
+    // named const — the settings tab's highlight index is looked up from
+    // this list, so adding/removing icons can't silently retarget setActive
+    const topItems: Parameters<typeof fgTopBar>[2] = [
+      { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
+      {
+        icon: 'hanger',
+        onDown: () =>
+          this.gate(() => {
+            wipeTo(this, 'outfit');
+          }),
+      },
+      {
+        icon: 'sliders',
+        onDown: () => {
+          if (!this.started) return this.dismissSplash();
+          if (!this.promptOpen) this.toggleSettings();
+        },
+      },
+      { icon: 'board', onDown: () => this.gate(openBoard) },
+      { icon: 'online', onDown: () => this.gate(toOnline) },
+    ];
+    this.settingsTabIdx = topItems.findIndex((i) => i.icon === 'sliders');
     this.topBar = fgTopBar(
       this,
       vw,
-      [
-        { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
-        { icon: 'edit', onDown: () => this.gate(renameRunner) },
-        {
-          icon: 'hanger',
-          onDown: () =>
-            this.gate(() => {
-              wipeTo(this, 'outfit');
-            }),
-        },
-        {
-          icon: 'sliders',
-          onDown: () => {
-            if (!this.started) return this.dismissSplash();
-            if (!this.promptOpen) this.toggleSettings();
-          },
-        },
-        { icon: 'board', onDown: () => this.gate(openBoard) },
-        { icon: 'online', onDown: () => this.gate(toOnline) },
-      ],
+      topItems,
       { crown: s.wins, star: stars },
       { y0: visT, xL: visL, xR: visR },
     );
@@ -539,9 +549,11 @@ export class TitleScene extends Phaser.Scene {
           img.src = url;
         })
         .catch(() => {}); // no pfp — the crown stays
-    this.events.on('runner-renamed', () => {
-      this.refreshCharPlate?.();
-    });
+    // scene events emitter survives restarts — an unpaired .on stacks one
+    // listener per visit, so a rename would refresh the plate N times
+    const onRenamed = () => this.refreshCharPlate?.();
+    this.events.on('runner-renamed', onRenamed);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off('runner-renamed', onRenamed));
 
     // --- install CTA — sits over the name plate while the browser still
     //  defers an install prompt (not installed yet). Same pink as the
@@ -1128,7 +1140,69 @@ export class TitleScene extends Phaser.Scene {
       });
       inner.add(loZ);
     }
-    y += S(30);
+    y += S(38);
+    // runner name — the board + lobby display name; settings is the only
+    // place it edits now
+    inner.add(
+      this.add
+        .text(cx - W / 2 + 38, y, 'RUNNER', {
+          fontFamily: FG_BODY,
+          fontSize: fz(12),
+          fontStyle: '700',
+          color: '#9fd8ea',
+        })
+        .setOrigin(0, 0.5),
+    );
+    const nmT = this.add
+      .text(cx - W / 2 + 38 + S(120), y, (playerName() || '—').toUpperCase(), {
+        fontFamily: FG_BODY,
+        fontSize: fz(14),
+        fontStyle: '800',
+        color: '#ffffff',
+      })
+      .setOrigin(0, 0.5);
+    inner.add(nmT);
+    // EDIT pill — same candy shape as LOG OUT, cyan face
+    const edW = 74,
+      edH = 32;
+    const edx = cx + W / 2 - 24 - edW / 2;
+    const eg = this.add.graphics();
+    eg.fillStyle(0x0a0710, 1).fillRoundedRect(edx - edW / 2, y - edH / 2 + 3, edW, edH, edH / 2);
+    eg.fillStyle(0x1fa9e8, 1).fillRoundedRect(edx - edW / 2, y - edH / 2 - 4, edW, edH - 2, edH / 2);
+    eg.fillStyle(0xffffff, 0.14).fillRoundedRect(edx - edW / 2 + 7, y - edH / 2 - 4, edW - 14, 11, 6);
+    inner.add(eg);
+    const edT = this.add
+      .text(edx, y - 3, 'EDIT', { fontFamily: FG_FONT, fontSize: fz(12), color: '#ffffff' })
+      .setOrigin(0.5);
+    inner.add(edT);
+    const edZ = gateZone(
+      this.add
+        .zone(edx - edW / 2, y - edH / 2 - 4, edW, edH + 4)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true }),
+    );
+    edZ.on('pointerdown', () => {
+      if (this.promptOpen) return;
+      this.promptOpen = true;
+      void promptModal(this, {
+        title: 'NAME YOUR RUNNER',
+        sub: 'max 10 letters — shows on the board + in online lobbies',
+        label: 'RUNNER NAME',
+        placeholder: 'your name',
+        value: playerName() || (sess?.handle ?? '').slice(0, 10),
+        maxLen: 10,
+        okLabel: 'SAVE',
+      }).then((n) => {
+        this.promptOpen = false;
+        if (n === null) return;
+        setPlayerName(n);
+        pushProfile();
+        nmT.setText((playerName() || '—').toUpperCase());
+        this.events.emit('runner-renamed');
+      });
+    });
+    inner.add(edZ);
+    y += S(36);
     const prog = adventureProgress();
     const st = loadStats();
     inner.add(
@@ -1245,7 +1319,7 @@ export class TitleScene extends Phaser.Scene {
   private toggleSettings() {
     if (!this.settingsCard) return;
     this.settingsOpen = !this.settingsOpen;
-    this.topBar?.setActive(3, this.settingsOpen); // the sliders tab goes pink while its card is open
+    this.topBar?.setActive(this.settingsTabIdx, this.settingsOpen); // the sliders tab goes pink while its card is open
     const card = this.settingsCard;
     // kill any in-flight close tween — its onComplete would setVisible(false)
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)

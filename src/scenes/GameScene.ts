@@ -252,6 +252,7 @@ export class GameScene extends Phaser.Scene {
     this.lastResult = null;
     this.endButtons = [];
     this.endHitZones = [];
+    this.hudItems = []; // pinned-HUD registry — dead objects would keep getting laid out
     this.paused = false;
     this.pauseObjs = [];
     this.pauseHitZones = [];

@@ -62,6 +62,9 @@ const go = () => {
   // positioned to stack above it, since a static element can't win on z
   game.canvas.style.position = 'relative';
   game.canvas.style.zIndex = '1';
+  // ...and the DOM container rides ABOVE the game canvas (z:2) — inputs,
+  // prompts and name fields live there; canvas z:1 was burying them all
+  if (game.domContainer) game.domContainer.style.zIndex = '2';
   // mobile toolbars move the VISUAL viewport without emitting window.resize
   // (Chrome's dynamic-toolbar model; the page can't scroll past overflow:hidden
   // to trigger one). Phaser only listens to window resize, so the canvas stays
