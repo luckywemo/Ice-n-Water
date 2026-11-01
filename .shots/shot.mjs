@@ -9,7 +9,7 @@ const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const PORT = 9333;
 
 const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--hide-scrollbars',
+  '--headless=new', '--hide-scrollbars',
   `--remote-debugging-port=${PORT}`,
   `--window-size=${w},${h}`,
   '--no-first-run', '--user-data-dir=C:/Users/LOYAL/Documents/Ice-n-Water/.shots/.profile',

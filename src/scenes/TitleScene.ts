@@ -298,7 +298,6 @@ export class TitleScene extends Phaser.Scene {
       vw,
       [
         { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
-        { icon: 'edit', onDown: () => this.gate(renameRunner) },
         {
           icon: 'hanger',
           onDown: () =>
@@ -1128,7 +1127,69 @@ export class TitleScene extends Phaser.Scene {
       });
       inner.add(loZ);
     }
-    y += S(30);
+    y += S(38);
+    // runner name — the board + lobby display name; settings is the only
+    // place it edits now
+    inner.add(
+      this.add
+        .text(cx - W / 2 + 38, y, 'RUNNER', {
+          fontFamily: FG_BODY,
+          fontSize: fz(12),
+          fontStyle: '700',
+          color: '#9fd8ea',
+        })
+        .setOrigin(0, 0.5),
+    );
+    const nmT = this.add
+      .text(cx - W / 2 + 38 + S(120), y, (playerName() || '—').toUpperCase(), {
+        fontFamily: FG_BODY,
+        fontSize: fz(14),
+        fontStyle: '800',
+        color: '#ffffff',
+      })
+      .setOrigin(0, 0.5);
+    inner.add(nmT);
+    // EDIT pill — same candy shape as LOG OUT, cyan face
+    const edW = 74,
+      edH = 32;
+    const edx = cx + W / 2 - 24 - edW / 2;
+    const eg = this.add.graphics();
+    eg.fillStyle(0x0a0710, 1).fillRoundedRect(edx - edW / 2, y - edH / 2 + 3, edW, edH, edH / 2);
+    eg.fillStyle(0x1fa9e8, 1).fillRoundedRect(edx - edW / 2, y - edH / 2 - 4, edW, edH - 2, edH / 2);
+    eg.fillStyle(0xffffff, 0.14).fillRoundedRect(edx - edW / 2 + 7, y - edH / 2 - 4, edW - 14, 11, 6);
+    inner.add(eg);
+    const edT = this.add
+      .text(edx, y - 3, 'EDIT', { fontFamily: FG_FONT, fontSize: fz(12), color: '#ffffff' })
+      .setOrigin(0.5);
+    inner.add(edT);
+    const edZ = gateZone(
+      this.add
+        .zone(edx - edW / 2, y - edH / 2 - 4, edW, edH + 4)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true }),
+    );
+    edZ.on('pointerdown', () => {
+      if (this.promptOpen) return;
+      this.promptOpen = true;
+      void promptModal(this, {
+        title: 'NAME YOUR RUNNER',
+        sub: 'max 10 letters — shows on the board + in online lobbies',
+        label: 'RUNNER NAME',
+        placeholder: 'your name',
+        value: playerName() || (sess?.handle ?? '').slice(0, 10),
+        maxLen: 10,
+        okLabel: 'SAVE',
+      }).then((n) => {
+        this.promptOpen = false;
+        if (n === null) return;
+        setPlayerName(n);
+        pushProfile();
+        nmT.setText((playerName() || '—').toUpperCase());
+        this.events.emit('runner-renamed');
+      });
+    });
+    inner.add(edZ);
+    y += S(36);
     const prog = adventureProgress();
     const st = loadStats();
     inner.add(
