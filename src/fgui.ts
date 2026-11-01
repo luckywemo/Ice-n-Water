@@ -110,10 +110,42 @@ export function bakeCrownTile(scene: Phaser.Scene) {
 
 // ------- intro-field glyph tile — the FG loading screen's watermark:
 // crowns, beans, trophies, horns, confetti + shapes scattered at low alpha
+// ------- intro field — cyan->deep gradient + baked edge vignette,
+// one texture instead of a graphics gradient (fillGradientStyle fills
+// unreliably on some paths; a canvas bake can't miss)
+export function bakeIntroField(scene: Phaser.Scene) {
+  const key = 'intro_field';
+  if (scene.textures.exists(key)) return key;
+  const T = 512;
+  const tex = scene.textures.createCanvas(key, T, T);
+  const c = tex?.getContext();
+  if (!c) return key;
+  const grad = c.createLinearGradient(0, 0, T, T);
+  grad.addColorStop(0, '#3ec6f2');
+  grad.addColorStop(0.45, '#2ba9e2');
+  grad.addColorStop(0.75, '#1288c8');
+  grad.addColorStop(1, '#0d5f96');
+  c.fillStyle = grad;
+  c.fillRect(0, 0, T, T);
+  // vignette — soft dark kiss top and bottom edges
+  const vt = c.createLinearGradient(0, 0, 0, 64);
+  vt.addColorStop(0, 'rgba(10,42,68,0.30)');
+  vt.addColorStop(1, 'rgba(10,42,68,0)');
+  c.fillStyle = vt;
+  c.fillRect(0, 0, T, 64);
+  const vb = c.createLinearGradient(0, T - 70, 0, T);
+  vb.addColorStop(0, 'rgba(10,42,68,0)');
+  vb.addColorStop(1, 'rgba(10,42,68,0.32)');
+  c.fillStyle = vb;
+  c.fillRect(0, T - 70, T, 70);
+  tex!.refresh();
+  return key;
+}
+
 export function bakeGlyphTile(scene: Phaser.Scene) {
   const key = 'fg_glyphs';
   if (scene.textures.exists(key)) return key;
-  const T = 480;
+  const T = 360;
   const tex = scene.textures.createCanvas(key, T, T);
   const c = tex?.getContext();
   if (!c) return key;
@@ -166,12 +198,14 @@ export function bakeGlyphTile(scene: Phaser.Scene) {
   };
   const ring = () => { c.arc(0, 0, 9, 0, Math.PI * 2); c.stroke(); };
   const place = [
-    [70, 60, 1.1, 0.15, crown], [200, 45, 0.8, -0.2, bean], [330, 70, 1, 0.1, trophy],
-    [430, 50, 0.9, 0.25, bang], [120, 160, 0.9, -0.15, squiggle], [260, 150, 1, 0.3, horn],
-    [390, 160, 0.85, -0.3, ring], [40, 240, 0.95, 0.2, tri], [170, 250, 0.85, -0.1, crown],
-    [300, 250, 0.9, 0.15, bean], [430, 240, 0.8, -0.25, trophy], [80, 350, 0.85, 0.3, bang],
-    [210, 360, 1, -0.2, horn], [350, 350, 0.9, 0.1, squiggle], [450, 380, 0.8, 0.2, ring],
-    [120, 450, 0.9, -0.25, trophy], [270, 440, 0.8, 0.15, tri], [400, 450, 1, -0.1, crown],
+    [50, 50, 0.9, 0.15, crown], [150, 40, 0.7, -0.2, bean], [250, 55, 0.85, 0.1, trophy],
+    [330, 45, 0.75, 0.25, bang], [90, 120, 0.75, -0.15, squiggle], [190, 115, 0.8, 0.3, horn],
+    [300, 125, 0.7, -0.3, ring], [30, 175, 0.8, 0.2, tri], [130, 185, 0.75, -0.1, crown],
+    [230, 180, 0.75, 0.15, bean], [330, 175, 0.7, -0.25, trophy], [60, 255, 0.7, 0.3, bang],
+    [160, 260, 0.8, -0.2, horn], [270, 255, 0.75, 0.1, squiggle], [350, 265, 0.65, 0.2, ring],
+    [100, 330, 0.75, -0.25, trophy], [200, 325, 0.7, 0.15, tri], [310, 330, 0.85, -0.1, crown],
+    [45, 105, 0.6, 0.1, ring], [255, 90, 0.65, -0.15, squiggle], [180, 215, 0.6, 0.2, bang],
+    [110, 300, 0.6, -0.1, bean], [340, 305, 0.65, 0.25, horn], [15, 330, 0.7, 0.1, crown],
   ] as const;
   for (const [x, y, s, r, d] of place) at(x, y, s, r, d as () => void);
   tex!.refresh();

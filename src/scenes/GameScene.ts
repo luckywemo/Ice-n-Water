@@ -20,7 +20,7 @@ import { PitchStage } from '../b3d/stage';
 import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
 import { bakeBeanSheet, sheetCanvas } from '../beanbake';
 import { viaWipe, wipeTo } from '../wipe';
-import { bakeGlyphTile } from '../fgui';
+import { bakeGlyphTile, bakeIntroField } from '../fgui';
 import type { BossMove } from '../adventure';
 
 type Body = Phaser.Physics.Arcade.Body;
@@ -500,18 +500,19 @@ export class GameScene extends Phaser.Scene {
 
     // — field: cyan gradient + glyph watermark + rings + light streaks.
     // Opaque takeover (no dim) — depth 44 still covers runner name tags.
-    const field = this.add.graphics().setDepth(44).setScrollFactor(0);
-    field.fillGradientStyle(0x3ec6f2, 0x2ba9e2, 0x1288c8, 0x0d5f96, 1);
-    // anchored screen-space: centered overscan, not local 0,0
-    field.fillRect(w / 2 - w * 0.75, h / 2 - h * 0.75, w * 1.5, h * 1.5);
+    const field = this.add
+      .image(w / 2, h / 2, bakeIntroField(this))
+      .setDisplaySize(w * 1.5, h * 1.5)
+      .setDepth(44)
+      .setScrollFactor(0);
     const glyphs = this.add
       .tileSprite(w / 2, h / 2, w * 1.5, h * 1.5, bakeGlyphTile(this))
       .setDepth(44)
       .setScrollFactor(0);
     const rings = this.add.graphics().setDepth(44).setScrollFactor(0);
     rings.lineStyle(3, 0xffffff, 0.07);
-    rings.strokeCircle(w / 2 + w * 0.1, h / 2 - h * 0.04, Math.min(w, h) * 0.72);
-    rings.strokeCircle(w / 2 + w * 0.1, h / 2 - h * 0.04, Math.min(w, h) * 0.5);
+    rings.strokeCircle(w / 2 - w * 0.06, h / 2, Math.min(w, h) * 0.82);
+    rings.strokeCircle(w / 2 - w * 0.06, h / 2, Math.min(w, h) * 0.58);
     const streaks = this.add.graphics().setDepth(44).setScrollFactor(0);
     streaks.fillStyle(0xffffff, 0.045);
     for (const [sx, sy, sw2] of [
@@ -528,23 +529,23 @@ export class GameScene extends Phaser.Scene {
     const tabT = this.add
       .text(0, 0, card.name.toUpperCase(), {
         fontFamily: DISPLAY_FONT,
-        fontSize: '20px',
+        fontSize: '24px',
         color: '#ffffff',
       })
       .setOrigin(0, 0.5)
       .setDepth(2);
-    const th = 48, tw = tabT.width + 60;
-    const tx = -U.W / 2 - 46, ty = -U.H / 2 + U.H * 0.028;
-    tabT.setPosition(tx + 24, ty + th / 2 - 1);
+    const th = 56, tw = tabT.width + 64;
+    const tx = -U.W / 2 - 52, ty = -U.H / 2 + U.H * 0.016;
+    tabT.setPosition(tx + 26, ty + th / 2 - 1);
     const tabG = this.add.graphics().setDepth(2);
-    const cham = 26;
+    const cham = 32;
     tabG.fillStyle(0x1d2a44, 1);
     tabG.fillPoints(
       [
-        { x: tx - 4, y: ty + 5 },
-        { x: tx + tw - cham, y: ty + 5 },
-        { x: tx + tw + 4, y: ty + th + 5 },
-        { x: tx - 4, y: ty + th + 5 },
+        { x: tx - 4, y: ty + 6 },
+        { x: tx + tw - cham, y: ty + 6 },
+        { x: tx + tw + 5, y: ty + th + 6 },
+        { x: tx - 4, y: ty + th + 6 },
       ],
       true,
     );
@@ -559,13 +560,13 @@ export class GameScene extends Phaser.Scene {
       true,
     );
     // white inner rim following the chamfer
-    tabG.lineStyle(3.5, 0xffffff, 0.95);
+    tabG.lineStyle(4.5, 0xffffff, 0.95);
     tabG.strokePoints(
       [
-        { x: tx + 5, y: ty + 5 },
-        { x: tx + tw - cham - 3, y: ty + 5 },
-        { x: tx + tw - 4, y: ty + th - 5 },
-        { x: tx + 5, y: ty + th - 5 },
+        { x: tx + 6, y: ty + 6 },
+        { x: tx + tw - cham - 3, y: ty + 6 },
+        { x: tx + tw - 5, y: ty + th - 6 },
+        { x: tx + 6, y: ty + th - 6 },
       ],
       true,
     );
@@ -584,11 +585,12 @@ export class GameScene extends Phaser.Scene {
 
     // — course preview: white-framed window; a live 3D snapshot slides in
     // once the stage buffer has a frame, the schematic is the fallback
-    const pvX = -U.W * 0.46, pvY = -U.H * 0.28;
-    const pvW = U.W * 0.5, pvH = Math.min(U.H * 0.56, pvW * 0.64);
+    const pvX = -U.W * 0.47, pvY = -U.H * 0.28;
+    const pvW = U.W * 0.55, pvH = Math.min(U.H * 0.6, pvW * 0.64);
     const pv = this.add.graphics().setDepth(1);
-    pv.fillStyle(0x0d3550, 1).fillRoundedRect(pvX - 10, pvY - 4, pvW + 20, pvH + 20, 16);
-    pv.fillStyle(0xffffff, 1).fillRoundedRect(pvX - 8, pvY - 8, pvW + 16, pvH + 16, 12);
+    // soft drop shadow under the frame — no hard rim, reference is white-only
+    pv.fillStyle(0x0a2a44, 0.4).fillRoundedRect(pvX - 14, pvY - 6, pvW + 28, pvH + 28, 18);
+    pv.fillStyle(0xffffff, 1).fillRoundedRect(pvX - 12, pvY - 12, pvW + 24, pvH + 24, 14);
     const aScale = Math.min((pvW - 44) / this.arenaW, (pvH - 60) / this.arenaH);
     const ptW = this.arenaW * aScale, ptH = this.arenaH * aScale;
     const ptX = pvX + (pvW - ptW) / 2, ptY = pvY + 14 + (pvH - 46 - ptH) / 2;
@@ -654,7 +656,7 @@ export class GameScene extends Phaser.Scene {
     const howHead = this.add
       .text(rightX, ry, 'HOW TO PLAY', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '24px',
+        fontSize: '28px',
         color: '#ffffff',
       })
       .setOrigin(1, 0)
@@ -695,53 +697,53 @@ export class GameScene extends Phaser.Scene {
     const medHead = this.add
       .text(rightX, ry, 'MEDALS', {
         fontFamily: DISPLAY_FONT,
-        fontSize: '24px',
+        fontSize: '28px',
         color: '#ffffff',
       })
       .setOrigin(1, 0)
       .setDepth(1);
     add(medHead);
-    ry += 38;
-    // medal tiles — header tab + hexagon emblem + caption, right-aligned row
+    ry += 42;
+    // medal tiles — protruding header pill, metal hexagon + podium, caption
     const medG = this.add.graphics().setDepth(1);
     add(medG);
-    const meds: [number, string, string, string][] = [
-      [0xf2b70d, 'GOLD', '★★★', 'NO ICES'],
-      [0x9fb8cc, 'SILVER', '★★', 'ONE ICE'],
-      [0xc77b3b, 'BRONZE', '★', 'CLEAR'],
+    const meds: [number, string, string][] = [
+      [0xf2b70d, 'GOLD', 'NO ICES'],
+      [0x9fb8cc, 'SILVER', 'ONE ICE'],
+      [0xc77b3b, 'BRONZE', 'CLEAR'],
     ];
-    const mw = 100, mh = 116, mgap = 14;
-    meds.forEach(([col, lab, star, cap], i) => {
+    const mw = 104, mh = 132, mgap = 14;
+    meds.forEach(([col, lab, cap], i) => {
       const mx = rightX - (3 - i) * (mw + mgap) + mgap; // gold leftmost, row ends at rightX
-      medG.fillStyle(0x0d3550, 0.45).fillRoundedRect(mx, ry, mw, mh, 10);
-      medG.fillStyle(col, 1).fillRoundedRect(mx + 8, ry, mw - 16, 24, 8);
-      const hx = mx + mw / 2, hy = ry + 58, hr = 24;
+      medG.fillStyle(0x0d3550, 0.45).fillRoundedRect(mx, ry, mw, mh, 12);
+      // header pill protrudes above the tile top
+      medG.fillStyle(0x1d2a44, 1).fillRoundedRect(mx + 4, ry - 6, mw - 8, 30, 15);
+      medG.fillStyle(col, 1).fillRoundedRect(mx + 4, ry - 9, mw - 8, 30, 15);
+      // metal-filled hexagon + white rim + podium icon
+      const hx = mx + mw / 2, hy = ry + 62, hr = 27;
       const hex: { x: number; y: number }[] = [];
       for (let k = 0; k < 6; k++) {
         const a = -Math.PI / 2 + (k * Math.PI) / 3;
         hex.push({ x: hx + Math.cos(a) * hr, y: hy + Math.sin(a) * hr });
       }
-      medG.fillStyle(0xffffff, 0.92).fillPoints(hex, true);
-      medG.lineStyle(3, col, 1).strokePoints(hex, true);
+      medG.fillStyle(col, 1).fillPoints(hex, true);
+      medG.lineStyle(4, 0xffffff, 0.95).strokePoints(hex, true);
+      // podium: three bars, centre tallest — the placement emblem
+      medG.fillStyle(0xffffff, 0.95);
+      medG.fillRect(hx - 15, hy + 4, 8, 9);
+      medG.fillRect(hx - 4, hy - 6, 8, 19);
+      medG.fillRect(hx + 7, hy, 8, 13);
       add(
         this.add
-          .text(hx, ry + 12, lab, {
+          .text(mx + mw / 2, ry + 6, lab, {
             fontFamily: DISPLAY_FONT,
-            fontSize: '11px',
+            fontSize: '12px',
             color: '#1d2a44',
           })
           .setOrigin(0.5)
           .setDepth(1),
         this.add
-          .text(hx, hy + 1, star, {
-            fontFamily: DISPLAY_FONT,
-            fontSize: '15px',
-            color: '#1d2a44',
-          })
-          .setOrigin(0.5)
-          .setDepth(1),
-        this.add
-          .text(hx, ry + mh - 16, cap, {
+          .text(mx + mw / 2, ry + mh - 18, cap, {
             fontFamily: UI_FONT,
             fontSize: '10px',
             fontStyle: '800',
@@ -775,28 +777,33 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(1);
     const hand = this.add.graphics().setDepth(1);
-    const hxp = hintT.x - hintT.width / 2 - 28, hyp = hbY + hbH / 2;
+    const hxp = hintT.x - hintT.width / 2 - 30, hyp = hbY + hbH / 2;
     hand.fillStyle(0xffffff, 1);
-    hand.fillRoundedRect(hxp - 7, hyp - 7, 13, 13, 4); // palm
-    hand.fillRoundedRect(hxp + 4, hyp - 9, 14, 6, 3); // pointing finger
-    hand.fillCircle(hxp - 5, hyp + 7, 3); // thumb bump
-    const chevT = this.add
-      .text(pvX + pvW - 18, hbY + hbH / 2, '▸', {
-        fontFamily: UI_FONT,
-        fontSize: '20px',
-        fontStyle: '800',
-        color: '#ffffff',
-      })
-      .setOrigin(0.5)
-      .setDepth(1);
-    add(hintT, hand, chevT);
+    hand.fillRoundedRect(hxp - 8, hyp - 5, 15, 12, 5); // palm
+    hand.fillRoundedRect(hxp + 5, hyp - 8, 15, 6, 3); // pointing finger
+    hand.fillRoundedRect(hxp - 11, hyp - 9, 8, 8, 3); // thumb
+    hand.fillStyle(0x0d3550, 0.35);
+    hand.fillRoundedRect(hxp - 8, hyp + 3, 15, 4, 2); // cuff shadow line
+    // solid triangle chevron at the bar's right end
+    const cxp = pvX + pvW - 18, cyp = hbY + hbH / 2;
+    hb.fillStyle(0xffffff, 0.9);
+    hb.fillPoints(
+      [
+        { x: cxp - 3, y: cyp - 7 },
+        { x: cxp - 3, y: cyp + 7 },
+        { x: cxp + 7, y: cyp },
+      ],
+      true,
+    );
+    add(hintT, hand);
 
     // — bottom-left: bean glyph + TAP TO PLAY (the WAITING slot)
     const bl = this.add.graphics().setDepth(1);
     const blx = -U.W * 0.46 + 14, bly = U.H * 0.47;
-    bl.lineStyle(3, 0xffffff, 1);
-    bl.strokeEllipse(blx, bly, 16, 20);
-    bl.strokeEllipse(blx, bly - 4, 10, 10);
+    bl.fillStyle(0xffffff, 1);
+    bl.fillEllipse(blx, bly, 17, 21); // body
+    bl.fillStyle(0x2ba9e2, 1);
+    bl.fillEllipse(blx, bly - 4, 10, 10); // face knocked out to field blue
     const tap = this.add
       .text(blx + 24, bly, 'TAP TO PLAY', {
         fontFamily: DISPLAY_FONT,
