@@ -63,6 +63,7 @@ export class TitleScene extends Phaser.Scene {
   private settingsCard?: Phaser.GameObjects.Container;
   private settingsOpen = false;
   private topBar?: ReturnType<typeof fgTopBar>;
+  private settingsTabIdx = -1;
   private promptOpen = false;
   private cardZones: Phaser.GameObjects.Zone[] = [];
   private lobbyArm?: (t0: number) => void;
@@ -200,6 +201,7 @@ export class TitleScene extends Phaser.Scene {
     this.lobbyDrop = undefined;
     this.started = fromWipe;
     this.settingsOpen = false;
+    this.cardZones = []; // scene instance persists — dead zones from the last card must not linger
 
     this.cameras.main.setBackgroundColor(FG.yellow);
     // fade from the boot screen's yellow — seamless handoff into the splash.
@@ -293,28 +295,32 @@ export class TitleScene extends Phaser.Scene {
     };
     this.askName = () => renameRunner(true);
 
+    // named const — the settings tab's highlight index is looked up from
+    // this list, so adding/removing icons can't silently retarget setActive
+    const topItems: Parameters<typeof fgTopBar>[2] = [
+      { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
+      {
+        icon: 'hanger',
+        onDown: () =>
+          this.gate(() => {
+            wipeTo(this, 'outfit');
+          }),
+      },
+      {
+        icon: 'sliders',
+        onDown: () => {
+          if (!this.started) return this.dismissSplash();
+          if (!this.promptOpen) this.toggleSettings();
+        },
+      },
+      { icon: 'board', onDown: () => this.gate(openBoard) },
+      { icon: 'online', onDown: () => this.gate(toOnline) },
+    ];
+    this.settingsTabIdx = topItems.findIndex((i) => i.icon === 'sliders');
     this.topBar = fgTopBar(
       this,
       vw,
-      [
-        { icon: 'play', active: true, onDown: () => this.gate(startClassic) },
-        {
-          icon: 'hanger',
-          onDown: () =>
-            this.gate(() => {
-              wipeTo(this, 'outfit');
-            }),
-        },
-        {
-          icon: 'sliders',
-          onDown: () => {
-            if (!this.started) return this.dismissSplash();
-            if (!this.promptOpen) this.toggleSettings();
-          },
-        },
-        { icon: 'board', onDown: () => this.gate(openBoard) },
-        { icon: 'online', onDown: () => this.gate(toOnline) },
-      ],
+      topItems,
       { crown: s.wins, star: stars },
       { y0: visT, xL: visL, xR: visR },
     );
@@ -1306,7 +1312,7 @@ export class TitleScene extends Phaser.Scene {
   private toggleSettings() {
     if (!this.settingsCard) return;
     this.settingsOpen = !this.settingsOpen;
-    this.topBar?.setActive(3, this.settingsOpen); // the sliders tab goes pink while its card is open
+    this.topBar?.setActive(this.settingsTabIdx, this.settingsOpen); // the sliders tab goes pink while its card is open
     const card = this.settingsCard;
     // kill any in-flight close tween — its onComplete would setVisible(false)
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
