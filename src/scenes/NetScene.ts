@@ -154,6 +154,11 @@ export class NetScene extends Phaser.Scene {
     this.st3.clearPickups();
     this.st3.clearProps();
     this.st3.resetOrbit();
+    {
+      const p = loadPicks();
+      this.st3.setView(p.camView);
+      this.st3.setRange(p.camRange);
+    }
     // the server simulates in the classic landscape arena — keep that pixel
     // space so positions line up, and stretch-map it onto the 3D pitch
     const stMap = this.st3.setPxSpace(CONFIG.arena.width, CONFIG.arena.height);
@@ -431,6 +436,9 @@ export class NetScene extends Phaser.Scene {
       if (this.keys.W.isDown || this.keys.UP.isDown) dir.y -= 1;
       if (this.keys.S.isDown || this.keys.DOWN.isDown) dir.y += 1;
       if (this.touch && this.touch.dir.lengthSq() > 0) dir.copy(this.touch.dir);
+      // camera-relative controls — intent rotates with the orbit yaw
+      const rot = this.st3.rotateInput(dir.x, dir.y);
+      dir.set(rot.x, rot.y);
     }
     const speed =
       this.keys.SHIFT.isDown || (this.touch?.sprint ?? false)

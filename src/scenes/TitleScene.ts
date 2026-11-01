@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { session } from '../xauth';
@@ -39,6 +39,10 @@ export class TitleScene extends Phaser.Scene {
   private joy: JoyMode = 'floating';
   private perf: PerfMode = 'balanced';
   private hints = true; // key-hint chrome — Settings › GAME › Key hints
+  private camView: CamView = 'classic'; // 3D cam preset — Settings › GAME › View
+  private camRange = 100;               // distance stepper % — Settings › GAME › Range
+  private camViewVal?: Phaser.GameObjects.Text;
+  private camRangeVal?: Phaser.GameObjects.Text;
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
@@ -188,6 +192,8 @@ export class TitleScene extends Phaser.Scene {
     this.joy = picks.joy;
     this.perf = picks.perf;
     this.hints = picks.hints;
+    this.camView = picks.camView;
+    this.camRange = picks.camRange;
     this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
@@ -248,7 +254,7 @@ export class TitleScene extends Phaser.Scene {
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy, this.perf, this.hints);
+      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
       wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
     const toOnline = () => {
@@ -366,8 +372,9 @@ export class TitleScene extends Phaser.Scene {
       .setStroke('#0d3550', 4);
 
     // --- ROAD PROGRESS (their season-progress block) ---
+    // label left edge pinned to the badge's right tip — the marked point
     this.add
-      .text(visL + 58, visT + 282, 'ROAD PROGRESS', {
+      .text(visL + 110, visT + 282, 'ROAD PROGRESS', {
         fontFamily: FG_BODY,
         fontSize: '15px',
         fontStyle: '800',
@@ -759,7 +766,7 @@ export class TitleScene extends Phaser.Scene {
     vis: { l: number; t: number; r: number; b: number },
   ) {
     const W = 560;
-    const H = isTouch ? 476 : 600; // desktop fits the Key hints row
+    const H = isTouch ? 568 : 692; // View + Range rows added two slots; desktop also fits Key hints
     const visW = vis.r - vis.l;
     const visH = vis.b - vis.t;
     const cx = vis.l + visW * 0.66;
@@ -1007,6 +1014,17 @@ export class TitleScene extends Phaser.Scene {
       if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
       this.refreshPicks();
     });
+    y += 46;
+    this.camViewVal = selector(y, 'View', () => CAM_LABEL[this.camView], (dir) => {
+      const i = CAM_ORDER.indexOf(this.camView);
+      this.camView = CAM_ORDER[(i + dir + CAM_ORDER.length) % CAM_ORDER.length];
+      this.refreshPicks();
+    });
+    y += 46;
+    this.camRangeVal = selector(y, 'Range', () => `${this.camRange}%`, (dir) => {
+      this.camRange = Math.min(160, Math.max(70, this.camRange + dir * 10));
+      this.refreshPicks();
+    });
     if (!isTouch) {
       // desktop-only row — there are no keys to hint on touch
       y += 46;
@@ -1153,7 +1171,9 @@ export class TitleScene extends Phaser.Scene {
     this.joyVal?.setText(JOY_LABEL[this.joy]);
     this.perfVal?.setText(PERF_LABEL[this.perf]);
     this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
-    savePicks(this.diff, this.joy, this.perf, this.hints);
+    this.camViewVal?.setText(CAM_LABEL[this.camView]);
+    this.camRangeVal?.setText(`${this.camRange}%`);
+    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
     this.settingsFoot?.setVisible(keyHintsOn());
   }
 }

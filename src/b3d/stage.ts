@@ -7,9 +7,18 @@ import * as THREE from 'three';
 import { makeBean, animBean, setFrozen, ensureEnv, emoteTexture, type Bean, type Bean3DModel } from './bean';
 import { buildWorld, buildSchool, updateWorld, disposeWorld, type World, type MapId } from './world';
 import { clamp, lerp, pick } from './util';
+import type { CamView } from '../meta';
 
 const SCALE = 44;          // px per world unit — arena ~1619x2411 on street
 const PROP_COLS = [0x8a5a2a, 0x5d6b73, 0x1c1c1e, 0x74563c];
+
+// camera presets — dist/height are the base rig; the user's Range pick and
+// the drag/pinch deviators stack multiplicatively on top of dist
+const CAM_PRESETS: Record<CamView, { dist: number; height: number; fov: number }> = {
+  third: { dist: 7.5, height: 3.4, fov: 56 },   // over the shoulder
+  classic: { dist: 13, height: 9.5, fov: 50 },  // the chase cam
+  wide: { dist: 20, height: 17.5, fov: 48 },    // near top-down — the old 2D read
+};
 
 interface Ent3D {
   root: THREE.Group;
@@ -72,6 +81,8 @@ export class PitchStage {
   private camYaw = 0;            // drag offset
   private camPitch = 1;
   private camDist = 1;
+  private camView: CamView = 'classic'; // Settings › GAME › View preset
+  private camRange = 1;                 // Settings › GAME › Range (0.7–1.6)
   private camX = 0; private camZ = 0;
   private shakeT = 0; private shakeAmp = 0;
   // NEPA / rain
@@ -442,6 +453,15 @@ export class PitchStage {
   }
   zoomBy(d: number) { this.camDist = clamp(this.camDist + d * .002, .7, 1.6); }
   resetOrbit() { this.camYaw = 0; this.camPitch = 1; this.camDist = 1; }
+  setView(v: CamView) { this.camView = v; }          // preset swap — fov eases over in updateCam
+  setRange(pct: number) { this.camRange = clamp(pct / 100, .7, 1.6); }
+
+  /** screen-space intent (px) → camera-relative: "up" is always up-screen
+   *  even after orbiting. Same formula in phaser-px space since +px→+X, +py→+Z */
+  rotateInput(x: number, y: number) {
+    const c = Math.cos(this.camYaw), s = Math.sin(this.camYaw);
+    return { x: x * c + y * s, y: -x * s + y * c };
+  }
   shake(amp = .5) { this.shakeT = .3; this.shakeAmp = amp; }
 
   private camTarget = new THREE.Vector3();
@@ -449,11 +469,17 @@ export class PitchStage {
   private updateCam(dt: number, fx: number, fy: number) {
     const tx = this.toWX(fx), tz = this.toWZ(fy);
     const yaw = this.camYaw, pitch = this.camPitch;
-    const dist = 13 * this.camDist, h = 9.5 * pitch;
+    const p = CAM_PRESETS[this.camView];
+    const dist = p.dist * this.camDist * this.camRange, h = p.height * pitch;
     this.camPos.set(
       tx + Math.sin(yaw) * dist,
       h,
       tz + Math.cos(yaw) * dist);
+    // ease the fov toward the active preset — a hard jump on swap reads as a pop
+    if (Math.abs(this.camera.fov - p.fov) > 0.05) {
+      this.camera.fov += (p.fov - this.camera.fov) * Math.min(1, dt * 6);
+      this.camera.updateProjectionMatrix();
+    }
     if (this.shakeT > 0) {
       this.shakeT -= dt;
       const s = this.shakeAmp * this.shakeT;
