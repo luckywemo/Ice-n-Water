@@ -314,6 +314,71 @@ export function levelIntro(def: LevelDef): LevelIntro | null {
   return FIRST[def.n] ?? null;
 }
 
+// ---------- per-level intro card ----------
+// the FG course card — shown before EVERY level. Structured data; the
+// scene owns the layout. flavor reuses levelIntro's bespoke copy.
+
+const SLOT_TAG = [
+  'STREET CHASE', 'WATER DROPS', 'THAW DUTY', 'BIG BRAWL', 'SAFE RING',
+  'OUTNUMBERED', 'LONE WOLF', 'SQUAD SUPPORT', 'WATER FIGHTS BACK', 'BOSS FIGHT',
+];
+const MUTATOR_LINE: Record<Mutator, string> = {
+  night: 'night — you run inside your own spotlight',
+  storm: 'rain — everybody slides',
+  market: 'market day — items and bodies everywhere',
+  heat: 'heat — sprint drains faster',
+  crowd: 'crowded — extra bodies on the pitch',
+  decoy: "bitter drops wear water's coat — check the colour",
+};
+const KIND_LINE: Record<ObjectiveKind, string> = {
+  survive: "don't get iced before the clock dies",
+  collect: 'grab the drops before the clock dies',
+  rescue: 'touch frozen mates to thaw them back',
+  refuge: 'the gold ring hides you — cover drains inside, cools outside',
+  hunt: "you're the chaser — tag them before the clock dies",
+};
+
+export interface LevelCard {
+  tab: string; // 'LEVEL 34' | 'SURULERE — MILESTONE 3'
+  name: string; // landmark stop name / boss title
+  tag: string; // type pill — BOSS FIGHT, BIG BRAWL, HUNT SEASON…
+  how: string; // objective + mechanic, one line each
+  flavor?: string; // bespoke copy for bosses, chapters, first-of-kind
+  squads: string; // 'you + 3 mates · 4 militia'
+}
+
+export function levelCard(def: LevelDef): LevelCard {
+  const o = def.objective;
+  const slot = (def.n - 1) % LEVELS_PER_MILESTONE;
+  const tag = def.boss ? 'BOSS FIGHT' : o.kind === 'hunt' ? 'HUNT SEASON' : SLOT_TAG[slot];
+  const lines = [KIND_LINE[o.kind]];
+  if (o.kind === 'collect' && def.twist)
+    lines.push('leftover drops freeze into hunters — reach the gold exit');
+  if (def.mutator) lines.push(MUTATOR_LINE[def.mutator]);
+  if (def.bossMove)
+    lines.push(
+      def.bossMove === 'summon'
+        ? 'he calls iceling backup'
+        : def.bossMove === 'rage'
+          ? 'he rages — give him room when he boils'
+          : 'he blinks — watch your back',
+    );
+  const squads =
+    o.kind === 'hunt'
+      ? `you hunt ${o.count}+ runners`
+      : def.crew > 0
+        ? `you + ${def.crew} mates · ${def.chasers} militia`
+        : `you alone · ${def.chasers} militia`;
+  return {
+    tab: def.boss ? `${def.town.toUpperCase()} — MILESTONE ${def.milestone}` : `LEVEL ${def.n}`,
+    name: def.boss ?? def.name,
+    tag,
+    how: lines.join('\n'),
+    flavor: levelIntro(def)?.body,
+    squads,
+  };
+}
+
 // ---------- progress (localStorage) ----------
 
 const ADV_KEY = 'icenwater_adventure';
