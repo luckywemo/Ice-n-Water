@@ -21,7 +21,7 @@ import { charMove, currentChar, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../ch
 import { bakeBeanSheet, sheetCanvas } from '../beanbake';
 import { viaWipe, wipeTo } from '../wipe';
 import { bakeGlyphTile, bakeIntroField } from '../fgui';
-import type { BossMove } from '../adventure';
+import type { BossMove, ObjectiveKind } from '../adventure';
 
 type Body = Phaser.Physics.Arcade.Body;
 type Sprite = Phaser.Physics.Arcade.Sprite;
@@ -802,20 +802,49 @@ export class GameScene extends Phaser.Scene {
     hb.fillStyle(0x0d3550, 0.55).fillRoundedRect(pvX, hbY, pvW, hbH, hbH / 2);
     add(hb);
     const touchDev = TouchControls.isTouchDevice();
-    // rotating hints — controls always lead, then 2 seeded picks per level
-    // so different stops brief different mechanics (chevron pages early)
-    const hintPool: [desk: string, touch: string][] = [
+    // rotating hints — controls always lead, then the level's own mechanics
+    // (boss move > mutator > objective tip); generic pool fills any gap so
+    // plain stops still vary (chevron pages early)
+    type Hint = [desk: string, touch: string];
+    const L = this.level;
+    const BOSS_HINT: Record<BossMove, Hint> = {
+      summon: ['summon — his icelings count; thin them out early', ''],
+      rage: ['rage — sprint AWAY when he boils', 'rage — break away when he boils'],
+      blink: ['blink — never run a straight line', ''],
+    };
+    const MUT_HINT: Record<Mutator, Hint> = {
+      night: ['night — your spotlight marks you; orbit for red glints', ''],
+      storm: ['storm — everybody slides; brake early', ''],
+      market: ['market — bodies block the lanes; cut the gaps', ''],
+      heat: ["heat — tap sprint, don't hold it", "heat — tap right side, don't hold"],
+      crowd: ['crowd — extra bodies everywhere; keep your lane', ''],
+      decoy: ["decoy — bitter drops wear water's coat — check the colour", ''],
+    };
+    const KIND_HINT: Record<ObjectiveKind, Hint> = {
+      survive: ['survive — sprint only to break a chase', ''],
+      collect: ['collect — bank drops along safe lines', ''],
+      rescue: ['rescue — a thawed mate is a live decoy', ''],
+      refuge: ["refuge — the ring drains cover inside; dip, don't camp", ''],
+      hunt: ["hunt — cut corners; they won't wait at walls", ''],
+    };
+    const mech: Hint[] = [];
+    if (L?.bossMove) mech.push(BOSS_HINT[L.bossMove]);
+    if (L?.mutator) mech.push(MUT_HINT[L.mutator]);
+    if (L?.twist) mech.push(['leftover drops turn hunter — reach the gold exit', '']);
+    mech.push(KIND_HINT[L?.objective.kind ?? 'survive']);
+    const generic: Hint[] = [
       ['E — water / shout   SPACE — taunt   R — restart', 'skill badge — water / taunt'],
       ['view — third · classic · wide   range — 70–160%', 'drag — orbit the camera'],
       ['camera view + range — gear in settings', 'camera feel — gear in settings'],
       ['drag empty ground — orbit   ESC — pause', 'drag empty ground — orbit'],
     ];
-    const seed = this.level?.n ?? 0;
+    const extras = mech.slice(0, 2);
+    for (let k = 0; extras.length < 2; k++) extras.push(generic[((L?.n ?? 0) + k) % generic.length]);
     const hints: string[] = [
       touchDev
         ? 'left side — move   right side — sprint · drag — orbit'
         : 'arrows / wasd — move   shift — sprint   drag — orbit',
-      ...[0, 1].map((k) => hintPool[(seed * 2 + k) % hintPool.length][touchDev ? 1 : 0]),
+      ...extras.map(([desk, touch]) => (touchDev && touch ? touch : desk)),
     ];
     const hintT = this.add
       .text(pvX + pvW / 2 - 10, hbY + hbH / 2, hints[0], {
