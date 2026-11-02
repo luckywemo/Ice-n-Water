@@ -9,7 +9,10 @@ import { loadPicks } from '../meta';
 import { pushProfile } from '../cloudsave';
 import { keyHintsOn } from '../mobile';
 import { authTicket } from '../xauth';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
+import { Sfx } from '../audio';
+
+const sfx = Sfx.inst;
 
 type LobbyPlayer = {
   name: string;
@@ -51,6 +54,7 @@ export class LobbyScene extends Phaser.Scene {
 
   create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
+    clearWipe(this); // same self-restart risk as the road — clear a stale blade mask
     makeTextures(this);
     this.room = null;
     this.lobbyPhase = 'menu';
@@ -204,6 +208,7 @@ export class LobbyScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', () => {
+          if (this.lobbyMode !== m.id) sfx.uiTap();
           this.lobbyMode = m.id;
           modeRedraws.forEach((redraw, j) => redraw(modes[j].id === m.id));
         });
@@ -471,6 +476,7 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private leave() {
+    sfx.uiBack();
     void this.room?.leave();
     this.cleanupInputs();
     wipeTo(this, 'title');

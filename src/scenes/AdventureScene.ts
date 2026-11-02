@@ -4,7 +4,7 @@ import { Sfx } from '../audio';
 import { DISPLAY_FONT, UI_FONT, UI, panel, REDUCED_MOTION, shade, textInputFocused } from '../ui';
 import { fgCrownField, fgRings, fgHexBadge, fgProgressBar, fgTopBar, FG, FG_FONT } from '../fgui';
 import { fitZoom } from '../mobile';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
 import { Hero3D } from '../hero3d';
 import { currentChar } from '../characters';
 import { loadStats, perfInterval, furQuality, loadPicks } from '../meta';
@@ -124,6 +124,7 @@ export class AdventureScene extends Phaser.Scene {
 
   create(data?: { board?: boolean; advance?: number }) {
     const { width, height } = this.scale;
+    clearWipe(this); // a stale blade mask from an interrupted wipe = blank screen
     makeTextures(this);
     this.prog = adventureProgress();
     this.boardLayer = null; // scene instance persists across restarts
@@ -157,15 +158,22 @@ export class AdventureScene extends Phaser.Scene {
     // center-crops. Same approach as the lobby: restart on real resizes.
     let lastW = width;
     let lastH = height;
+    const createdAt = this.time.now;
     const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
-      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
-        lastW = sz.width;
-        lastH = sz.height;
+      // fresh scene: mobile URL-bar churn during the blade reveal would
+      // restart mid-wipe and strand the camera mask — absorb it instead
+      const fresh = this.time.now - createdAt < 450;
+      if (
+        !fresh &&
+        (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24)
+      ) {
         this.scene.restart();
       }
+      lastW = sz.width;
+      lastH = sz.height;
     };
     this.scale.on('resize', onResize);
     // scale listeners are global — they survive restarts; detach on shutdown
@@ -405,6 +413,8 @@ export class AdventureScene extends Phaser.Scene {
       return;
     }
     this.frontier.x = this.cardX(a - 1); // stage on the card just cleared
+    sfx.beanHop(); // the walker takes two little steps across the rail
+    this.time.delayedCall(330, () => sfx.beanHop());
     this.tweens.add({ targets: this.frontier, x: toX, duration: 650, ease: 'Sine.easeInOut' });
     this.tweens.add({ targets: cam, scrollX: camX, duration: 650, ease: 'Sine.easeInOut' });
     this.time.delayedCall(680, done);
@@ -725,6 +735,7 @@ export class AdventureScene extends Phaser.Scene {
   // ---------- global leaderboard overlay ----------
 
   private showBoard() {
+    sfx.uiOpen();
     if (this.boardLayer) return;
     const width = this.visW,
       height = this.visH;
@@ -1015,6 +1026,7 @@ export class AdventureScene extends Phaser.Scene {
   }
 
   private closeBoard() {
+    sfx.uiClose();
     this.boardLayer?.destroy();
     this.boardLayer = null;
     this.boardTiles = [];
@@ -1300,9 +1312,12 @@ export class AdventureScene extends Phaser.Scene {
         .setShadow(0, 3, open ? '#c98a00' : '#3a4656', 0, true, false),
     );
 
-    this.cardHit = open
-      ? [{ x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => this.playLevel(n) }]
-      : [];
+    this.cardHit = [
+      open
+        ? { x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => this.playLevel(n) }
+        : // locked cards still answer — the muted "nope" buzz, not silence
+          { x: pbx, y: pby - 4, w: pbw, h: pbh + 8, fn: () => sfx.denied() },
+    ];
 
     this.detailLayer = this.add.container(0, 0, kids).setScrollFactor(0).setDepth(46);
   }
@@ -1322,6 +1337,7 @@ export class AdventureScene extends Phaser.Scene {
    *  the frontier marker is mid-march */
   private gated(fn: () => void) {
     if (this.modalOpen || this.boardLayer || this.marching) return;
+    sfx.uiTap(); // every gated control pops — top bar, focus target
     fn();
   }
 

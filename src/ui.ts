@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
+import { Sfx } from './audio';
+
+const sfx = Sfx.inst;
 
 export const DISPLAY_FONT = '"Titan One", "Baloo 2", sans-serif';
 export const UI_FONT = '"Baloo 2", "Fredoka", sans-serif';
@@ -400,7 +403,13 @@ export function pillButton(
     text.setY(-lipH / 2 + lipH - 4);
     if (!REDUCED_MOTION)
       scene.tweens.add({ targets: container, scale: 0.97, duration: 60 });
+    sfx.uiTap(); // the candy pop rides every pill press
     onDown?.();
+  });
+  // whisper tick on mouse hover — coarse pointers skip it (pointerover
+  // fires before pointerdown on touch and would double the tap sound)
+  zone.on('pointerover', () => {
+    if (!(window.matchMedia?.('(pointer: coarse)').matches ?? false)) sfx.uiHover();
   });
   const release = () => {
     draw(false);

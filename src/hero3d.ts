@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { REDUCED_MOTION } from './ui';
+import { Sfx } from './audio';
 
 const BODY = 0x8a4f24; // glossy milk-chocolate brown
 const SKIN = 0xecc98e; // warm pale tan face oval
@@ -92,11 +93,18 @@ export class Hero3D {
   private lastT = -1;
   private yaw = 0; // user spin
   private yawVel = 0;
+  private lastSpinSfx = 0; // spin-warble throttle (performance.now ms)
   ok = false;
 
   /** drag-to-rotate — pixel delta feeds spin velocity */
   spin(dx: number) {
     this.yawVel += dx * 0.008;
+    // warble per drag beat — throttled so fast drags trill, not chatter
+    const now = performance.now();
+    if (Math.abs(dx) > 4 && now - this.lastSpinSfx > 150) {
+      this.lastSpinSfx = now;
+      Sfx.inst.beanSpin();
+    }
   }
 
   /** cursor follow — normalized −1..1 from screen centre */
@@ -107,6 +115,7 @@ export class Hero3D {
 
   /** poke reaction — deep squash + a little startle hop */
   poke() {
+    Sfx.inst.beanEep();
     this.sqVel -= 4.2;
     if (this.hopY === 0) this.hopV = 1.5;
   }
@@ -964,6 +973,7 @@ export class Hero3D {
       if (this.hopY === 0) {
         this.hopV = 2.7;
         this.sqVel += 2.2;
+        Sfx.inst.beanHop();
       }
     }
     // the pratfall routine — launch, midair backflip, SPLAT flat on the
@@ -974,6 +984,8 @@ export class Hero3D {
         this.hopV = 3.6;
         this.sqVel += 2.4;
         this.tricking = true;
+        Sfx.inst.beanBoing();
+        Sfx.inst.beanWhee(); // delayed inside — lands mid-flip
       }
     }
     if (this.tricking && this.hopY > 0) this.flipX -= 8.73 * dt; // 360° backflip over the 0.72s arc
@@ -986,9 +998,12 @@ export class Hero3D {
         this.sqVel += this.hopV * (this.tricking ? 2.2 : 1.3);
         this.hopV = 0;
         if (this.tricking) {
+          Sfx.inst.beanSplat();
           this.tricking = false;
           this.flipX = 0;
           this.dizzyUntil = t + 2100;
+        } else {
+          Sfx.inst.beanLand();
         }
       }
     }

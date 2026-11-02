@@ -3,7 +3,7 @@ import { makeTextures } from '../art';
 import { Sfx } from '../audio';
 import { REDUCED_MOTION, bakeLogoLetter, shade, panel, UI, textInputFocused, pillButton } from '../ui';
 import { IceFxPipeline, WaterFxPipeline } from '../logofx';
-import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL } from '../meta';
+import { loadStats, loadPicks, savePicks, DIFFS, Difficulty, JoyMode, PERF_ORDER, PERF_LABEL, PERF_MS, FUR_Q, PerfMode, CamView, CAM_ORDER, CAM_LABEL, CamFacing, CAM_FACE_ORDER, CAM_FACE_LABEL } from '../meta';
 import { adventureProgress, totalStars, TOTAL_LEVELS } from '../adventure';
 import { playerName, setPlayerName } from '../leaderboard';
 import { pushProfile } from '../cloudsave';
@@ -25,7 +25,7 @@ import {
 } from '../fgui';
 import { Hero3D } from '../hero3d';
 import { CHARACTERS, charTitleShort, charUnlocked, currentChar, setChar } from '../characters';
-import { viaWipe, wipeTo } from '../wipe';
+import { clearWipe, viaWipe, wipeTo } from '../wipe';
 
 const sfx = Sfx.inst;
 
@@ -42,8 +42,10 @@ export class TitleScene extends Phaser.Scene {
   private hints = true; // key-hint chrome — Settings › GAME › Key hints
   private camView: CamView = 'classic'; // 3D cam preset — Settings › GAME › View
   private camRange = 100;               // distance stepper % — Settings › GAME › Range
+  private camFacing: CamFacing = 'view';// heading-chase toggle — Settings › GAME › Facing
   private camViewVal?: Phaser.GameObjects.Text;
   private camRangeVal?: Phaser.GameObjects.Text;
+  private camFaceVal?: Phaser.GameObjects.Text;
   private diffVal?: Phaser.GameObjects.Text; // chevron selector readouts in settings
   private joyVal?: Phaser.GameObjects.Text;
   private soundVal?: Phaser.GameObjects.Text;
@@ -187,6 +189,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(data?: { iwWipe?: boolean }) {
     const { width, height } = this.scale;
+    clearWipe(this); // a stale blade mask from an interrupted wipe = blank screen
     makeTextures(this);
     const fromWipe = viaWipe(data);
     const picks = loadPicks();
@@ -196,6 +199,7 @@ export class TitleScene extends Phaser.Scene {
     this.hints = picks.hints;
     this.camView = picks.camView;
     this.camRange = picks.camRange;
+    this.camFacing = picks.camFacing;
     this.heroMs = PERF_MS[this.perf];
     this.diffVal = undefined;
     this.joyVal = undefined;
@@ -229,15 +233,22 @@ export class TitleScene extends Phaser.Scene {
     const visB = vh / 2 + height / (2 * stageZoom);
     let lastW = width;
     let lastH = height;
+    const createdAt = this.time.now;
     const onResize = (sz: Phaser.Structs.Size) => {
       // soft keyboard = a fake resize while typing — restarting here
       // destroys the open prompt (and the DOM input with it)
       if (textInputFocused()) return;
-      if (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24) {
-        lastW = sz.width;
-        lastH = sz.height;
+      // fresh scene: mobile URL-bar churn during the blade reveal would
+      // restart mid-wipe and strand the camera mask — absorb it instead
+      const fresh = this.time.now - createdAt < 450;
+      if (
+        !fresh &&
+        (Math.abs(sz.width - lastW) > 24 || Math.abs(sz.height - lastH) > 24)
+      ) {
         this.scene.restart();
       }
+      lastW = sz.width;
+      lastH = sz.height;
     };
     // ScaleManager is game-level — it outlives this scene, so the listener
     // must be removed on shutdown or every lobby visit stacks another copy
@@ -256,24 +267,21 @@ export class TitleScene extends Phaser.Scene {
 
     const toAdventure = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'adventure');
     };
     const startClassic = () => {
       sfx.ensure();
       sfx.shortWhistle();
-      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
+      savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange, this.camFacing);
       pushProfile();
       wipeTo(this, 'drop', { game: { difficulty: this.diff } });
     };
     const toOnline = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'lobby');
     };
     const openBoard = () => {
       sfx.ensure();
-      sfx.pickup();
       wipeTo(this, 'adventure', { board: true });
     };
 
@@ -660,14 +668,16 @@ export class TitleScene extends Phaser.Scene {
       }
     }
     this.hero3d?.poke(); // little bounce so the swap feels alive
-    sfx.pickup();
   }
 
   private gate(fn: () => void) {
     // modals own the input while open — no nav keys firing behind them
     if (this.promptOpen || this.settingsOpen) return;
     if (!this.started) this.dismissSplash();
-    else fn();
+    else {
+      sfx.uiTap(); // every gated control pops — icons, keys, podium taps
+      fn();
+    }
   }
 
   private buildSplash(
@@ -732,12 +742,19 @@ export class TitleScene extends Phaser.Scene {
     c.add(z);
     this.splash = c;
     // wall-clock dismiss — the scene timer stalls when the RAF loop panics
-    // on big deltas (background tabs), setTimeout doesn't
-    window.setTimeout(() => this.dismissSplash(), REDUCED_MOTION ? 1000 : 2400);
+    // on big deltas (background tabs), setTimeout doesn't. Guard the splash
+    // identity: a resize-restart replaces it and this zombie must not kill
+    // the fresh one early
+    window.setTimeout(() => {
+      if (this.splash === c) this.dismissSplash();
+    }, REDUCED_MOTION ? 1000 : 2400);
   }
 
   private dismissSplash() {
-    if (this.started) return;
+    // isActive: the wall-clock timer can land after this scene was swapped
+    // out (hash jump / fast exit) — revealing the lobby on a dead scene
+    // reaches promptModal with no camera and crashes
+    if (this.started || !this.scene.isActive()) return;
     this.started = true;
     sfx.ensure();
     sfx.pickup();
@@ -1033,15 +1050,21 @@ export class TitleScene extends Phaser.Scene {
       if (this.hero3d) this.hero3d.furQ = FUR_Q[this.perf]; // live coat swap
       this.refreshPicks();
     });
-    y += 46;
+    y += S(46);
     this.camViewVal = selector(y, 'View', () => CAM_LABEL[this.camView], (dir) => {
       const i = CAM_ORDER.indexOf(this.camView);
       this.camView = CAM_ORDER[(i + dir + CAM_ORDER.length) % CAM_ORDER.length];
       this.refreshPicks();
     });
-    y += 46;
+    y += S(46);
     this.camRangeVal = selector(y, 'Range', () => `${this.camRange}%`, (dir) => {
       this.camRange = Math.min(160, Math.max(70, this.camRange + dir * 10));
+      this.refreshPicks();
+    });
+    y += S(46);
+    this.camFaceVal = selector(y, 'Facing', () => CAM_FACE_LABEL[this.camFacing], (dir) => {
+      const i = CAM_FACE_ORDER.indexOf(this.camFacing);
+      this.camFacing = CAM_FACE_ORDER[(i + dir + CAM_FACE_ORDER.length) % CAM_FACE_ORDER.length];
       this.refreshPicks();
     });
     if (!isTouch) {
@@ -1339,10 +1362,12 @@ export class TitleScene extends Phaser.Scene {
     // on a card we just reopened (rapid tap-tap-tap left an invisible modal)
     this.tweens.killTweensOf(card);
     if (this.settingsOpen) {
+      sfx.uiOpen(); // card pops in
       card.setVisible(true);
       this.cardZones.forEach((z) => (z.input!.enabled = true));
       this.tweens.add({ targets: card, alpha: 1, duration: 160 });
     } else {
+      sfx.uiClose(); // and settles out
       this.cardZones.forEach((z) => (z.input!.enabled = false));
       this.tweens.add({
         targets: card,
@@ -1399,7 +1424,8 @@ export class TitleScene extends Phaser.Scene {
     this.hintsVal?.setText(this.hints ? 'ON' : 'OFF');
     this.camViewVal?.setText(CAM_LABEL[this.camView]);
     this.camRangeVal?.setText(`${this.camRange}%`);
-    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange);
+    this.camFaceVal?.setText(CAM_FACE_LABEL[this.camFacing]);
+    savePicks(this.diff, this.joy, this.perf, this.hints, this.camView, this.camRange, this.camFacing);
     pushProfile(); // difficulty/hints sync; joy/perf/cam stay per-device
     this.settingsFoot?.setVisible(keyHintsOn());
   }

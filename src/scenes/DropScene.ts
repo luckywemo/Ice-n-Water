@@ -4,9 +4,13 @@ import { DISPLAY_FONT, UI_FONT, REDUCED_MOTION } from '../ui';
 import { FG, FG_FONT } from '../fgui';
 import { DIFFS, Difficulty, perfInterval, furQuality } from '../meta';
 import { LevelDef } from '../adventure';
-import { currentChar } from '../characters';
+import { currentChar, CharDef, CREW_DEF, MILITIA_DEF, BOSS_MODELS } from '../characters';
+import { bakeBeanSheetAsync } from '../beanbake';
 import { fitZoom } from '../mobile';
 import { viaWipe, wipeTo } from '../wipe';
+import { Sfx } from '../audio';
+
+const sfx = Sfx.inst;
 
 // DropScene — the FALL GUYS "populating" beat, retold our way: the furry
 // bean skydives through a cyan sky while the level name lands under it.
@@ -37,6 +41,23 @@ export class DropScene extends Phaser.Scene {
 
   create(data: DropData) {
     const gameData = data?.game ?? (data as DropData['game']) ?? {};
+    // the theatre doubles as the loading screen: start baking the gameplay
+    // bean sheets now, chunked across frames, so GameScene.create() reads a
+    // warm texture cache instead of running ~200 WebGL poses in one
+    // main-thread burst — the burst is what froze this screen mid-fall
+    {
+      const me = currentChar();
+      const want: Array<[string, CharDef]> = [
+        [`bean-you-${me.id}-${me.body.toString(16)}`, me],
+        ['bean-crew', CREW_DEF],
+        ['bean-militia', MILITIA_DEF],
+      ];
+      const adv = gameData.adventure;
+      if (adv?.boss) {
+        want.push([`bean-boss-${adv.boss}`, { ...MILITIA_DEF, ...BOSS_MODELS[adv.boss], id: 'boss', name: adv.boss }]);
+      }
+      for (const [k, d] of want) void bakeBeanSheetAsync(this, k, d);
+    }
     this.heroMs = perfInterval(); // re-read per create — the pick can change
     // scene instance persists — a restart (resize mid-drop) would otherwise
     // leave `gone` latched and finish() permanently unreachable
@@ -78,6 +99,7 @@ export class DropScene extends Phaser.Scene {
     hero.furQ = furQuality(); // the Bean FPS pick carries the coat
     if (hero.ok && hero.canvas) {
       hero.skydiving = true;
+      sfx.beanWhistle(); // the long falling whistle under the dive
       hero.setVariant(pc.body, pc.skin);
       const cv = (this.heroCv = document.createElement('canvas'));
       cv.width = 760;
@@ -128,8 +150,8 @@ export class DropScene extends Phaser.Scene {
       })
       .setOrigin(1, 0.5)
       .setInteractive({ useHandCursor: true });
-    skip.on('pointerdown', () => this.go(gameData));
-    this.input.keyboard?.once('keydown-SPACE', () => this.go(gameData));
+    skip.on('pointerdown', () => { sfx.uiTap(); this.go(gameData); });
+    this.input.keyboard?.once('keydown-SPACE', () => { sfx.uiTap(); this.go(gameData); });
 
     this.time.delayedCall(REDUCED_MOTION ? 1200 : HOLD, () => this.go(gameData));
     if (!viaWipe(data)) this.cameras.main.fadeIn(240, 98, 200, 242);
