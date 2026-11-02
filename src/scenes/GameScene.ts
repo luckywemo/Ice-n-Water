@@ -521,6 +521,7 @@ export class GameScene extends Phaser.Scene {
 
   private introDismiss: ((p: Phaser.Input.Pointer) => void) | null = null;
   private introTapRect = { x: 0, y: 0, w: 0, h: 0 };
+  private introChevRect = { x: 0, y: 0, w: 0, h: 0 };
 
   private showIntro(card: ReturnType<typeof levelCard>) {
     this.introActive = true;
@@ -801,31 +802,53 @@ export class GameScene extends Phaser.Scene {
     hb.fillStyle(0x0d3550, 0.55).fillRoundedRect(pvX, hbY, pvW, hbH, hbH / 2);
     add(hb);
     const touchDev = TouchControls.isTouchDevice();
+    // rotating hints — controls always lead, then 2 seeded picks per level
+    // so different stops brief different mechanics (chevron pages early)
+    const hintPool: [desk: string, touch: string][] = [
+      ['E — water / shout   SPACE — taunt   R — restart', 'skill badge — water / taunt'],
+      ['view — third · classic · wide   range — 70–160%', 'drag — orbit the camera'],
+      ['camera view + range — gear in settings', 'camera feel — gear in settings'],
+      ['drag empty ground — orbit   ESC — pause', 'drag empty ground — orbit'],
+    ];
+    const seed = this.level?.n ?? 0;
+    const hints: string[] = [
+      touchDev
+        ? 'left side — move   right side — sprint · drag — orbit'
+        : 'arrows / wasd — move   shift — sprint   drag — orbit',
+      ...[0, 1].map((k) => hintPool[(seed * 2 + k) % hintPool.length][touchDev ? 1 : 0]),
+    ];
     const hintT = this.add
-      .text(
-        pvX + pvW / 2 - 10,
-        hbY + hbH / 2,
-        touchDev
-          ? 'left side — move   right side — sprint · drag — orbit'
-          : 'arrows / wasd — move   shift — sprint   drag — orbit',
-        {
-          fontFamily: UI_FONT,
-          fontSize: '13px',
-          fontStyle: '700',
-          color: '#ffffff',
-        },
-      )
+      .text(pvX + pvW / 2 - 10, hbY + hbH / 2, hints[0], {
+        fontFamily: UI_FONT,
+        fontSize: '13px',
+        fontStyle: '700',
+        color: '#ffffff',
+      })
       .setOrigin(0.5)
       .setDepth(1);
+    let hintIdx = 0;
+    const cycleHint = () => {
+      hintIdx = (hintIdx + 1) % hints.length;
+      hintT.setText(hints[hintIdx]);
+      if (!REDUCED_MOTION) {
+        hintT.setAlpha(0);
+        this.tweens.add({ targets: hintT, alpha: 1, duration: 180 });
+      }
+    };
+    const hintTimer = this.time.addEvent({ delay: 3000, loop: true, callback: cycleHint });
+    this.introObjs.push({
+      destroy: () => hintTimer.remove(),
+    } as unknown as Phaser.GameObjects.GameObject);
     const hand = this.add.graphics().setDepth(1);
-    const hxp = hintT.x - hintT.width / 2 - 30, hyp = hbY + hbH / 2;
+    // fixed anchor at the bar's left — hint widths vary per page
+    const hxp = pvX + 26, hyp = hbY + hbH / 2;
     hand.fillStyle(0xffffff, 1);
     hand.fillRoundedRect(hxp - 8, hyp - 5, 15, 12, 5); // palm
     hand.fillRoundedRect(hxp + 5, hyp - 8, 15, 6, 3); // pointing finger
     hand.fillRoundedRect(hxp - 11, hyp - 9, 8, 8, 3); // thumb
     hand.fillStyle(0x0d3550, 0.35);
     hand.fillRoundedRect(hxp - 8, hyp + 3, 15, 4, 2); // cuff shadow line
-    // solid triangle chevron at the bar's right end
+    // solid triangle chevron at the bar's right end — tappable next page
     const cxp = pvX + pvW - 18, cyp = hbY + hbH / 2;
     hb.fillStyle(0xffffff, 0.9);
     hb.fillPoints(
@@ -836,6 +859,7 @@ export class GameScene extends Phaser.Scene {
       ],
       true,
     );
+    this.introChevRect = { x: cxp - 26, y: cyp - 20, w: 52, h: 40 };
     add(hintT, hand);
 
     // — bottom-left: bean glyph + TAP TO PLAY (the WAITING slot)
@@ -890,15 +914,21 @@ export class GameScene extends Phaser.Scene {
     }
 
     const zr = this.introTapRect;
-    this.introDismiss = (p: Phaser.Input.Pointer) => {
+    const cr = this.introChevRect;
+    const inRect = (p: Phaser.Input.Pointer, r: typeof zr) => {
       // wrap sits at screen centre with scale hf — local coords → screen px
-      const hf = this.hf;
-      const cx = w / 2 + (zr.x + zr.w / 2) * hf;
-      const cy = h / 2 + (zr.y + zr.h / 2) * hf;
-      if (
-        Math.abs(p.x - cx) <= (zr.w * hf) / 2 + 8 &&
-        Math.abs(p.y - cy) <= (zr.h * hf) / 2 + 8
-      ) {
+      const cx = w / 2 + (r.x + r.w / 2) * this.hf;
+      const cy = h / 2 + (r.y + r.h / 2) * this.hf;
+      return (
+        Math.abs(p.x - cx) <= (r.w * this.hf) / 2 + 8 &&
+        Math.abs(p.y - cy) <= (r.h * this.hf) / 2 + 8
+      );
+    };
+    this.introDismiss = (p: Phaser.Input.Pointer) => {
+      if (inRect(p, cr)) {
+        cycleHint();
+        hintTimer.reset({ delay: 3000, loop: true, callback: cycleHint });
+      } else if (inRect(p, zr)) {
         this.dismissIntro();
       }
     };
