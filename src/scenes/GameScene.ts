@@ -864,7 +864,7 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: hintT, alpha: 1, duration: 180 });
       }
     };
-    const hintTimer = this.time.addEvent({ delay: 3000, loop: true, callback: cycleHint });
+    const hintTimer = this.time.addEvent({ delay: 6000, loop: true, callback: cycleHint });
     this.introObjs.push({
       destroy: () => hintTimer.remove(),
     } as unknown as Phaser.GameObjects.GameObject);
@@ -956,7 +956,7 @@ export class GameScene extends Phaser.Scene {
     this.introDismiss = (p: Phaser.Input.Pointer) => {
       if (inRect(p, cr)) {
         cycleHint();
-        hintTimer.reset({ delay: 3000, loop: true, callback: cycleHint });
+        hintTimer.reset({ delay: 6000, loop: true, callback: cycleHint });
       } else if (inRect(p, zr)) {
         this.dismissIntro();
       }
