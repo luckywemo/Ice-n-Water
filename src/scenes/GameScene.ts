@@ -529,17 +529,24 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const z = this.zoom;
-    const U = { W: w / z, H: h / z }; // the camera view in world units
+    const hf = hudFactor(w, h);
+    // layout in DRAWN units (w/hf): pinned children render local*hf px from
+    // screen centre, so ±U.W/2 == the viewport edge on any screen/zoom —
+    // world units (w/zoom) overshoot when the camera zooms out on phones
+    const U = { W: w / hf, H: h / hf };
+    // scrollFactor(0) still gets camera-zoom scaled — cover the view
+    const coverW = Math.max(w, w / z) * 1.1;
+    const coverH = Math.max(h, h / z) * 1.1;
 
     // — field: cyan gradient + glyph watermark + rings + light streaks.
     // Opaque takeover (no dim) — depth 44 still covers runner name tags.
     const field = this.add
       .image(w / 2, h / 2, bakeIntroField(this))
-      .setDisplaySize(w * 1.5, h * 1.5)
+      .setDisplaySize(coverW, coverH)
       .setDepth(44)
       .setScrollFactor(0);
     const glyphs = this.add
-      .tileSprite(w / 2, h / 2, w * 1.5, h * 1.5, bakeGlyphTile(this))
+      .tileSprite(w / 2, h / 2, coverW, coverH, bakeGlyphTile(this))
       .setDepth(44)
       .setScrollFactor(0);
     const rings = this.add.graphics().setDepth(44).setScrollFactor(0);
@@ -567,9 +574,10 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setDepth(2);
-    const th = 56, tw = tabT.width + 64;
+    const th = 56, tw = tabT.width + 114;
     const tx = -U.W / 2 - 52, ty = -U.H / 2 + U.H * 0.016;
-    tabT.setPosition(tx + 26, ty + th / 2 - 1);
+    // 52px of the tab bleeds off-screen — the text itself starts 24px in
+    tabT.setPosition(tx + 76, ty + th / 2 - 1);
     const tabG = this.add.graphics().setDepth(2);
     const cham = 32;
     tabG.fillStyle(0x1d2a44, 1);
